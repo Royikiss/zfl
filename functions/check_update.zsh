@@ -7,6 +7,120 @@ _check_update_write_to() {
     chmod 400 "$file"
 }
 
+# 辅助函数: 兼容性超时执行（无 timeout 命令时直接执行）
+_check_update_run_with_timeout() {
+    local sec=$1
+    shift
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$sec" "$@"
+    else
+        "$@"
+    fi
+}
+
+# 缓存写入：shell 赋值格式，便于 zsh 直接 source
+_check_update_write_count_cache() {
+    local file=$1
+    local generated_at=$2
+    local aur_count=$3
+    local flathub_count=$4
+    local tmp_file="${file}.tmp.$$"
+
+    [[ -f "$file" ]] && chmod 600 "$file"
+
+    {
+        echo "generated_at=${generated_at}"
+        echo "aur_pacman=${aur_count}"
+        echo "flathub=${flathub_count}"
+    } > "$tmp_file"
+
+    mv "$tmp_file" "$file"
+    chmod 400 "$file"
+}
+
+# 读取缓存: 输出 generated_at aur_pacman flathub
+_check_update_read_count_cache() {
+    local file=$1
+    local generated_at=""
+    local aur_pacman=""
+    local flathub=""
+
+    [[ -f "$file" ]] || return 1
+    source "$file" 2>/dev/null || return 1
+
+    [[ "$generated_at" == <-> ]] || return 1
+    [[ "$aur_pacman" == <-> ]] || aur_pacman=0
+    [[ "$flathub" == <-> ]] || flathub=0
+
+    echo "$generated_at $aur_pacman $flathub"
+}
+
+_check_update_cached_count() {
+    local backend=$1
+    local cache_file=$2
+    local cache_data generated_at aur_count flathub_count
+
+    cache_data=$(_check_update_read_count_cache "$cache_file") || return 1
+    generated_at=${cache_data%% *}
+    cache_data=${cache_data#* }
+    aur_count=${cache_data%% *}
+    flathub_count=${cache_data#* }
+
+    case "$backend" in
+        aur_pacman) echo "${aur_count:-0}" ;;
+        flathub) echo "${flathub_count:-0}" ;;
+        *) return 1 ;;
+    esac
+}
+
+# 后台刷新缓存（会联网）
+_check_update_refresh_count_cache() {
+    local cache_file=$1
+    local aur_count=0
+    local flathub_count=0
+    local now_epoch
+    local aur_list
+
+    now_epoch=$(date +%s)
+
+    if _check_update_backend_available_aur_pacman; then
+        if _check_update_run_with_timeout 30 yay -Sy >/dev/null 2>&1; then
+            aur_list=$(_check_update_run_with_timeout 20 yay -Qu 2>/dev/null) || aur_list=""
+            if [[ -n "$aur_list" ]]; then
+                aur_count=$(printf "%s\n" "$aur_list" | awk 'NF{c++} END{print c+0}')
+            else
+                aur_count=0
+            fi
+        fi
+    fi
+
+    if _check_update_backend_available_flathub; then
+        flathub_count=$(_check_update_run_with_timeout 25 flatpak remote-ls --updates --columns=application,origin 2>/dev/null | awk '$2=="flathub"{c++} END{print c+0}')
+        flathub_count=${flathub_count:-0}
+    fi
+
+    _check_update_write_count_cache "$cache_file" "$now_epoch" "$aur_count" "$flathub_count"
+}
+
+# 后台刷新调度（防并发）
+_check_update_schedule_cache_refresh() {
+    local cache_file=$1
+    local lock_dir=$2
+
+    mkdir -p "${lock_dir:h}"
+
+    if ! mkdir "$lock_dir" 2>/dev/null; then
+        return 1
+    fi
+
+    (
+        trap 'rmdir "$lock_dir" 2>/dev/null' EXIT INT TERM
+        _check_update_refresh_count_cache "$cache_file"
+    ) >/dev/null 2>&1 &!
+
+    return 0
+}
+
 # 更新后端注册：新增更新源时，只需补充对应的 *_available/*_count/*_update 函数
 typeset -ga _CHECK_UPDATE_BACKENDS
 _CHECK_UPDATE_BACKENDS=(
@@ -27,9 +141,15 @@ _check_update_backend_available_aur_pacman() {
     command -v yay >/dev/null 2>&1
 }
 
+# 前台计数仅读取本地数据库，不做 -Sy，避免阻塞
 _check_update_backend_count_aur_pacman() {
-    yay -Sy >/dev/null
-    yay -Qu | wc -l | tr -d ' '
+    local aur_list
+    aur_list=$(yay -Qu 2>/dev/null) || aur_list=""
+    if [[ -n "$aur_list" ]]; then
+        printf "%s\n" "$aur_list" | awk 'NF{c++} END{print c+0}'
+    else
+        echo 0
+    fi
 }
 
 _check_update_backend_update_aur_pacman() {
@@ -97,8 +217,25 @@ _check_update_collect_available_backends() {
     echo "${available_backends[@]}"
 }
 
+_check_update_sum_cached_counts() {
+    local cache_file=$1
+    shift
+    local -a backends=("$@")
+    local backend count total=0
+
+    for backend in "${backends[@]}"; do
+        count=$(_check_update_cached_count "$backend" "$cache_file") || count=0
+        count=${count:-0}
+        total=$(( total + count ))
+    done
+
+    echo "$total"
+}
+
 _check_update_show_update_counts() {
     load_color GREEN YELLOW RESET
+    local cache_file=$1
+    shift
     local -a backends=("$@")
     local backend label count total=0
 
@@ -109,7 +246,12 @@ _check_update_show_update_counts() {
 
     for backend in "${backends[@]}"; do
         label=$(_check_update_backend_label "$backend")
-        count=$("_check_update_backend_count_${backend}")
+
+        count=$(_check_update_cached_count "$backend" "$cache_file") || count=""
+        if [[ -z "$count" ]]; then
+            count=$("_check_update_backend_count_${backend}")
+        fi
+
         count=${count:-0}
         total=$(( total + count ))
         echo -e "${label} 可更新包数量：${GREEN}${count}${RESET}"
@@ -144,23 +286,35 @@ _check_update_qa() {
     load_color RED GREEN YELLOW RESET
     local last=$1
     local now=$2
+    local cache_file=$3
+    local cache_generated_at=$4
+    local now_epoch=$5
+
     local days=$(( ( $(date -d "$now" +%s ) - $(date -d "$last" +%s) ) / 86400 ))
     local -a available_backends
-    local ans
+    local ans cache_age
 
     available_backends=("${(z)$(_check_update_collect_available_backends)}")
 
-    echo -e "现在是${YELLOW} $now ${RESET}，距离上次更新已经${YELLOW} $days ${RESET}天了"
+    echo -e "现在是${YELLOW} $now ${RESET}，距离上次成功更新已经${YELLOW} $days ${RESET}天了"
+    if [[ "$cache_generated_at" == <-> ]]; then
+        cache_age=$(( now_epoch - cache_generated_at ))
+        echo -e "更新数量缓存年龄：${YELLOW}${cache_age}${RESET} 秒"
+    else
+        echo -e "${YELLOW}更新数量缓存不可用，可能正在后台生成...${RESET}"
+    fi
+
     if (( ${#available_backends[@]} > 0 )); then
         echo "已启用更新源：$(for b in "${available_backends[@]}"; do _check_update_backend_label "$b"; done | paste -sd ', ' -)"
     fi
+
     echo -n -e "请问需要${GREEN}更新${RESET}吗？\n"
     echo -n -e "${GREEN}[Enter/Y/y:更新]${RESET}\n${YELLOW}[C/c：查看更新包数目]${RESET}\n${RED}[N/n/Other:拒绝更新]${RESET}\n"
 
     read ans
 
     while [[ "$ans" == "C" || "$ans" == "c" ]]; do
-        _check_update_show_update_counts "${available_backends[@]}"
+        _check_update_show_update_counts "$cache_file" "${available_backends[@]}"
         echo -n -e "请问需要${GREEN}更新${RESET}吗？\n"
         echo -n -e "${GREEN}[Enter/Y/y:更新]${RESET}\n${YELLOW}[C/c：查看更新包数目]${RESET}\n${RED}[N/n/Other:拒绝更新]${RESET}\n"
         read ans
@@ -184,37 +338,75 @@ _check_update_qa() {
 
 # 主函数：这是会被懒加载触发的入口
 check_update() {
-    local UpdateFlag="$HOME/.cache/zsh/UpdateFlag.lock"                 # 记录“上次成功更新日期”
-    local PromptFlag="$HOME/.cache/zsh/UpdatePromptFlag.lock"           # 记录“上次提示日期（避免当天重复打扰）"
-    mkdir -p "$HOME/.cache/zsh"
+    local cache_dir="$HOME/.cache/zsh"
+    local UpdateFlag="$cache_dir/UpdateFlag.lock"                 # 记录“上次成功更新日期”
+    local PromptFlag="$cache_dir/UpdatePromptFlag.lock"           # 记录“上次拒绝提示日期（避免当天重复打扰）"
+    local CountCache="$cache_dir/UpdateCountCache.lock"           # 记录“上次更新数量缓存”
+    local RefreshLockDir="$cache_dir/UpdateRefresh.lock"          # 后台刷新互斥锁
+    local cache_ttl_seconds=${CHECK_UPDATE_CACHE_TTL_SECONDS:-1800}
+
+    mkdir -p "$cache_dir"
 
     local today=$(date "+%Y-%m-%d")
+    local now_epoch
+    now_epoch=$(date +%s)
+
     local last_update last_prompt
+    local cache_data cache_generated_at="" cache_total=0
+    local -a available_backends
+    local should_prompt=0
 
     # 首次安装：初始化成功更新日期（保持你原来的“首次不强制更新”行为）
     if [[ ! -f "$UpdateFlag" ]]; then
         echo "首次创建更新标记文件..."
         _check_update_write_to "$UpdateFlag" "$today"
-        return 0
     fi
 
     last_update=$(cat "$UpdateFlag")
     [[ -f "$PromptFlag" ]] && last_prompt=$(cat "$PromptFlag") || last_prompt=""
 
-    # 当天已经提示过且用户未更新时，不再重复提示
-    if [[ "$last_prompt" == "$today" && "$last_update" != "$today" ]]; then
-        return 0
+    available_backends=("${(z)$(_check_update_collect_available_backends)}")
+
+    cache_data=$(_check_update_read_count_cache "$CountCache") || cache_data=""
+    if [[ -n "$cache_data" ]]; then
+        cache_generated_at=${cache_data%% *}
     fi
 
+    # 缓存缺失或过期时，后台异步刷新（不阻塞前台）
+    if [[ -z "$cache_generated_at" || $(( now_epoch - cache_generated_at )) -gt $cache_ttl_seconds ]]; then
+        _check_update_schedule_cache_refresh "$CountCache" "$RefreshLockDir" >/dev/null 2>&1
+    fi
+
+    if [[ -n "$cache_data" ]]; then
+        cache_total=$(_check_update_sum_cached_counts "$CountCache" "${available_backends[@]}")
+    fi
+
+    # 触发提示条件：
+    # 1) 距离上次成功更新不是今天（原有逻辑）
+    # 2) 即使今天更新过，只要缓存显示仍有可更新包，也可提示（解决“新包当天检测不到”）
     if [[ "$last_update" != "$today" ]]; then
-        _check_update_qa "$last_update" "$today"
+        should_prompt=1
+    elif (( cache_total > 0 )); then
+        should_prompt=1
+    fi
+
+    # 今天已经拒绝过提示，不再重复打扰
+    if [[ "$last_prompt" == "$today" ]]; then
+        should_prompt=0
+    fi
+
+    if (( should_prompt == 1 )); then
+        _check_update_qa "$last_update" "$today" "$CountCache" "$cache_generated_at" "$now_epoch"
         local result=$?
 
         case "$result" in
             0)
                 # 只有真正更新成功，才刷新“上次成功更新日期”
                 _check_update_write_to "$UpdateFlag" "$today"
-                _check_update_write_to "$PromptFlag" "$today"
+                # 更新成功后清理“拒绝提示”标记，允许当天后续新包再次触发
+                [[ -f "$PromptFlag" ]] && rm -f "$PromptFlag"
+                # 更新完成后异步刷新一次缓存
+                _check_update_schedule_cache_refresh "$CountCache" "$RefreshLockDir" >/dev/null 2>&1
                 ;;
             2)
                 # 用户今天拒绝更新：只记录提示日期，不改成功更新日期
