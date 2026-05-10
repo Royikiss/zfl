@@ -1,3 +1,5 @@
+# 在这里填写你自己的配置，这里填写的所有配置会覆盖系统已有的配置
+
 # alias for 'list files':
 alias ls='eza --icons'
 alias l='eza -lgh --header --git --icons'
@@ -14,8 +16,6 @@ alias c='clear'
 # alias for gcc/g++:
 alias gcc='gcc -I.'
 alias g++='g++ -I.'
-alias gcc_run='gcc -I. main.cpp -o main && ./main'
-alias g++_run='g++ -I. main.cpp -o main && ./main'
 alias gclean='rm -f *.o *.out *.exe main'
 
 # alias for System & Network:
@@ -24,3 +24,14 @@ alias update='yay -Syu'             # Arch 全部包更新
 alias topcpu='top -o %CPU'       # 按 CPU 排序
 alias dfh='df -h'                # 查看磁盘空间
 alias topmem='top -o %MEM'       # 按内存排序
+
+# rust
+alias rc='rustc'
+
+export HTTPS_PROXY=http://127.0.0.1:7897
+export HTTP_PROXY=http://127.0.0.1:7897
+
+export PATH=$PATH:~/.local/bin
+
+
+[[ -s /usr/share/autojump/autojump.zsh ]] && source /usr/share/autojump/autojump.zsh
