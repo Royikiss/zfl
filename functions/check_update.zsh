@@ -289,19 +289,32 @@ _check_update_qa() {
     local cache_file=$3
     local cache_generated_at=$4
     local now_epoch=$5
+    local cache_ttl_seconds=$6
+    local refresh_in_progress=$7
 
     local days=$(( ( $(date -d "$now" +%s ) - $(date -d "$last" +%s) ) / 86400 ))
     local -a available_backends
-    local ans cache_age
+    local ans cache_age cache_age_minutes
 
     available_backends=("${(z)$(_check_update_collect_available_backends)}")
 
     echo -e "现在是${YELLOW} $now ${RESET}，距离上次成功更新已经${YELLOW} $days ${RESET}天了"
     if [[ "$cache_generated_at" == <-> ]]; then
         cache_age=$(( now_epoch - cache_generated_at ))
-        echo -e "更新数量缓存年龄：${YELLOW}${cache_age}${RESET} 秒"
+        (( cache_age < 0 )) && cache_age=0
+        cache_age_minutes=$(( cache_age / 60 ))
+
+        if (( cache_age > cache_ttl_seconds )); then
+            echo -e "更新数量缓存：${YELLOW}${cache_age_minutes}${RESET} 分钟前（已过期）"
+        else
+            echo -e "更新数量缓存：${YELLOW}${cache_age_minutes}${RESET} 分钟前（有效）"
+        fi
     else
-        echo -e "${YELLOW}更新数量缓存不可用，可能正在后台生成...${RESET}"
+        echo -e "${YELLOW}更新数量缓存不可用${RESET}"
+    fi
+
+    if (( refresh_in_progress == 1 )); then
+        echo -e "${YELLOW}后台刷新状态：进行中（本次提示可能使用旧缓存）${RESET}"
     fi
 
     if (( ${#available_backends[@]} > 0 )); then
@@ -353,6 +366,7 @@ check_update() {
 
     local last_update last_prompt
     local cache_data cache_generated_at="" cache_total=0
+    local refresh_in_progress=0
     local -a available_backends
     local should_prompt=0
 
@@ -377,6 +391,8 @@ check_update() {
         _check_update_schedule_cache_refresh "$CountCache" "$RefreshLockDir" >/dev/null 2>&1
     fi
 
+    [[ -d "$RefreshLockDir" ]] && refresh_in_progress=1
+
     if [[ -n "$cache_data" ]]; then
         cache_total=$(_check_update_sum_cached_counts "$CountCache" "${available_backends[@]}")
     fi
@@ -396,7 +412,7 @@ check_update() {
     fi
 
     if (( should_prompt == 1 )); then
-        _check_update_qa "$last_update" "$today" "$CountCache" "$cache_generated_at" "$now_epoch"
+        _check_update_qa "$last_update" "$today" "$CountCache" "$cache_generated_at" "$now_epoch" "$cache_ttl_seconds" "$refresh_in_progress"
         local result=$?
 
         case "$result" in
