@@ -24,8 +24,22 @@ if [[ -o interactive ]]; then
             [[ "$line_trimmed" == \#* ]] && continue
 
             task_str="$line_trimmed"
-            args=("${(zQ)task_str}")
+            # 使用 (Q)+(z) 做 shell 级拆词与去引号：
+            # - 支持 add_task 写入的转义格式（echo hello\ world）
+            # - 支持手写引号格式（echo "hello world"）
+            args=(${(Q)${(z)task_str}})
+
             cmd=$args[1]
+
+            # 兼容历史任务行（如旧版写入的 echo\ hello\ world）
+            if [[ -n "$cmd" ]] && ! whence "$cmd" > /dev/null && (( ${#args[@]} == 1 )); then
+                local -a legacy_args
+                legacy_args=("${(zQ)task_str}")
+                if (( ${#legacy_args[@]} > 1 )); then
+                    args=("${legacy_args[@]}")
+                    cmd=$args[1]
+                fi
+            fi
 
             if [[ -z "$cmd" ]]; then
                 continue
