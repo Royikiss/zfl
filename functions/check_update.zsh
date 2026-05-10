@@ -42,6 +42,27 @@ _check_update_format_age() {
     fi
 }
 
+_check_update_help() {
+    cat <<'EOF'
+check_update - 启动时包更新检查与交互更新
+
+用法:
+  check_update [选项]
+
+选项:
+  -f, --force    强制触发一次检查/交互（忽略今天已提示/已更新限制）
+  -h, --help     显示本帮助并退出
+
+环境变量:
+  CHECK_UPDATE_CACHE_TTL_SECONDS
+                 更新数量缓存有效期（秒），默认 1800
+
+说明:
+  - 正常模式下，check_update 会优先读取本地缓存并在后台异步刷新，避免阻塞 shell 启动。
+  - 强制模式仅强制进入一次交互流程，不会关闭异步缓存机制。
+EOF
+}
+
 # 缓存写入：shell 赋值格式，便于 zsh 直接 source
 _check_update_write_count_cache() {
     local file=$1
@@ -381,6 +402,15 @@ check_update() {
         case "$arg" in
             -f|--force)
                 force_update=1
+                ;;
+            -h|--help)
+                _check_update_help
+                return 0
+                ;;
+            *)
+                echo "check_update: unknown option: $arg" >&2
+                echo "Try: check_update --help" >&2
+                return 2
                 ;;
         esac
     done
