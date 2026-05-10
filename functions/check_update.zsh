@@ -18,6 +18,30 @@ _check_update_run_with_timeout() {
     fi
 }
 
+# 将“秒差”格式化为更友好的中文年龄文案
+_check_update_format_age() {
+    local age_seconds=$1
+
+    if [[ -z "$age_seconds" || "$age_seconds" != <-> ]]; then
+        echo "未知"
+        return 0
+    fi
+
+    (( age_seconds < 0 )) && age_seconds=0
+
+    if (( age_seconds < 10 )); then
+        echo "刚刚"
+    elif (( age_seconds < 60 )); then
+        echo "${age_seconds}秒前"
+    elif (( age_seconds < 3600 )); then
+        echo "$(( age_seconds / 60 ))分钟前"
+    elif (( age_seconds < 86400 )); then
+        echo "$(( age_seconds / 3600 ))小时前"
+    else
+        echo "$(( age_seconds / 86400 ))天前"
+    fi
+}
+
 # 缓存写入：shell 赋值格式，便于 zsh 直接 source
 _check_update_write_count_cache() {
     local file=$1
@@ -294,20 +318,19 @@ _check_update_qa() {
 
     local days=$(( ( $(date -d "$now" +%s ) - $(date -d "$last" +%s) ) / 86400 ))
     local -a available_backends
-    local ans cache_age cache_age_minutes
+    local ans cache_age cache_age_human
 
     available_backends=("${(z)$(_check_update_collect_available_backends)}")
 
     echo -e "现在是${YELLOW} $now ${RESET}，距离上次成功更新已经${YELLOW} $days ${RESET}天了"
     if [[ "$cache_generated_at" == <-> ]]; then
         cache_age=$(( now_epoch - cache_generated_at ))
-        (( cache_age < 0 )) && cache_age=0
-        cache_age_minutes=$(( cache_age / 60 ))
+        cache_age_human=$(_check_update_format_age "$cache_age")
 
         if (( cache_age > cache_ttl_seconds )); then
-            echo -e "更新数量缓存：${YELLOW}${cache_age_minutes}${RESET} 分钟前（已过期）"
+            echo -e "更新数量缓存：${YELLOW}${cache_age_human}${RESET}（已过期）"
         else
-            echo -e "更新数量缓存：${YELLOW}${cache_age_minutes}${RESET} 分钟前（有效）"
+            echo -e "更新数量缓存：${YELLOW}${cache_age_human}${RESET}（有效）"
         fi
     else
         echo -e "${YELLOW}更新数量缓存不可用${RESET}"
@@ -351,6 +374,17 @@ _check_update_qa() {
 
 # 主函数：这是会被懒加载触发的入口
 check_update() {
+    local arg
+    local force_update=0
+
+    for arg in "$@"; do
+        case "$arg" in
+            -f|--force)
+                force_update=1
+                ;;
+        esac
+    done
+
     local cache_dir="$HOME/.cache/zsh"
     local UpdateFlag="$cache_dir/UpdateFlag.lock"                 # 记录“上次成功更新日期”
     local PromptFlag="$cache_dir/UpdatePromptFlag.lock"           # 记录“上次拒绝提示日期（避免当天重复打扰）"
@@ -369,6 +403,10 @@ check_update() {
     local refresh_in_progress=0
     local -a available_backends
     local should_prompt=0
+
+    if (( force_update == 1 )); then
+        echo "[check_update] 强制模式已启用（-f/--force）"
+    fi
 
     # 首次安装：初始化成功更新日期（保持你原来的“首次不强制更新”行为）
     if [[ ! -f "$UpdateFlag" ]]; then
@@ -398,16 +436,19 @@ check_update() {
     fi
 
     # 触发提示条件：
-    # 1) 距离上次成功更新不是今天（原有逻辑）
-    # 2) 即使今天更新过，只要缓存显示仍有可更新包，也可提示（解决“新包当天检测不到”）
-    if [[ "$last_update" != "$today" ]]; then
+    # 1) 强制模式：无条件提示（忽略日期与拒绝标记）
+    # 2) 距离上次成功更新不是今天（原有逻辑）
+    # 3) 即使今天更新过，只要缓存显示仍有可更新包，也可提示（解决“新包当天检测不到”）
+    if (( force_update == 1 )); then
+        should_prompt=1
+    elif [[ "$last_update" != "$today" ]]; then
         should_prompt=1
     elif (( cache_total > 0 )); then
         should_prompt=1
     fi
 
-    # 今天已经拒绝过提示，不再重复打扰
-    if [[ "$last_prompt" == "$today" ]]; then
+    # 今天已经拒绝过提示，不再重复打扰（强制模式除外）
+    if (( force_update == 0 )) && [[ "$last_prompt" == "$today" ]]; then
         should_prompt=0
     fi
 
