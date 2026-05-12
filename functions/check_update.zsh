@@ -42,6 +42,30 @@ _check_update_format_age() {
     fi
 }
 
+# 规范化整数环境变量：非法值回退为默认
+_check_update_int_or_default() {
+    local raw=$1
+    local fallback=$2
+    if [[ "$raw" == <-> ]]; then
+        echo "$raw"
+    else
+        echo "$fallback"
+    fi
+}
+
+# 规范化提示策略：pending_first | once_per_day | strict_daily
+_check_update_normalize_prompt_policy() {
+    local raw=$1
+    case "$raw" in
+        pending_first|once_per_day|strict_daily)
+            echo "$raw"
+            ;;
+        *)
+            echo "pending_first"
+            ;;
+    esac
+}
+
 _check_update_help() {
     cat <<'EOF'
 check_update - 启动时包更新检查与交互更新
@@ -56,10 +80,17 @@ check_update - 启动时包更新检查与交互更新
 环境变量:
   CHECK_UPDATE_CACHE_TTL_SECONDS
                  更新数量缓存有效期（秒），默认 1800
+  CHECK_UPDATE_LOCK_STALE_SECONDS
+                 后台刷新锁超时阈值（秒），默认 600；超过则自动回收陈旧锁
+  CHECK_UPDATE_PROMPT_POLICY
+                 提示策略：pending_first | once_per_day | strict_daily（默认 pending_first）
 
 说明:
   - 正常模式下，check_update 会优先读取本地缓存并在后台异步刷新，避免阻塞 shell 启动。
   - 强制模式仅强制进入一次交互流程，不会关闭异步缓存机制。
+  - pending_first：同天若仍有可更新包，继续提示（不易漏更新）。
+  - once_per_day：同天最多提示一次，拒绝后当天静默。
+  - strict_daily：仅在“非今天成功更新”时提示（除 --force）。
 EOF
 }
 
@@ -180,19 +211,40 @@ _check_update_refresh_count_cache() {
     _check_update_write_count_cache "$cache_file" "$now_epoch" "$aur_count" "$flathub_count"
 }
 
-# 后台刷新调度（防并发）
+# 后台刷新调度（防并发 + 陈旧锁回收）
 _check_update_schedule_cache_refresh() {
     local cache_file=$1
     local lock_dir=$2
+    local lock_stale_seconds=${3:-600}
+    local lock_ts_file="$lock_dir/.timestamp"
+    local lock_ts=""
+    local now_epoch
+
+    now_epoch=$(date +%s)
 
     mkdir -p "${lock_dir:h}"
+
+    # 若检测到陈旧锁，先回收再尝试重新加锁
+    if [[ -d "$lock_dir" ]]; then
+        if [[ -f "$lock_ts_file" ]]; then
+            lock_ts=$(cat "$lock_ts_file" 2>/dev/null)
+            if [[ "$lock_ts" == <-> ]] && (( now_epoch - lock_ts > lock_stale_seconds )); then
+                rm -rf "$lock_dir" 2>/dev/null || true
+            fi
+        else
+            # 历史无时间戳锁：保守回收，避免永久卡住
+            rm -rf "$lock_dir" 2>/dev/null || true
+        fi
+    fi
 
     if ! mkdir "$lock_dir" 2>/dev/null; then
         return 1
     fi
 
+    echo "$now_epoch" > "$lock_ts_file" 2>/dev/null || true
+
     (
-        trap 'rmdir "$lock_dir" 2>/dev/null' EXIT INT TERM
+        trap 'rm -rf "$lock_dir" 2>/dev/null' EXIT INT TERM
         _check_update_refresh_count_cache "$cache_file"
     ) >/dev/null 2>&1 &!
 
@@ -453,7 +505,12 @@ check_update() {
     local PromptFlag="$cache_dir/UpdatePromptFlag.lock"           # 记录“上次拒绝提示日期（避免当天重复打扰）"
     local CountCache="$cache_dir/UpdateCountCache.lock"           # 记录“上次更新数量缓存”
     local RefreshLockDir="$cache_dir/UpdateRefresh.lock"          # 后台刷新互斥锁
-    local cache_ttl_seconds=${CHECK_UPDATE_CACHE_TTL_SECONDS:-1800}
+    local cache_ttl_seconds
+    cache_ttl_seconds=$(_check_update_int_or_default "${CHECK_UPDATE_CACHE_TTL_SECONDS:-1800}" 1800)
+    local lock_stale_seconds
+    lock_stale_seconds=$(_check_update_int_or_default "${CHECK_UPDATE_LOCK_STALE_SECONDS:-600}" 600)
+    local prompt_policy
+    prompt_policy=$(_check_update_normalize_prompt_policy "${CHECK_UPDATE_PROMPT_POLICY:-pending_first}")
 
     mkdir -p "$cache_dir"
 
@@ -489,7 +546,7 @@ check_update() {
 
     # 缓存缺失或过期时，后台异步刷新（不阻塞前台）
     if [[ -z "$cache_generated_at" || $(( now_epoch - cache_generated_at )) -gt $cache_ttl_seconds ]]; then
-        _check_update_schedule_cache_refresh "$CountCache" "$RefreshLockDir" >/dev/null 2>&1
+        _check_update_schedule_cache_refresh "$CountCache" "$RefreshLockDir" "$lock_stale_seconds" >/dev/null 2>&1
     fi
 
     [[ -d "$RefreshLockDir" ]] && refresh_in_progress=1
@@ -500,18 +557,31 @@ check_update() {
 
     # 触发提示条件：
     # 1) 强制模式：无条件提示（忽略日期与拒绝标记）
-    # 2) 距离上次成功更新不是今天（原有逻辑）
-    # 3) 即使今天更新过，只要缓存显示仍有可更新包，也可提示（解决“新包当天检测不到”）
+    # 2) 提示策略可配置（CHECK_UPDATE_PROMPT_POLICY）：
+    #    - pending_first（默认）：同天若仍有可更新包则提示
+    #    - once_per_day：同天不再提示（除 --force）
+    #    - strict_daily：仅按“上次成功更新日期”判断（除 --force）
     if (( force_update == 1 )); then
         should_prompt=1
-    elif [[ "$last_update" != "$today" ]]; then
-        should_prompt=1
-    elif (( cache_total > 0 )); then
-        should_prompt=1
+    else
+        case "$prompt_policy" in
+            pending_first)
+                if [[ "$last_update" != "$today" ]]; then
+                    should_prompt=1
+                elif (( cache_total > 0 )); then
+                    should_prompt=1
+                fi
+                ;;
+            once_per_day|strict_daily)
+                if [[ "$last_update" != "$today" ]]; then
+                    should_prompt=1
+                fi
+                ;;
+        esac
     fi
 
-    # 今天已经拒绝过提示，不再重复打扰（强制模式除外）
-    if (( force_update == 0 )) && [[ "$last_prompt" == "$today" ]]; then
+    # once_per_day：今天拒绝过后当天静默（强制模式除外）
+    if (( force_update == 0 )) && [[ "$prompt_policy" == "once_per_day" ]] && [[ "$last_prompt" == "$today" ]]; then
         should_prompt=0
     fi
 
@@ -526,7 +596,7 @@ check_update() {
                 # 更新成功后清理“拒绝提示”标记，允许当天后续新包再次触发
                 [[ -f "$PromptFlag" ]] && rm -f "$PromptFlag"
                 # 更新完成后异步刷新一次缓存
-                _check_update_schedule_cache_refresh "$CountCache" "$RefreshLockDir" >/dev/null 2>&1
+                _check_update_schedule_cache_refresh "$CountCache" "$RefreshLockDir" "$lock_stale_seconds" >/dev/null 2>&1
                 ;;
             2)
                 # 用户今天拒绝更新：只记录提示日期，不改成功更新日期

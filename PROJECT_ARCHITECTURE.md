@@ -73,7 +73,10 @@
 
 - `functions/check_update.zsh`
   - 多后端更新检查与交互更新（AUR/pacman + flathub）
+  - 后台刷新采用只读计数（`checkupdates`/`pacman -Qu` + `yay -Qua` + `flatpak remote-ls`），不触发 sudo
   - 包含更新源探测、计数、执行、标记文件（成功日期/提示日期）
+  - 启动刷新锁具备陈旧锁自愈（`CHECK_UPDATE_LOCK_STALE_SECONDS`）
+  - 提示策略可配置（`CHECK_UPDATE_PROMPT_POLICY`：`pending_first`/`once_per_day`/`strict_daily`）
 
 - `functions/countText.zsh`
   - 文本统计（中文字符数/英文词数）
