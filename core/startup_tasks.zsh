@@ -14,7 +14,9 @@ if [[ -o interactive ]]; then
         local cmd
         local start_ts end_ts elapsed_sec exit_code
 
-        while IFS= read -r line || [[ -n "$line" ]]; do
+        # 用独立 fd 读取任务文件，避免占用 stdin（否则任务里的 read 会误读任务文件内容）
+        exec 3< "$task_file"
+        while IFS= read -r line <&3 || [[ -n "$line" ]]; do
             # 去掉首尾空白，便于判定空行/注释
             line_trimmed="${line#${line%%[![:space:]]*}}"
             line_trimmed="${line_trimmed%${line_trimmed##*[![:space:]]}}"
@@ -63,7 +65,8 @@ if [[ -o interactive ]]; then
             else
                 echo -e "${RED}[Startup] 命令不存在:${RESET} $cmd | 原始: $task_str"
             fi
-        done < "$task_file"
+        done
+        exec 3<&-
     else
         echo -e "${YELLOW}[Startup] 任务文件不存在:${RESET} $task_file"
     fi

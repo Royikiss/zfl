@@ -118,25 +118,58 @@ _check_update_cached_count() {
     esac
 }
 
-# 后台刷新缓存（会联网）
+# 只读计数：统计非空行数量
+_check_update_count_lines() {
+    awk 'NF{c++} END{print c+0}'
+}
+
+# 只读计数：官方仓库（不触发 sudo，不做 -Sy）
+_check_update_count_repo_readonly() {
+    local rows=""
+
+    if command -v checkupdates >/dev/null 2>&1; then
+        rows=$(checkupdates 2>/dev/null) || rows=""
+    elif command -v pacman >/dev/null 2>&1; then
+        rows=$(pacman -Qu 2>/dev/null) || rows=""
+    fi
+
+    if [[ -n "$rows" ]]; then
+        printf "%s\n" "$rows" | _check_update_count_lines
+    else
+        echo 0
+    fi
+}
+
+# 只读计数：AUR（不触发 sudo，不做 -Sy）
+_check_update_count_aur_readonly() {
+    local rows=""
+
+    if command -v yay >/dev/null 2>&1; then
+        rows=$(yay -Qua 2>/dev/null) || rows=""
+    fi
+
+    if [[ -n "$rows" ]]; then
+        printf "%s\n" "$rows" | _check_update_count_lines
+    else
+        echo 0
+    fi
+}
+
+# 后台刷新缓存（只读计数，不触发 sudo）
 _check_update_refresh_count_cache() {
     local cache_file=$1
     local aur_count=0
     local flathub_count=0
     local now_epoch
-    local aur_list
+    local repo_count=0
+    local aur_only_count=0
 
     now_epoch=$(date +%s)
 
     if _check_update_backend_available_aur_pacman; then
-        if _check_update_run_with_timeout 30 yay -Sy >/dev/null 2>&1; then
-            aur_list=$(_check_update_run_with_timeout 20 yay -Qu 2>/dev/null) || aur_list=""
-            if [[ -n "$aur_list" ]]; then
-                aur_count=$(printf "%s\n" "$aur_list" | awk 'NF{c++} END{print c+0}')
-            else
-                aur_count=0
-            fi
-        fi
+        repo_count=$(_check_update_count_repo_readonly)
+        aur_only_count=$(_check_update_count_aur_readonly)
+        aur_count=$(( ${repo_count:-0} + ${aur_only_count:-0} ))
     fi
 
     if _check_update_backend_available_flathub; then
@@ -186,15 +219,15 @@ _check_update_backend_available_aur_pacman() {
     command -v yay >/dev/null 2>&1
 }
 
-# 前台计数仅读取本地数据库，不做 -Sy，避免阻塞
+# 前台计数：只读统计（官方仓库 + AUR），不做 -Sy，不触发 sudo
 _check_update_backend_count_aur_pacman() {
-    local aur_list
-    aur_list=$(yay -Qu 2>/dev/null) || aur_list=""
-    if [[ -n "$aur_list" ]]; then
-        printf "%s\n" "$aur_list" | awk 'NF{c++} END{print c+0}'
-    else
-        echo 0
-    fi
+    local repo_count=0
+    local aur_only_count=0
+
+    repo_count=$(_check_update_count_repo_readonly)
+    aur_only_count=$(_check_update_count_aur_readonly)
+
+    echo $(( ${repo_count:-0} + ${aur_only_count:-0} ))
 }
 
 _check_update_backend_update_aur_pacman() {
