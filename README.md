@@ -75,7 +75,15 @@ zsh/
 
 ## ⚙️ 个性化配置 (`core/usr.zsh`)
 
-为了保持主框架文件的整洁及避免 Git 冲突，您可以将个人的环境变量、代理、别名等写在 [core/usr.zsh](file:///home/royi/.config/zsh/core/usr.zsh) 中。示例如下：
+为了保持主框架文件的整洁及避免 Git 冲突，`core/usr.zsh` 已加入 `.gitignore` 且不被 Git 跟踪。
+
+您可以将模板文件复制一份，然后在其中填写您个人的环境变量、代理、别名等：
+
+```bash
+cp core/usr.zsh.example core/usr.zsh
+```
+
+`core/usr.zsh` 配置示例如下：
 
 ```zsh
 # 用户自定义别名
@@ -90,6 +98,7 @@ export HTTP_PROXY=http://127.0.0.1:7897
 export CHECK_UPDATE_CACHE_TTL_SECONDS=1800   # 缓存30分钟
 export CHECK_UPDATE_PROMPT_POLICY=once_per_day # 拒绝后当日不再打扰
 ```
+
 
 ---
 

@@ -1,0 +1,17 @@
+# 在这里填写你自己的配置，这里填写的所有配置会覆盖系统已有的配置
+# 将此文件复制为 usr.zsh 并进行自定义修改：cp usr.zsh.example usr.zsh
+
+# 用户自定义别名示例:
+# alias ls='eza --icons'
+# alias c='clear'
+
+# 网络代理配置示例:
+# export HTTPS_PROXY=http://127.0.0.1:7897
+# export HTTP_PROXY=http://127.0.0.1:7897
+
+# 环境变量与 PATH 路径示例:
+# export PATH=$PATH:~/.local/bin
+
+# 调节 check_update 更新检测选项示例:
+# export CHECK_UPDATE_CACHE_TTL_SECONDS=1800
+# export CHECK_UPDATE_PROMPT_POLICY=once_per_day

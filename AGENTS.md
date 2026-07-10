@@ -20,7 +20,7 @@
   - [colors.zsh](file:///home/royi/.config/zsh/core/colors.zsh)：声明 ANSI 颜色与文本样式变量。
   - [func.zsh](file:///home/royi/.config/zsh/core/func.zsh)：核心加载引擎，负责懒加载函数与补全桩的动态注册。使用匿名函数保证初始化环境洁净。
   - [startup_tasks.zsh](file:///home/royi/.config/zsh/core/startup_tasks.zsh) / [startup_task_commands.zsh](file:///home/royi/.config/zsh/core/startup_task_commands.zsh)：非阻塞启动任务调度与白名单列表。
-  - [usr.zsh](file:///home/royi/.config/zsh/core/usr.zsh)：用户个性化配置覆盖层（环境变量、别名等）。
+  - [usr.zsh.example](file:///home/royi/.config/zsh/core/usr.zsh.example)：用户配置模板文件。用户需拷贝并创建 `usr.zsh` 来存放个性化配置覆盖层（如环境变量、别名等），该文件已被 `.gitignore` 忽略。
 - **[functions/](file:///home/royi/.config/zsh/functions/)**：模块化业务函数目录。
   - 文件名与函数名必须严格 **1:1 映射**。
   - 承载具体命令逻辑。支持补全的函数其补全代理应定义在脚本底部。
@@ -62,4 +62,5 @@ AI 助手在新增、修复或重构函数时，**必须满足以下开发准则
 6.  **严禁硬编码颜色**：严禁写死 ANSI 颜色转义字串（如 `\e[31m`），须通过 `load_color RED GREEN RESET` 载入公共颜色变量。
 7.  **FD 3 安全关闭**：任何后台任务（`&`）或 fork 子 shell 的命令中，必须在其指令流中添加 `3<&-` 进行安全关闭重定向。
 8.  **本地自检与测试**：在提交任何修改前，必须运行本地 `zfl lint <函数名>`，确认状态为 **完美通过**（返回状态码 `0`）。
+9.  **Python 脚本与副产物规范**：在 `python/` 目录下只编写用于辅助 `functions/` 的跨语言辅助 Python 脚本。运行期间由脚本产生的任何用户个性化副产物（如缓存、自动翻译结果、配置副本等）必须统一存放于 `~/.cache/zsh/` 下，严禁污染或修改全局共享技能目录（`~/.agents/skills/`）或其他非暂存的代码路径。
 

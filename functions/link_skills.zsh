@@ -69,9 +69,14 @@ link_skills() {
     if (( ${#skills_to_link[@]} == 0 )); then
         if (( $+commands[fzf] )); then
             local selected
-            selected=$(printf '%s\n' "${available_skills[@]}" | fzf -m --bind "space:toggle" --preview 'python3 "'"$ZFL_HOME"'/python/preview_skill.py" {}' --preview-window='right:50%:wrap' --prompt="选择要链接的 Skill (空格键多选，Enter键确认): ")
+            selected=$(python3 "$ZFL_HOME/python/list_skills_fzf.py" | fzf -m --bind "space:toggle" --preview 'python3 "'"$ZFL_HOME"'/python/preview_skill.py" {1}' --preview-window='right:50%:wrap' --prompt="选择要链接的 Skill (空格键多选，Enter键确认): ")
             [[ -z "$selected" ]] && return 0
-            skills_to_link=(${(f)selected})
+            
+            # 提取选中的技能目录名 (行首以空格或 | 前的内容)
+            local line
+            for line in ${(f)selected}; do
+                skills_to_link+=("${line%% *}")
+            done
         else
             echo -e "${YELLOW}[link_skills] fzf 未安装，无法进行交互式选择。${RESET}"
             echo -e "可用 skills 为: ${GREEN}${available_skills[*]}${RESET}"

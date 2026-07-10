@@ -10,3 +10,7 @@
 # User custom functions directory
 custom_functions/
 
+# User local configuration
+core/usr.zsh
+
+
