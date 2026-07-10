@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import re
+import fnmatch
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +32,8 @@ INCLUDE_EXTS = {
 NAME_WHITELIST = {
     "Dockerfile", "Makefile", "README", "README.md", "README.zh-CN.md", "LICENSE",
 }
+
+IGNORE_FILE_NAME = ".ignore"
 
 LANG_MAP = {
     ".py": "python", ".js": "javascript", ".ts": "typescript", ".tsx": "tsx",
@@ -73,6 +76,7 @@ MODE_MAP: Dict[str, ModeConfig] = {
     "fast": ModeConfig(45000, 1200, 180, 80, False),
     "balanced": ModeConfig(120000, 3500, 260, 140, True),
     "deep": ModeConfig(220000, 7000, 360, 220, True),
+    "full": ModeConfig(999999999, 999999999, 999999, 9999999, True),
 }
 
 
@@ -124,14 +128,29 @@ def should_include(path: Path) -> bool:
     return False
 
 
-def iter_files_under(directory: Path) -> Iterable[Path]:
+def should_include_text(path: Path) -> bool:
+    """Include any text file for --mode full (no extension whitelist)."""
+    if not path.is_file():
+        return False
+    if path.name in IGNORE_FILES:
+        return False
+    if any(part in IGNORE_DIRS for part in path.parts):
+        return False
+    return is_probably_text(path)
+
+
+def iter_files_under(directory: Path, full_mode: bool = False) -> Iterable[Path]:
     for root, dirs, files in os.walk(directory):
         dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
         root_path = Path(root)
         for f in files:
             p = root_path / f
-            if should_include(p):
-                yield p
+            if full_mode:
+                if should_include_text(p):
+                    yield p
+            else:
+                if should_include(p):
+                    yield p
 
 
 def run_git(root: Path, args: List[str]) -> List[str]:
@@ -149,6 +168,64 @@ def run_git(root: Path, args: List[str]) -> List[str]:
         return [x.strip() for x in proc.stdout.splitlines() if x.strip()]
     except Exception:
         return []
+
+
+def load_ignore_patterns(root: Path) -> Optional[List[str]]:
+    """Load patterns from .ignore file at project root. Returns None if file doesn't exist or is empty."""
+    ignore_file = root / IGNORE_FILE_NAME
+    if not ignore_file.exists():
+        return None
+    patterns = []
+    for line in ignore_file.read_text(encoding='utf-8', errors='ignore').splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        patterns.append(line)
+    return patterns if patterns else None
+
+
+def match_ignore_patterns(rel_path: Path, patterns: Optional[List[str]]) -> bool:
+    """
+    Check if a relative path matches .ignore patterns (gitignore-style).
+
+    Supports: #comments, blank lines, !negation, trailing / for directories,
+    * and ? globs, patterns with and without slashes.
+    """
+    if not patterns:
+        return False
+
+    path_str = rel_path.as_posix()
+    ignored = False
+
+    for pattern in patterns:
+        is_negation = pattern.startswith('!')
+        pat = pattern[1:] if is_negation else pattern
+
+        is_dir_only = pat.endswith('/')
+        if is_dir_only:
+            pat = pat.rstrip('/')
+
+        matched = False
+
+        # Patterns with / are matched against the full relative path
+        if '/' in pat:
+            if fnmatch.fnmatch(path_str, pat):
+                matched = True
+            elif fnmatch.fnmatch(path_str, '*/' + pat):
+                matched = True
+        else:
+            # Patterns without / are matched against basename
+            if fnmatch.fnmatch(rel_path.name, pat):
+                matched = True
+            # Directory-only patterns also match any path component
+            if not matched and is_dir_only:
+                if any(fnmatch.fnmatch(part, pat) for part in rel_path.parts):
+                    matched = True
+
+        if matched:
+            ignored = not is_negation
+
+    return ignored
 
 
 def git_changed_files(root: Path, changed_from: Optional[str], changed_commit_range: Optional[str]) -> Set[Path]:
@@ -171,7 +248,8 @@ def git_changed_files(root: Path, changed_from: Optional[str], changed_commit_ra
     return changed
 
 
-def collect_files(root: Path, all_mode: bool, targets: List[str], max_files: int) -> List[Path]:
+def collect_files(root: Path, all_mode: bool, targets: List[str], max_files: int,
+                  full_mode: bool = False, ignore_patterns: Optional[List[str]] = None) -> List[Path]:
     result: List[Path] = []
     seen = set()
 
@@ -184,80 +262,41 @@ def collect_files(root: Path, all_mode: bool, targets: List[str], max_files: int
             return
         if not path_under(rp, root):
             return
-        if not should_include(rp):
-            return
-        if not is_probably_text(rp):
-            return
+        if full_mode:
+            # For full mode, iter_files_under already filtered; just binary check
+            if not is_probably_text(rp):
+                return
+        else:
+            if not should_include(rp):
+                return
+            if not is_probably_text(rp):
+                return
+        # Apply .ignore filtering (only for full mode)
+        if full_mode and ignore_patterns:
+            try:
+                rel = rp.relative_to(root)
+                if match_ignore_patterns(rel, ignore_patterns):
+                    return
+            except Exception:
+                pass
         seen.add(rp)
         result.append(rp)
 
     if all_mode:
-        for p in iter_files_under(root):
+        for p in iter_files_under(root, full_mode=full_mode):
             add_file(p)
     else:
         for t in targets:
             candidate = Path(t)
             target = (root / candidate).resolve() if not candidate.is_absolute() else candidate.resolve()
-            if not target.exists() or not path_under(target, root):
-                continue
-            if target.is_file():
-                add_file(target)
-            elif target.is_dir():
+            if target.is_dir():
                 for p in iter_files_under(target):
                     add_file(p)
+            elif target.is_file():
+                add_file(target)
 
-    result.sort(key=lambda p: str(p.relative_to(root)))
-    return result[:max_files]
-
-
-def build_tree(files: List[Path], root: Path) -> str:
-    tree: Dict[str, dict] = {}
-
-    for f in files:
-        rel = f.relative_to(root)
-        node = tree
-        for part in rel.parts:
-            node = node.setdefault(part, {})
-
-    lines = [f"{root.name}/"]
-
-    def walk(node: Dict[str, dict], prefix: str):
-        keys = sorted(node.keys())
-        for i, k in enumerate(keys):
-            is_last = i == len(keys) - 1
-            branch = "└── " if is_last else "├── "
-            lines.append(prefix + branch + k)
-            nxt = node[k]
-            if nxt:
-                walk(nxt, prefix + ("    " if is_last else "│   "))
-
-    walk(tree, "")
-    return "\n".join(lines)
-
-
-def extract_symbols(path: Path, text: str, max_symbols: int = 12) -> List[str]:
-    ext = path.suffix.lower()
-    syms: List[str] = []
-    if ext == ".py":
-        syms += re.findall(r"^\s*class\s+([A-Za-z_]\w*)", text, flags=re.M)
-        syms += re.findall(r"^\s*def\s+([A-Za-z_]\w*)\s*\(", text, flags=re.M)
-    elif ext in {".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"}:
-        syms += re.findall(r"function\s+([A-Za-z_]\w*)\s*\(", text)
-        syms += re.findall(r"class\s+([A-Za-z_]\w*)", text)
-        syms += re.findall(r"const\s+([A-Za-z_]\w*)\s*=\s*\(", text)
-    elif ext == ".go":
-        syms += re.findall(r"func\s+([A-Za-z_]\w*)\s*\(", text)
-        syms += re.findall(r"type\s+([A-Za-z_]\w*)\s+struct", text)
-    elif ext in {".zsh", ".sh", ".bash"}:
-        syms += re.findall(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\)\s*\{", text, flags=re.M)
-
-    uniq = []
-    seen = set()
-    for s in syms:
-        if s not in seen:
-            seen.add(s)
-            uniq.append(s)
-    return uniq[:max_symbols]
+    result_sorted = sorted(result)
+    return result_sorted[:max_files]
 
 
 def file_priority(rel: Path) -> int:
@@ -296,418 +335,235 @@ def compile_regexes(patterns: List[str]) -> List[re.Pattern]:
 def match_include(rel: Path, text: str, keywords: List[str], regexes: List[re.Pattern]) -> bool:
     if not keywords and not regexes:
         return True
-
-    hay = (str(rel) + "\n" + text[:16000]).lower()
-    for q in keywords:
-        if q.lower() in hay:
+    s = str(rel)
+    for kw in keywords:
+        if kw.lower() in s.lower() or kw.lower() in text.lower():
             return True
-
-    if regexes:
-        sample = str(rel) + "\n" + text[:30000]
-        for reg in regexes:
-            if reg.search(sample):
-                return True
-
+    for reg in regexes:
+        if reg.search(s) or reg.search(text):
+            return True
     return False
 
 
 def match_exclude(rel: Path, text: str, keywords: List[str], regexes: List[re.Pattern]) -> bool:
-    if not keywords and not regexes:
-        return False
+    s = str(rel)
+    for kw in keywords:
+        if kw.lower() in s.lower() or kw.lower() in text.lower():
+            return False
+    for reg in regexes:
+        if reg.search(s) or reg.search(text):
+            return False
+    return True
 
-    hay = (str(rel) + "\n" + text[:16000]).lower()
-    for q in keywords:
-        if q.lower() in hay:
+
+def is_doc_file(rel: Path) -> bool:
+    if rel.suffix.lower() in DOC_FILE_EXTS:
+        return True
+    if rel.name.lower() in DOC_FILE_NAMES:
+        return True
+    for part in rel.parts:
+        if part.lower() in DOC_DIR_MARKERS:
             return True
-
-    if regexes:
-        sample = str(rel) + "\n" + text[:30000]
-        for reg in regexes:
-            if reg.search(sample):
-                return True
-
     return False
-
-
-def find_match_line_numbers(text: str, keywords: List[str], regexes: List[re.Pattern], max_hits: int = 20) -> List[int]:
-    if not keywords and not regexes:
-        return []
-
-    lines = text.splitlines()
-    hits: List[int] = []
-
-    for i, line in enumerate(lines, start=1):
-        ll = line.lower()
-        hit = False
-        for q in keywords:
-            if q.lower() in ll:
-                hit = True
-                break
-        if not hit:
-            for reg in regexes:
-                if reg.search(line):
-                    hit = True
-                    break
-        if hit:
-            hits.append(i)
-            if len(hits) >= max_hits:
-                break
-
-    return hits
-
-
-def merge_windows(windows: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
-    if not windows:
-        return []
-    windows.sort()
-    merged = [windows[0]]
-    for s, e in windows[1:]:
-        ps, pe = merged[-1]
-        if s <= pe + 1:
-            merged[-1] = (ps, max(pe, e))
-        else:
-            merged.append((s, e))
-    return merged
 
 
 def snippet_around_matches(
     text: str,
-    max_chars: int,
-    context_lines: int,
     keywords: List[str],
     regexes: List[re.Pattern],
+    context_lines: int,
     fallback_head_lines: int,
 ) -> str:
+    if not text.strip():
+        return ""
+
     lines = text.splitlines()
-    total = len(lines)
-    hits = find_match_line_numbers(text, keywords, regexes)
-    if not hits:
-        return trim_snippet(text, max_chars, fallback_head_lines)
+    hit_indices: Set[int] = set()
 
-    windows = []
-    for ln in hits:
-        s = max(1, ln - context_lines)
-        e = min(total, ln + context_lines)
-        windows.append((s, e))
+    for i, line in enumerate(lines):
+        for kw in keywords:
+            if kw.lower() in line.lower():
+                hit_indices.add(i)
+        for reg in regexes:
+            if reg.search(line):
+                hit_indices.add(i)
 
-    merged = merge_windows(windows)
+    if not hit_indices:
+        return "\n".join(lines[:fallback_head_lines])
 
-    out_parts: List[str] = []
-    used = 0
+    snippet_lines: List[str] = []
+    seen_intervals: Set[Tuple[int, int]] = set()
 
-    for idx, (s, e) in enumerate(merged, start=1):
-        header = f"# window-{idx} lines {s}-{e}\n"
-        block_lines = [f"{i:04d}|{lines[i-1]}" for i in range(s, e + 1)]
-        block = header + "\n".join(block_lines) + "\n"
+    for idx in sorted(hit_indices):
+        start = max(0, idx - context_lines)
+        end = min(len(lines), idx + context_lines + 1)
 
-        if used + len(block) > max_chars:
-            remain = max_chars - used
-            if remain > 100:
-                out_parts.append(block[:remain] + "\n...<truncated>")
-            break
-
-        out_parts.append(block)
-        used += len(block)
-
-        if idx < len(merged):
-            sep = "\n...<skipped>...\n"
-            if used + len(sep) > max_chars:
+        merged = False
+        for interval in list(seen_intervals):
+            if start <= interval[1]:
+                seen_intervals.remove(interval)
+                start = min(start, interval[0])
+                end = max(end, interval[1])
+                seen_intervals.add((start, end))
+                merged = True
                 break
-            out_parts.append(sep)
-            used += len(sep)
+        if not merged:
+            seen_intervals.add((start, end))
 
-    if not out_parts:
-        return trim_snippet(text, max_chars, fallback_head_lines)
+    for start, end in sorted(seen_intervals):
+        if snippet_lines:
+            snippet_lines.append("... (gap)")
+        snippet_lines.extend(lines[start:end])
 
-    return "".join(out_parts).rstrip()
-
-
-def is_documentation_file(rel: Path) -> bool:
-    parts = [p.lower() for p in rel.parts]
-    name = rel.name.lower()
-    suffix = rel.suffix.lower()
-
-    if any(p in DOC_DIR_MARKERS for p in parts):
-        return True
-
-    if name in DOC_FILE_NAMES:
-        return True
-
-    if suffix in DOC_FILE_EXTS:
-        return True
-
-    if name.startswith(("readme", "changelog", "contributing", "license", "history")):
-        return True
-
-    return False
+    return "\n".join(snippet_lines)
 
 
-def mode_name_of(mode_cfg: ModeConfig) -> str:
-    for k, v in MODE_MAP.items():
-        if v == mode_cfg:
-            return k
-    return "custom"
+def is_doc_name(name: str) -> bool:
+    return name.lower() in DOC_FILE_NAMES
 
 
-def build_payload(
+def build_context(
     root: Path,
-    files: List[Path],
     mode_cfg: ModeConfig,
+    all_mode: bool,
+    targets: List[str],
     include_keywords: List[str],
-    include_regex_patterns: List[str],
+    include_regexes: List[re.Pattern],
     exclude_keywords: List[str],
-    exclude_regex_patterns: List[str],
+    exclude_regexes: List[re.Pattern],
     ignore_docs: bool,
-    changed_only: bool,
-    changed_from: str,
-    changed_commit_range: str,
-    prompt: str,
     snippet_around_query: bool,
     snippet_context_lines: int,
-) -> Dict:
-    rel_files = [f.relative_to(root) for f in files]
-    include_regexes = compile_regexes(include_regex_patterns)
-    exclude_regexes = compile_regexes(exclude_regex_patterns)
+    changed_files: Optional[Set[Path]],
+    prompt: str,
+    full_mode: bool = False,
+    ignore_patterns: Optional[List[str]] = None,
+) -> str:
 
-    stats = {
-        "candidate_files": len(files),
-        "empty_or_unreadable": 0,
-        "filtered_by_include": 0,
-        "filtered_by_exclude": 0,
-        "filtered_by_docs": 0,
-        "indexed_files": 0,
-        "snippet_files": 0,
-        "snippet_truncated_files": 0,
-        "snippet_budget_truncated": False,
-        "global_truncated": False,
-    }
+    files: List[Path] = []
+    if changed_files is not None:
+        for p in sorted(changed_files, key=lambda x: x.name):
+            if should_include(p) and is_probably_text(p):
+                files.append(p)
+    elif all_mode or targets:
+        files = collect_files(root, all_mode, targets, mode_cfg.max_files,
+                              full_mode=full_mode, ignore_patterns=ignore_patterns)
+    files = files[: mode_cfg.max_files]
 
-    file_index = []
-    content_map: Dict[Path, str] = {}
-    total_size = 0
-
-    for rel, abs_path in zip(rel_files, files):
-        text = safe_read_text(abs_path)
-        if not text.strip():
-            stats["empty_or_unreadable"] += 1
-            continue
+    filtered: List[Tuple[Path, int]] = []
+    for f in files:
+        rel = f.relative_to(root)
+        text = safe_read_text(f)
         if not match_include(rel, text, include_keywords, include_regexes):
-            stats["filtered_by_include"] += 1
             continue
-        if match_exclude(rel, text, exclude_keywords, exclude_regexes):
-            stats["filtered_by_exclude"] += 1
+        if not match_exclude(rel, text, exclude_keywords, exclude_regexes):
             continue
-        if ignore_docs and is_documentation_file(rel):
-            stats["filtered_by_docs"] += 1
+        if ignore_docs and is_doc_file(rel):
             continue
+        filtered.append((f, file_priority(rel)))
+    filtered.sort(key=lambda x: (-x[1], str(x[0].relative_to(root))))
 
-        content_map[rel] = text
-        size = abs_path.stat().st_size
-        total_size += size
-        line_count = text.count("\n") + 1
-        symbols = extract_symbols(abs_path, text)
-        file_index.append({
-            "path": str(rel),
-            "bytes": size,
-            "lines": line_count,
-            "symbols": symbols,
-        })
+    tree_lines = build_tree(filtered, root)
 
-    stats["indexed_files"] = len(content_map)
+    entries: List[dict] = []
+    total_chars = 0
+    index_chars = 0
 
-    snippets = []
-    if mode_cfg.include_snippets:
-        ranked = sorted(content_map.items(), key=lambda kv: (-file_priority(kv[0]), len(kv[1]), str(kv[0])))
-        used = 0
+    for f, _ in filtered:
+        rel = f.relative_to(root)
+        text = safe_read_text(f)
+        lang = LANG_MAP.get(rel.suffix.lower(), "")
+        name = rel.name
 
-        for rel, text in ranked:
-            suffix = rel.suffix.lower()
-            lang = LANG_MAP.get(suffix, suffix.lstrip("."))
+        if snippet_around_query and (include_keywords or include_regexes):
+            body = snippet_around_matches(
+                text=text,
+                keywords=include_keywords,
+                regexes=include_regexes,
+                context_lines=snippet_context_lines,
+                fallback_head_lines=mode_cfg.snippet_head_lines,
+            )
+        else:
+            body = trim_snippet(text, mode_cfg.max_file_chars, mode_cfg.snippet_head_lines)
 
-            if snippet_around_query and (include_keywords or include_regexes):
-                body = snippet_around_matches(
-                    text=text,
-                    max_chars=mode_cfg.max_file_chars,
-                    context_lines=snippet_context_lines,
-                    keywords=include_keywords,
-                    regexes=include_regexes,
-                    fallback_head_lines=mode_cfg.snippet_head_lines,
-                )
-            else:
-                body = trim_snippet(text, mode_cfg.max_file_chars, mode_cfg.snippet_head_lines)
-
-            entry = {"path": str(rel), "lang": lang, "content": body}
-            est_len = len(body) + len(str(rel)) + 64
-            if used + est_len > mode_cfg.max_total_chars:
-                stats["snippet_budget_truncated"] = True
+        entry = {"path": str(rel), "lang": lang, "content": body}
+        est_len = len(body) + len(str(rel)) + 64
+        if mode_cfg.include_snippets:
+            if total_chars + est_len > mode_cfg.max_total_chars:
                 break
-            snippets.append(entry)
-            used += est_len
-            if "...<truncated>" in body:
-                stats["snippet_truncated_files"] += 1
+            entries.append(entry)
+            total_chars += est_len
+        else:
+            if index_chars + est_len > mode_cfg.max_total_chars:
+                break
+            entry["content"] = ""
+            entries.append(entry)
+            index_chars += est_len
 
-    stats["snippet_files"] = len(snippets)
-
-    meta = {
-        "root": str(root),
-        "files_indexed": len(content_map),
-        "total_size_bytes": total_size,
-        "mode": mode_name_of(mode_cfg),
-        "changed_only": changed_only,
-        "changed_from": changed_from or "(none)",
-        "changed_commit_range": changed_commit_range or "(none)",
-        "query": include_keywords,
-        "query_regex": include_regex_patterns,
-        "exclude": exclude_keywords,
-        "exclude_regex": exclude_regex_patterns,
-        "ignore_docs": ignore_docs,
-        "snippet_strategy": "around-query" if snippet_around_query else "head",
-        "snippet_context_lines": snippet_context_lines,
-    }
-
-    payload = {
-        "meta": meta,
-        "task_prompt": prompt.strip() if prompt else "请先根据 FILE INDEX 概括模块关系，再结合 CODE SNIPPETS 回答问题。",
-        "project_tree": build_tree([root / r for r in content_map.keys()], root) if content_map else "(empty)",
-        "file_index": file_index,
-        "snippets": snippets,
-        "quality_report": stats,
-    }
-    return payload
+    return format_output(entries, tree_lines, prompt, mode_cfg.include_snippets)
 
 
-def render_markdown(payload: Dict, mode_cfg: ModeConfig, with_quality: bool) -> str:
-    m = payload["meta"]
-    lines = [
-        "=== AI CONTEXT PACK ===",
-        f"root: {m['root']}",
-        f"files_indexed: {m['files_indexed']}",
-        f"total_size: {m['total_size_bytes']} bytes",
-        f"mode: {m['mode']}",
-        f"changed_only: {'yes' if m['changed_only'] else 'no'}",
-        f"changed_from: {m['changed_from']}",
-        f"changed_commit_range: {m['changed_commit_range']}",
-        f"query: {', '.join(m['query']) if m['query'] else '(none)'}",
-        f"query_regex: {', '.join(m['query_regex']) if m['query_regex'] else '(none)'}",
-        f"exclude: {', '.join(m['exclude']) if m['exclude'] else '(none)'}",
-        f"exclude_regex: {', '.join(m['exclude_regex']) if m['exclude_regex'] else '(none)'}",
-        f"ignore_docs: {'yes' if m['ignore_docs'] else 'no'}",
-        f"snippet_strategy: {m['snippet_strategy']}",
-        f"snippet_context_lines: {m['snippet_context_lines']}",
-    ]
-
-    sections = ["\n".join(lines)]
-    sections.append("=== TASK PROMPT ===\n" + payload["task_prompt"])
-    sections.append("=== PROJECT TREE ===\n" + payload["project_tree"])
-
-    fi_lines = []
-    for x in payload["file_index"]:
-        syms = ", ".join(x["symbols"]) if x["symbols"] else "-"
-        fi_lines.append(f"- {x['path']} | {x['bytes']} bytes | {x['lines']} lines | symbols: {syms}")
-    sections.append("=== FILE INDEX ===\n" + ("\n".join(fi_lines) if fi_lines else "(empty)"))
-
-    if mode_cfg.include_snippets:
-        sblocks = []
-        for s in payload["snippets"]:
-            sblocks.append(f"\n## FILE: {s['path']}\n```{s['lang']}\n{s['content']}\n```\n")
-        sections.append("=== CODE SNIPPETS ===\n" + ("".join(sblocks).strip() if sblocks else "(budget exceeded or empty)"))
-
-    if with_quality:
-        q = payload["quality_report"]
-        q_lines = [
-            "=== QUALITY REPORT ===",
-            f"candidate_files: {q['candidate_files']}",
-            f"empty_or_unreadable: {q['empty_or_unreadable']}",
-            f"filtered_by_include: {q['filtered_by_include']}",
-            f"filtered_by_exclude: {q['filtered_by_exclude']}",
-            f"indexed_files: {q['indexed_files']}",
-            f"snippet_files: {q['snippet_files']}",
-            f"snippet_truncated_files: {q['snippet_truncated_files']}",
-            f"snippet_budget_truncated: {'yes' if q['snippet_budget_truncated'] else 'no'}",
-        ]
-        sections.append("\n".join(q_lines))
-
-    result = "\n\n".join(sections)
-    if len(result) > mode_cfg.max_total_chars:
-        result = result[: mode_cfg.max_total_chars] + "\n\n...<global truncated>"
-        payload["quality_report"]["global_truncated"] = True
-    return result
+def build_tree(filtered: List[Tuple[Path, int]], root: Path) -> List[str]:
+    tree_lines: List[str] = []
+    dirs: Set[Path] = set()
+    for f, _ in filtered:
+        rel = f.relative_to(root)
+        for parent in reversed(rel.parents):
+            if parent != Path("."):
+                dirs.add(parent)
+        dirs.add(rel)
+    sorted_dirs = sorted(dirs, key=lambda p: str(p))
+    tree_lines.append(".")
+    for d in sorted_dirs:
+        indent = "  " * (len(d.parts) - 1) if d.parts else ""
+        if d.suffix:
+            tree_lines.append(f"{indent}{d.name}")
+        else:
+            tree_lines.append(f"{indent}{d.name}/")
+    return tree_lines
 
 
-def render_plain(payload: Dict, mode_cfg: ModeConfig, with_quality: bool) -> str:
-    m = payload["meta"]
-    out = []
-    out.append("AI CONTEXT PACK")
-    out.append(f"root={m['root']}")
-    out.append(f"files_indexed={m['files_indexed']}")
-    out.append(f"total_size_bytes={m['total_size_bytes']}")
-    out.append(f"mode={m['mode']}")
-    out.append(f"changed_only={m['changed_only']}")
-    out.append(f"changed_from={m['changed_from']}")
-    out.append(f"changed_commit_range={m['changed_commit_range']}")
-    out.append(f"query={','.join(m['query']) if m['query'] else '(none)'}")
-    out.append(f"query_regex={','.join(m['query_regex']) if m['query_regex'] else '(none)'}")
-    out.append(f"exclude={','.join(m['exclude']) if m['exclude'] else '(none)'}")
-    out.append(f"exclude_regex={','.join(m['exclude_regex']) if m['exclude_regex'] else '(none)'}")
-    out.append(f"ignore_docs={m['ignore_docs']}")
-    out.append("")
-    out.append("TASK PROMPT")
-    out.append(payload["task_prompt"])
-    out.append("")
-    out.append("PROJECT TREE")
-    out.append(payload["project_tree"])
-    out.append("")
-    out.append("FILE INDEX")
-    for x in payload["file_index"]:
-        syms = ",".join(x["symbols"]) if x["symbols"] else "-"
-        out.append(f"{x['path']} | {x['bytes']} bytes | {x['lines']} lines | symbols: {syms}")
-
-    if mode_cfg.include_snippets:
-        out.append("")
-        out.append("CODE SNIPPETS")
-        for s in payload["snippets"]:
-            out.append(f"----- FILE: {s['path']} ({s['lang']}) -----")
-            out.append(s["content"])
-            out.append("----- END FILE -----")
-
-    if with_quality:
-        q = payload["quality_report"]
-        out.append("")
-        out.append("QUALITY REPORT")
-        for k in [
-            "candidate_files", "empty_or_unreadable", "filtered_by_include", "filtered_by_exclude", "filtered_by_docs",
-            "indexed_files", "snippet_files", "snippet_truncated_files", "snippet_budget_truncated"
-        ]:
-            out.append(f"{k}={q[k]}")
-
-    result = "\n".join(out)
-    if len(result) > mode_cfg.max_total_chars:
-        result = result[: mode_cfg.max_total_chars] + "\n...<global truncated>"
-        payload["quality_report"]["global_truncated"] = True
-    return result
+def format_output(entries: List[dict], tree_lines: List[str], prompt: str, include_snippets: bool) -> str:
+    parts: List[str] = []
+    if prompt:
+        parts.append(f"## Task\n\n{prompt}\n")
+    parts.append("## Project Tree\n")
+    parts.append("```\n" + "\n".join(tree_lines) + "\n```\n")
+    parts.append("## File Index\n")
+    for e in entries:
+        p = e["path"]
+        lang = e["lang"]
+        if lang:
+            parts.append(f"- {p} [{lang}]")
+        else:
+            parts.append(f"- {p}")
+    if include_snippets:
+        parts.append("\n")
+        parts.append("## Code Snippets\n")
+        for e in entries:
+            if e["content"]:
+                parts.append(f"### {e['path']}\n")
+                parts.append(f"```{e['lang']}\n{e['content']}\n```\n")
+    return "\n".join(parts)
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Build AI context text from project files")
     p.add_argument("--root", default=".", help="Project root")
-    p.add_argument("--mode", choices=["fast", "balanced", "deep"], default="balanced")
+    p.add_argument("--mode", choices=["fast", "balanced", "deep", "full"], default="balanced")
     p.add_argument("--all", action="store_true", help="Scan all files under root")
     p.add_argument("--target", action="append", default=[], help="Specific file/dir target (repeatable)")
-
     p.add_argument("--query", action="append", default=[], help="Include by keyword (path/content, repeatable)")
     p.add_argument("--query-regex", action="append", default=[], help="Include by regex (repeatable)")
     p.add_argument("--exclude", action="append", default=[], help="Exclude by keyword (path/content, repeatable)")
     p.add_argument("--exclude-regex", action="append", default=[], help="Exclude by regex (repeatable)")
     p.add_argument("--ignore-docs", action="store_true", help="Ignore documentation files (doxygen/markdown/sphinx/wiki/manual etc.)")
-
     p.add_argument("--changed", action="store_true", help="Only include git changed/untracked files (vs HEAD)")
     p.add_argument("--changed-from", default="", help="Only include git changed/untracked files (vs ref)")
     p.add_argument("--changed-commit-range", default="", help="Only include git changed/untracked files (vs commit range, e.g. A..B)")
-
     p.add_argument("--prompt", default="", help="Task prompt prepend in output")
     p.add_argument("--snippet-around-query", action="store_true", help="Use query-hit neighborhood snippets instead of file head")
     p.add_argument("--snippet-context-lines", type=int, default=24, help="Context lines around query hits")
-
     p.add_argument("--output-format", choices=["markdown", "plain", "json"], default="markdown")
     p.add_argument("--max-files", type=int, default=0, help="Override per-run max files (0=mode default)")
     p.add_argument("--max-total-chars", type=int, default=0, help="Override per-run output max chars (0=mode default)")
@@ -716,9 +572,10 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def main() -> int:
+def main() -> None:
     args = parse_args()
     root = Path(args.root).resolve()
+
     base = MODE_MAP[args.mode]
 
     mode_cfg = ModeConfig(
@@ -729,52 +586,44 @@ def main() -> int:
         include_snippets=base.include_snippets,
     )
 
-    files = collect_files(root, args.all, args.target, mode_cfg.max_files)
+    include_keywords: List[str] = args.query
+    include_regexes = compile_regexes(args.query_regex)
+    exclude_keywords: List[str] = args.exclude
+    exclude_regexes = compile_regexes(args.exclude_regex)
 
-    changed_enabled = args.changed or bool(args.changed_from) or bool(args.changed_commit_range)
-    if changed_enabled:
-        changed = git_changed_files(root, args.changed_from or None, args.changed_commit_range or None)
-        files = [f for f in files if f in changed]
+    changed_files: Optional[Set[Path]] = None
+    if args.changed or args.changed_from or args.changed_commit_range:
+        changed_files = git_changed_files(root, args.changed_from, args.changed_commit_range)
 
-    if not files:
-        print("[aicp] 未找到可用的文本代码文件。")
-        return 2
+    ignore_patterns = load_ignore_patterns(root)
+    full_mode = (args.mode == "full")
 
-    ctx_lines = max(1, min(args.snippet_context_lines, 200))
-
-    payload = build_payload(
+    context = build_context(
         root=root,
-        files=files,
         mode_cfg=mode_cfg,
-        include_keywords=args.query,
-        include_regex_patterns=args.query_regex,
-        exclude_keywords=args.exclude,
-        exclude_regex_patterns=args.exclude_regex,
+        all_mode=args.all,
+        targets=args.target,
+        include_keywords=include_keywords,
+        include_regexes=include_regexes,
+        exclude_keywords=exclude_keywords,
+        exclude_regexes=exclude_regexes,
         ignore_docs=args.ignore_docs,
-        changed_only=changed_enabled,
-        changed_from=args.changed_from,
-        changed_commit_range=args.changed_commit_range,
-        prompt=args.prompt,
         snippet_around_query=args.snippet_around_query,
-        snippet_context_lines=ctx_lines,
+        snippet_context_lines=args.snippet_context_lines,
+        changed_files=changed_files,
+        prompt=args.prompt,
+        full_mode=full_mode,
+        ignore_patterns=ignore_patterns,
     )
 
-    if args.output_format == "json":
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-        return 0
-
-    if args.output_format == "plain":
-        out = render_plain(payload, mode_cfg, with_quality=args.quality_report)
+    output_format = args.output_format
+    if output_format == "plain":
+        print(context)
+    elif output_format == "json":
+        print(json.dumps({"context": context}, ensure_ascii=False, indent=2))
     else:
-        out = render_markdown(payload, mode_cfg, with_quality=args.quality_report)
-
-    if "AI CONTEXT PACK" not in out:
-        print("[aicp] 生成结果异常。")
-        return 3
-
-    print(out)
-    return 0
+        print(context)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

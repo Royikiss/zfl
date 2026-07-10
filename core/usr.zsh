@@ -35,3 +35,7 @@ export PATH=$PATH:~/.local/bin
 
 
 [[ -s /usr/share/autojump/autojump.zsh ]] && source /usr/share/autojump/autojump.zsh
+
+export PATH="$HOME/.cargo/bin:$PATH"
+
+

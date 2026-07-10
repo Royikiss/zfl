@@ -86,6 +86,13 @@
 - 含时间戳：`.timestamp`（epoch）。
 - 超时后可自动回收（见环境变量）。
 
+5) `CheckUpdateProcess.lock/`
+- 含义：`check_update` 进程锁目录（整机唯一实例）。
+- 字段：
+  - `pid`（进程号）
+  - `.timestamp`（epoch）
+- 若进程已退出，下一次运行会回收旧锁并重新加锁。
+
 备注：标记文件会以只读权限保存（0400），写入前临时放开权限，写完再恢复，防止误改。
 
 ---
@@ -134,7 +141,11 @@
 - 若锁时间戳超过阈值，自动回收锁后重建。
 - 非法值会回退到默认值。
 
-3) `CHECK_UPDATE_PROMPT_POLICY`
+3) `CHECK_UPDATE_PROCESS_LOCK`
+- 含义：进程锁目录（默认 `~/.cache/zsh/CheckUpdateProcess.lock`）。
+- 作用：确保同一台机器同一时刻只有一个 `check_update` 实例运行。
+
+4) `CHECK_UPDATE_PROMPT_POLICY`
 - 可选值：
   - `pending_first`（默认）
     - 同天若仍有待更新包，仍会提示（减少漏更新）。

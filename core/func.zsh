@@ -12,10 +12,14 @@ lazy_load_functions() {
 	"$@"
 }
 
-# 懒加载预处理:遍历函数目录，为每个函数创建占位符
+# 懒加载预处理:遍历函数目录，为每个函数创建占位符与补全占位符
 for file in $ZFL_HOME/functions/*.zsh; do
   func_name=$(basename $file .zsh)
   eval "${func_name}() { lazy_load_functions ${func_name} \"\$@\"; }"
+  eval "_${func_name}() { unfunction _${func_name} 2>/dev/null; source \"\$ZFL_HOME/functions/${func_name}.zsh\"; if whence -f _${func_name} >/dev/null; then _${func_name} \"\$@\"; else _default \"\$@\"; fi }"
+  if whence compdef >/dev/null; then
+    compdef "_${func_name}" "${func_name}"
+  fi
 done
 
 # =========================

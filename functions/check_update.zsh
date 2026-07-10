@@ -18,6 +18,39 @@ _check_update_run_with_timeout() {
     fi
 }
 
+# 进程锁：确保同一台机器只有一个 check_update 实例运行
+_check_update_acquire_process_lock() {
+    local lock_dir=$1
+    local pid_file="$lock_dir/pid"
+    local ts_file="$lock_dir/.timestamp"
+    local existing_pid=""
+
+    if mkdir "$lock_dir" 2>/dev/null; then
+        echo "$$" > "$pid_file" 2>/dev/null || true
+        echo "$(date +%s)" > "$ts_file" 2>/dev/null || true
+        return 0
+    fi
+
+    if [[ -f "$pid_file" ]]; then
+        existing_pid=$(cat "$pid_file" 2>/dev/null)
+        # 若锁的 pid 就是当前 shell（$$ 在函数里始终是交互式 shell pid），
+        # 说明是本 shell 上次运行留下的陈旧锁，直接回收而非阻塞。
+        if [[ "$existing_pid" == <-> ]] && [[ "$existing_pid" != "$$" ]] && kill -0 "$existing_pid" 2>/dev/null; then
+            return 1
+        fi
+    fi
+
+    # 锁存在但进程不在：回收后重试一次
+    rm -rf "$lock_dir" 2>/dev/null || true
+    if mkdir "$lock_dir" 2>/dev/null; then
+        echo "$$" > "$pid_file" 2>/dev/null || true
+        echo "$(date +%s)" > "$ts_file" 2>/dev/null || true
+        return 0
+    fi
+
+    return 1
+}
+
 # 将“秒差”格式化为更友好的中文年龄文案
 _check_update_format_age() {
     local age_seconds=$1
@@ -82,6 +115,8 @@ check_update - 启动时包更新检查与交互更新
                  更新数量缓存有效期（秒），默认 1800
   CHECK_UPDATE_LOCK_STALE_SECONDS
                  后台刷新锁超时阈值（秒），默认 600；超过则自动回收陈旧锁
+  CHECK_UPDATE_PROCESS_LOCK
+                 进程锁目录（默认 ~/.cache/zsh/CheckUpdateProcess.lock）
   CHECK_UPDATE_PROMPT_POLICY
                  提示策略：pending_first | once_per_day | strict_daily（默认 pending_first）
 
@@ -505,14 +540,21 @@ check_update() {
     local PromptFlag="$cache_dir/UpdatePromptFlag.lock"           # 记录“上次拒绝提示日期（避免当天重复打扰）"
     local CountCache="$cache_dir/UpdateCountCache.lock"           # 记录“上次更新数量缓存”
     local RefreshLockDir="$cache_dir/UpdateRefresh.lock"          # 后台刷新互斥锁
+    local ProcessLockDir="${CHECK_UPDATE_PROCESS_LOCK:-$cache_dir/CheckUpdateProcess.lock}"     # 进程锁：整机唯一实例
     local cache_ttl_seconds
     cache_ttl_seconds=$(_check_update_int_or_default "${CHECK_UPDATE_CACHE_TTL_SECONDS:-1800}" 1800)
     local lock_stale_seconds
     lock_stale_seconds=$(_check_update_int_or_default "${CHECK_UPDATE_LOCK_STALE_SECONDS:-600}" 600)
     local prompt_policy
-    prompt_policy=$(_check_update_normalize_prompt_policy "${CHECK_UPDATE_PROMPT_POLICY:-pending_first}")
+    prompt_policy=$(_check_update_normalize_prompt_policy "${CHECK_UPDATE_PROMPT_POLICY:-once_per_day}")
 
     mkdir -p "$cache_dir"
+
+    if ! _check_update_acquire_process_lock "$ProcessLockDir"; then
+        return 0
+    fi
+
+    trap "rm -rf '$ProcessLockDir' 2>/dev/null" EXIT INT TERM
 
     local today=$(date "+%Y-%m-%d")
     local now_epoch
