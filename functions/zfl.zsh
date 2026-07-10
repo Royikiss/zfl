@@ -306,6 +306,22 @@ _zfl_remove() {
 
     echo -e "${GREEN}[SUCCESS]${RESET} 已删除函数文件: ${path_found}"
 
+    # 检测并同步删除技术文档
+    local doc_file="$ZFL_HOME/docs/${target}.md"
+    local confirm_doc
+    if [[ -f "$doc_file" ]]; then
+        echo -e "${YELLOW}检测到该函数关联的技术文档 ${BOLD}${doc_file}${RESET}${YELLOW}，是否一并删除？ [y/N]${RESET}"
+        read -r confirm_doc
+        if [[ "$confirm_doc" == [yY] || "$confirm_doc" == [yY][eE][sS] ]]; then
+            rm "$doc_file" || {
+                echo -e "${RED}[WARNING]${RESET} 无法删除文档文件 ${doc_file}。" >&2
+            }
+            echo -e "${GREEN}[SUCCESS]${RESET} 已删除文档文件: ${doc_file}"
+        else
+            echo "保留文档文件。"
+        fi
+    fi
+
     # 清理当前会话的函数和补全
     if whence -f "$target" >/dev/null; then
         unfunction "$target" 2>/dev/null

@@ -42,7 +42,6 @@ zsh/
 │   ├── check_update.zsh           # 异步只读检查系统可用更新并在终端提示，支持 Pacman/AUR 和 Flatpak
 │   ├── countText.zsh              # 根据传入模式统计文本文件中的字数/汉字数
 │   ├── link_skills.zsh            # 选择性地将 ~/.agents/skills 中的技能软链接到当前项目的 .agents/skills/ 中
-│   ├── verge-ipc-link.zsh         # 建立 Clash Verge 服务的 IPC Socket 软链接配置辅助
 │   ├── weather.zsh                # 终端快速查询实时天气与天气预报
 │   └── zfl.zsh                    # ZFL 框架内置命令行管理与自发现工具
 ├── custom_functions/              # 用户本地私有函数目录 (已被 gitignore 忽略)
@@ -58,7 +57,6 @@ zsh/
 │   ├── check_update.md            # 异步只读更新统计与交互式系统升级
 │   ├── countText.md               # 中英文混排文本字数统计工具
 │   ├── link_skills.md             # 软链接全局 AI Agent 技能配置到本地项目
-│   ├── verge-ipc-link.md          # Clash Verge IPC Socket 软链接配置辅助
 │   ├── weather.md                 # 终端快速查询实时天气与天气预报
 │   └── zfl.md                     # ZFL 框架内置命令行管理与自发现工具
 └── automation/                    # AI 编程自动化检测与同步脚本
