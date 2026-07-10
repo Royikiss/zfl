@@ -457,7 +457,30 @@ _check_update_qa() {
     local cache_ttl_seconds=$6
     local refresh_in_progress=$7
 
-    local days=$(( ( $(date -d "$now" +%s ) - $(date -d "$last" +%s) ) / 86400 ))
+    local last_epoch="" now_epoch_val=""
+    if zmodload zsh/datetime 2>/dev/null; then
+        last_epoch=$(strftime -r "%Y-%m-%d" "$last" 2>/dev/null)
+        now_epoch_val=$(strftime -r "%Y-%m-%d" "$now" 2>/dev/null)
+    fi
+
+    # 降级：若 Zsh 内置模块不可用或解析失败，尝试外部 date 命令
+    if [[ -z "$last_epoch" || -z "$now_epoch_val" ]]; then
+        if command -v date >/dev/null 2>&1; then
+            # 1. 尝试 GNU date -d (Linux)
+            last_epoch=$(date -d "$last" +%s 2>/dev/null)
+            now_epoch_val=$(date -d "$now" +%s 2>/dev/null)
+            # 2. 尝试 BSD/macOS date -j -f
+            if [[ -z "$last_epoch" || -z "$now_epoch_val" ]]; then
+                last_epoch=$(date -j -f "%Y-%m-%d" "$last" "+%s" 2>/dev/null)
+                now_epoch_val=$(date -j -f "%Y-%m-%d" "$now" "+%s" 2>/dev/null)
+            fi
+        fi
+    fi
+
+    local days=0
+    if [[ -n "$last_epoch" && -n "$now_epoch_val" ]]; then
+        days=$(( (now_epoch_val - last_epoch) / 86400 ))
+    fi
     local -a available_backends
     local ans cache_age cache_age_human
 
