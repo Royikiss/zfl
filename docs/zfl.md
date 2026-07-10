@@ -32,6 +32,8 @@ zfl <子命令> [参数]
     扫描所有函数声明的外部系统依赖，检查它们在当前系统中是否已安装，并给出检测状态。
 *   **`lint [函数名...]`**
     对指定的函数文件（或不传参时对所有函数）进行代码静态质量与规范校验。
+*   **`remove <函数名>` 或 `rm <函数名>`**
+    安全删除指定的函数文件（会提示确认 `[y/N]`），并在当前会话中卸载该函数与补全代理（`unfunction`），同时自动同步项目结构树。
 *   **`help` 或 `-h`**
     显示帮助说明。
 
@@ -45,6 +47,7 @@ zfl info weather    # 查看 weather 工具的元数据
 zfl check           # 校验所有函数的外部依赖状态
 zfl lint weather    # 校验 weather 函数的代码规范与潜在泄漏风险
 zfl lint            # 校验 functions/ 和 custom_functions/ 下的所有脚本
+zfl remove weather  # 安全删除 weather 函数文件并清理当前终端的会话与结构树
 ```
 
 ---

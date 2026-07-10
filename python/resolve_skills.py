@@ -10,7 +10,7 @@ GROUPS_FILE = os.path.expanduser("~/.cache/zsh/skills_groups.json")
 
 DEFAULT_GROUPS = {
     "startup": {
-        "name": "极简创业者 (Startup)",
+        "name": "极简创业者",
         "skills": [
             "validate-idea",
             "find-community",
@@ -23,7 +23,7 @@ DEFAULT_GROUPS = {
         ]
     },
     "dev": {
-        "name": "日常开发协作 (Development)",
+        "name": "日常开发协作",
         "skills": [
             "prototype",
             "improve-codebase-architecture",
@@ -53,6 +53,20 @@ def load_groups():
         with open(GROUPS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
             if isinstance(data, dict):
+                # Migrate old default names if present
+                migrated = False
+                old_names = {"极简创业者 (Startup)": "极简创业者", "日常开发协作 (Development)": "日常开发协作"}
+                for gid, new_name in old_names.items():
+                    if gid in data and isinstance(data[gid], dict) and data[gid].get("name") == gid:
+                        data[gid]["name"] = new_name
+                        migrated = True
+                    # Also support if the key is 'startup' or 'dev' but name is the old one
+                    for k in ("startup", "dev"):
+                        if k in data and isinstance(data[k], dict) and data[k].get("name") == ( "极简创业者 (Startup)" if k == "startup" else "日常开发协作 (Development)" ):
+                            data[k]["name"] = old_names[data[k]["name"]]
+                            migrated = True
+                if migrated:
+                    save_groups(data)
                 return data
     except Exception:
         pass

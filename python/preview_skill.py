@@ -192,7 +192,7 @@ def main():
             groups = {}
         
         if gkey not in groups:
-            print(f"\033[1;31mError: Group '{gkey}' not found\033[0m")
+            print(f"\033[1;31m错误：未找到分组 '{gkey}'\033[0m")
             sys.exit(0)
             
         ginfo = groups[gkey]
@@ -249,8 +249,8 @@ def main():
     en_path = os.path.join(skill_dir, "SKILL.md")
 
     if not os.path.exists(en_path):
-        print(f"\033[1;31mError: SKILL.md not found for skill '{skill}'\033[0m")
-        print(f"Path searched: {en_path}")
+        print(f"\033[1;31m错误：未找到技能 '{skill}' 的 SKILL.md 文件\033[0m")
+        print(f"搜索路径: {en_path}")
         sys.exit(0)
 
     # 1. Load user cache translation DB from ~/.cache/zsh/skills_zh.json (initialize if needed)
@@ -319,9 +319,9 @@ def main():
     # Print layout
     print("\033[1;36m" + "=" * 55 + "\033[0m")
     if name_zh:
-        print(f"\033[1;32m Skill: \033[1;37m{name_en} ({name_zh})\033[0m")
+        print(f"\033[1;32m 技能: \033[1;37m{name_zh} ({name_en})\033[0m")
     else:
-        print(f"\033[1;32m Skill: \033[1;37m{name_en}\033[0m")
+        print(f"\033[1;32m 技能: \033[1;37m{name_en}\033[0m")
     print("\033[1;36m" + "=" * 55 + "\033[0m")
     
     # Chinese Description
@@ -333,7 +333,7 @@ def main():
 
     # English Description
     if desc_en_lines:
-        print("\033[1;33mDescription (EN):\033[0m")
+        print("\033[1;33m功能描述 (英文):\033[0m")
         for line in desc_en_lines:
             print(f"  {line}")
         print("\033[1;36m" + "-" * 55 + "\033[0m")
@@ -345,7 +345,7 @@ def main():
         print("\033[1;36m" + "-" * 55 + "\033[0m")
 
     # Content Preview (bilingual body if zh exists)
-    print("\033[1;34m内容预览 (Content Preview):\033[0m")
+    print("\033[1;34m内容预览:\033[0m")
     body_to_print = zh_body if zh_body else en_body
     if body_to_print:
         body_lines = body_to_print.strip().split("\n")

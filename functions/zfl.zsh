@@ -74,6 +74,7 @@ zfl - Zsh Function Library (ZFL) 管理工具
   info <函数名>    查看特定函数的详细元数据与用法
   check            检查所有函数的外部依赖项是否已安装
   lint [函数名...] 对指定的函数或全部函数进行静态质量校验
+  remove, rm <名>  安全删除指定的函数文件并清理占位符与补全
   help, -h         显示此帮助信息
 
 示例:
@@ -81,6 +82,7 @@ zfl - Zsh Function Library (ZFL) 管理工具
   zfl info weather
   zfl check
   zfl lint weather
+  zfl remove weather
 EOF
 }
 
@@ -261,6 +263,66 @@ _zfl_lint() {
     python3 "$ZFL_HOME/python/zfl_lint.py" "${files_to_lint[@]}"
 }
 
+_zfl_remove() {
+    load_color RED GREEN YELLOW RESET BOLD
+    local target=$1
+    if [[ -z "$target" ]]; then
+        echo -e "${RED}[ERROR]${RESET} 请指定要删除的函数名称。例如: zfl remove weather" >&2
+        return 1
+    fi
+
+    # 保护 zfl 自己，不要把自己删了
+    if [[ "$target" == "zfl" ]]; then
+        echo -e "${RED}[ERROR]${RESET} 不能删除 zfl 核心管理工具本身！" >&2
+        return 1
+    fi
+
+    local file path_found="" dir
+    for dir in "$ZFL_HOME/functions" "$ZFL_HOME/custom_functions"; do
+        if [[ -f "$dir/${target}.zsh" ]]; then
+            path_found="$dir/${target}.zsh"
+            break
+        fi
+    done
+
+    if [[ -z "$path_found" ]]; then
+        echo -e "${RED}[ERROR]${RESET} 函数 '${target}' 不存在。" >&2
+        return 1
+    fi
+
+    echo -e "${YELLOW}确定要删除函数文件 ${BOLD}${path_found}${RESET}${YELLOW} 吗？ [y/N]${RESET}"
+    local confirm
+    read -r confirm
+    if [[ "$confirm" != [yY] && "$confirm" != [yY][eE][sS] ]]; then
+        echo "已取消删除。"
+        return 0
+    fi
+
+    # 删除文件
+    rm "$path_found" || {
+        echo -e "${RED}[ERROR]${RESET} 无法删除文件 ${path_found}。" >&2
+        return 1
+    }
+
+    echo -e "${GREEN}[SUCCESS]${RESET} 已删除函数文件: ${path_found}"
+
+    # 清理当前会话的函数和补全
+    if whence -f "$target" >/dev/null; then
+        unfunction "$target" 2>/dev/null
+        echo -e "${GREEN}[CLEAN]${RESET} 已卸载当前会话中的函数 ${target}"
+    fi
+    if whence -f "_$target" >/dev/null; then
+        unfunction "_$target" 2>/dev/null
+        echo -e "${GREEN}[CLEAN]${RESET} 已卸载当前会话中的补全代理 _$target"
+    fi
+
+    # 同步项目结构树
+    if [[ -f "$ZFL_HOME/automation/sync_readme.py" ]]; then
+        echo -e "正在同步项目结构树..."
+        python3 "$ZFL_HOME/automation/sync_readme.py"
+    fi
+}
+
 zfl() {
     load_color RED GREEN RESET
 
@@ -284,6 +346,9 @@ zfl() {
         lint)
             _zfl_lint "$@"
             ;;
+        remove|rm)
+            _zfl_remove "$@"
+            ;;
         -h|--help|help)
             _zfl_help
             ;;
@@ -304,6 +369,8 @@ _zfl() {
         'info:查看特定函数的详细元数据'
         'check:检查所有函数的外部依赖项'
         'lint:对指定的函数或全部函数进行静态质量校验'
+        'remove:安全删除指定的函数文件并清理桩函数'
+        'rm:安全删除指定的函数文件并清理桩函数'
         'help:显示帮助信息'
     )
 
@@ -311,7 +378,7 @@ _zfl() {
         _describe -t commands 'zfl 子命令' commands
     elif (( CURRENT == 3 )); then
         case "$words[2]" in
-            info|lint)
+            info|lint|remove|rm)
                 local -a funcs
                 local dir file fname
                 for dir in "$ZFL_HOME/functions" "$ZFL_HOME/custom_functions"; do
