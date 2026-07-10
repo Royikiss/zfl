@@ -28,31 +28,40 @@ ZFL 是一个面向高性能、模块化的 Zsh 配置与函数库。在保持 S
 
 ```bash
 zsh/
-├── base.zsh                      # 框架总入口（导出 ZFL_HOME 并加载核心模块）
-├── core/                         # 核心调度与公共模块
-│   ├── colors.zsh                # 预设的 ANSI 颜色与样式定义
-│   ├── func.zsh                  # 懒加载核心引擎（含颜色加载器、依赖检测器与补全代理）
-│   ├── startup_tasks.zsh         # 非阻塞启动任务执行器（FD 3 隔离）
-│   ├── startup_task_commands.zsh # 启动执行任务白名单
-│   └── usr.zsh                   # 用户个性化配置层（可在此填写别名、代理等）
-├── functions/                    # 模块化业务函数目录 (文件名与函数名 1:1 映射)
-│   ├── add_task.zsh              # 启动任务管理 CLI
-│   ├── aicp.zsh                  # AI 上下文打包与交互式协作执行
-│   ├── check_update.zsh          # 异步只读更新统计与交互式升级
-│   ├── countText.zsh             # 中英文数字字数统计工具
-│   ├── link_skills.zsh           # 软链接 Agent 认知技能包工具 (fzf 交互式)
-│   ├── verge-ipc-link.zsh        # Clash Verge 服务的 IPC Socket 软链接辅助
-│   ├── weather.zsh               # 天气快速查询 (wttr.in)
-│   └── zfl.zsh                   # ZFL 框架内置命令行管理与自发现工具
-├── custom_functions/             # 用户本地私有函数目录 (已被 gitignore 忽略)
-├── python/                       # 跨语言脚本辅助
-│   ├── aicp_context.py           # aicp 核心的 Token 计数与上下文生成逻辑
-│   └── preview_skill.py          # AI Skill 预览展示
-└── docs/                         # 技术设计、机制说明及排障避坑文档
-    ├── aicp.md                   # AICP 详细设计与使用说明
-    ├── aicp-exec-bug.md          # Wayland 终端下 wl-copy 导致 stdin 非阻塞闪退排障记录
-    ├── check_update.md           # 自动更新检测设计、缓存及状态机制文档
-    └── zfl.md                    # 内置管理工具及社区/用户脚本规范文档
+├── base.zsh                       # 框架总入口（导出 ZFL_HOME 并加载核心模块）
+├── core/                          # 核心调度与公共模块
+│   ├── colors.zsh                 # 预设的 ANSI 颜色与样式定义
+│   ├── func.zsh                   # 懒加载核心引擎（含颜色加载器、依赖检测器与补全代理）
+│   ├── startup_task_commands.zsh  # 启动执行任务白名单
+│   ├── startup_tasks.zsh          # 非阻塞启动任务执行器（FD 3 隔离）
+│   ├── usr.zsh                    # 用户个性化配置层（可在此填写别名、代理等）
+│   └── usr.zsh.example
+├── functions/                     # 模块化业务函数目录 (文件名与函数名 1:1 映射)
+│   ├── add_task.zsh               # 管理后台非阻塞启动自动执行任务列表 (白名单管理)
+│   ├── aicp.zsh                   # 生成适合投喂 AI 的项目上下文（目录树 + 文件索引 + 代码片段预算裁剪）
+│   ├── check_update.zsh           # 异步只读检查系统可用更新并在终端提示，支持 Pacman/AUR 和 Flatpak
+│   ├── countText.zsh              # 根据传入模式统计文本文件中的字数/汉字数
+│   ├── link_skills.zsh            # 选择性地将 ~/.agents/skills 中的技能软链接到当前项目的 .agents/skills/ 中
+│   ├── verge-ipc-link.zsh         # 建立 Clash Verge 服务的 IPC Socket 软链接配置辅助
+│   ├── weather.zsh                # 终端快速查询实时天气与天气预报
+│   └── zfl.zsh                    # ZFL 框架内置命令行管理与自发现工具
+├── custom_functions/              # 用户本地私有函数目录 (已被 gitignore 忽略)
+├── python/                        # 跨语言脚本辅助
+│   ├── aicp_context.py            # aicp 核心的 Token 计数与上下文生成逻辑
+│   ├── list_skills_fzf.py
+│   ├── preview_skill.py           # AI Skill 预览展示
+│   └── zfl_lint.py
+├── docs/                          # 技术设计、机制说明及排障避坑文档
+│   ├── add_task.md                # 后台非阻塞启动任务管理
+│   ├── aicp.md                    # AI 协作工具（上下文打包、Token 计数与 `--exec` 交互协作模式）
+│   ├── check_update.md            # 异步只读更新统计与交互式系统升级
+│   ├── countText.md               # 中英文混排文本字数统计工具
+│   ├── link_skills.md             # 软链接全局 AI Agent 技能配置到本地项目
+│   ├── verge-ipc-link.md          # Clash Verge IPC Socket 软链接配置辅助
+│   ├── weather.md                 # 终端快速查询实时天气与天气预报
+│   └── zfl.md                     # ZFL 框架内置命令行管理与自发现工具
+└── automation/                    # AI 编程自动化检测与同步脚本
+    └── sync_readme.py             # README.md 项目结构树自动同步与检测工具
 ```
 
 ---

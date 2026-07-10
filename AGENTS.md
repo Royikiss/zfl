@@ -29,6 +29,8 @@
   - 此目录在 `.gitignore` 中被忽略，用于用户存放个人的自定义非公开脚本，防止 Git 合并冲突。
 - **[python/](file:///home/royi/.config/zsh/python/)**：跨语言辅助脚本，如 [zfl_lint.py](file:///home/royi/.config/zsh/python/zfl_lint.py)（静态代码质检分析）、[aicp_context.py](file:///home/royi/.config/zsh/python/aicp_context.py) 与 [preview_skill.py](file:///home/royi/.config/zsh/python/preview_skill.py)。
 - **[docs/](file:///home/royi/.config/zsh/docs/)**：框架核心机制的技术设计与避坑文档。
+- **[automation/](file:///home/royi/.config/zsh/automation/)**：AI 编程自动化检测与同步脚本目录。
+  - [sync_readme.py](file:///home/royi/.config/zsh/automation/sync_readme.py)：项目结构树自动同步脚本，用于根据物理目录文件和元数据动态更新 `README.md`。
 - **[.github/workflows/](file:///home/royi/.config/zsh/.github/workflows/)**：包含 [lint.yml](file:///home/royi/.config/zsh/.github/workflows/lint.yml) 自动化门禁配置文件。
 
 ---
@@ -63,4 +65,5 @@ AI 助手在新增、修复或重构函数时，**必须满足以下开发准则
 7.  **FD 3 安全关闭**：任何后台任务（`&`）或 fork 子 shell 的命令中，必须在其指令流中添加 `3<&-` 进行安全关闭重定向。
 8.  **本地自检与测试**：在提交任何修改前，必须运行本地 `zfl lint <函数名>`，确认状态为 **完美通过**（返回状态码 `0`）。
 9.  **Python 脚本与副产物规范**：在 `python/` 目录下只编写用于辅助 `functions/` 的跨语言辅助 Python 脚本。运行期间由脚本产生的任何用户个性化副产物（如缓存、自动翻译结果、配置副本等）必须统一存放于 `~/.cache/zsh/` 下，严禁污染或修改全局共享技能目录（`~/.agents/skills/`）或其他非暂存的代码路径。
+10. **项目结构文档同步**：每次 AI 助手执行完开发、新增或删除文件任务后，在任务确认前**必须运行** `python3 automation/sync_readme.py`，以同步更新 `README.md` 的项目目录结构树。
 
