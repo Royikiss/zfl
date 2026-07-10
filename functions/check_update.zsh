@@ -515,6 +515,7 @@ _check_update_qa() {
 
 # 主函数：这是会被懒加载触发的入口
 check_update() {
+    setopt local_traps
     local arg
     local force_update=0
 
