@@ -162,6 +162,25 @@ def main():
     # Load translations from ~/.cache/zsh/skills_zh.json (initialize if needed)
     user_translations = load_user_translations()
 
+    # Load groups and print them first
+    groups = {}
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import resolve_skills
+        groups = resolve_skills.load_groups()
+    except Exception:
+        pass
+
+    for gid, info in sorted(groups.items()):
+        if isinstance(info, dict):
+            name = info.get("name", gid)
+            gskills = info.get("skills", [])
+        else:
+            name = gid
+            gskills = info
+        gskills_str = ", ".join(gskills)
+        print(f"group:{gid} | [分组: {name}] 包含: {gskills_str}")
+
     # Scan available skills
     skills = []
     for entry in sorted(os.listdir(skills_dir)):

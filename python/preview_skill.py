@@ -179,6 +179,71 @@ def main():
         sys.exit(1)
 
     skill = sys.argv[1]
+
+    if skill.startswith("group:"):
+        # Group preview logic
+        gkey = skill[6:]
+        # Load groups
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        try:
+            import resolve_skills
+            groups = resolve_skills.load_groups()
+        except Exception:
+            groups = {}
+        
+        if gkey not in groups:
+            print(f"\033[1;31mError: Group '{gkey}' not found\033[0m")
+            sys.exit(0)
+            
+        ginfo = groups[gkey]
+        if isinstance(ginfo, dict):
+            gname = ginfo.get("name", gkey)
+            gskills = ginfo.get("skills", [])
+        else:
+            gname = gkey
+            gskills = ginfo
+            
+        print("\033[1;36m" + "=" * 55 + "\033[0m")
+        print(f"\033[1;32m 技能分组: \033[1;37m{gname} ({gkey})\033[0m")
+        print("\033[1;36m" + "=" * 55 + "\033[0m")
+        print(f"\033[1;35m💡 该分组包含以下 {len(gskills)} 个技能 (空格键多选，Enter 键批量链接):\033[0m\n")
+        
+        user_translations = load_user_translations()
+        skills_dir = os.path.expanduser("~/.agents/skills")
+        for s in gskills:
+            name_display = s
+            desc_display = ""
+            if s in user_translations:
+                name_display = user_translations[s].get("name_zh") or user_translations[s].get("name", s)
+                desc_display = user_translations[s].get("desc_zh") or user_translations[s].get("description", "")
+            else:
+                zh_paths = [
+                    os.path.join(skills_dir, s, "SKILL.zh.md"),
+                    os.path.join(skills_dir, s, "SKILL.zh-CN.md")
+                ]
+                zh_data = None
+                for p in zh_paths:
+                    if os.path.exists(p):
+                        zh_data = parse_md_content(p)[0]
+                        if zh_data:
+                            break
+                if zh_data:
+                    name_display = zh_data.get("name") or s
+                    desc_display = zh_data.get("description") or ""
+                else:
+                    en_path = os.path.join(skills_dir, s, "SKILL.md")
+                    en_data = parse_md_content(en_path)[0]
+                    if en_data:
+                        name_display = en_data.get("name") or s
+                        desc_display = en_data.get("description") or ""
+            
+            print(f"  \033[1;32m• {s}\033[0m ({name_display})")
+            if desc_display:
+                desc_single = " ".join([l.strip() for l in desc_display.split("\n") if l.strip()])
+                print(f"    \033[1;30m描述: {desc_single}\033[0m")
+            print()
+        sys.exit(0)
+
     skills_dir = os.path.expanduser("~/.agents/skills")
     skill_dir = os.path.join(skills_dir, skill)
     en_path = os.path.join(skill_dir, "SKILL.md")

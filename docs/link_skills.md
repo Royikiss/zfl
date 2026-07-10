@@ -7,29 +7,67 @@
 ## 📖 用法与选项
 
 ```bash
-link_skills [选项] [技能名称...]
+link_skills [选项] [技能名称/分组名称...]
 ```
 
 ### 选项说明
 
 - **`-h, --help`**
   显示帮助信息。
+- **`-s, --group-set <分组名> <技能...>`**
+  创建或更新技能分组。
+- **`-r, --group-rm <分组名>`**
+  删除指定的技能分组。
+- **`-l, --group-list`**
+  列出当前定义的所有技能分组。
+
+---
+
+## 👥 技能分组 (Grouping)
+
+为了方便管理和批量链接，`link_skills` 支持**技能分组**。您可以将常用的或者有延续性的技能归结为一个分组，通过该分组一键批量软链接。
+
+技能分组信息完全由脚本维护，存储在缓存路径 `~/.cache/zsh/skills_groups.json` 中。系统首次运行时会自动生成两个预设分组：
+- **`startup` (极简创业者)**：包含 `validate-idea`, `find-community`, `first-customers`, `marketing-plan`, `pricing`, `processize`, `grow-sustainably`, `minimalist-review`。
+- **`dev` (日常开发协作)**：包含 `prototype`, `improve-codebase-architecture`, `gemini-prompt-optimizer`, `grill-me`, `grill-with-docs`, `handoff`, `nuwa-skill`。
+
+### 分组管理示例
+
+```bash
+# 创建/修改分组
+link_skills --group-set my-triage triage caveman
+
+# 删除分组
+link_skills --group-rm my-triage
+
+# 查看现有分组
+link_skills --group-list
+```
 
 ---
 
 ## 💡 示例
 
-### 1. 命令行直接指定技能名
+### 1. 命令行直接指定技能或分组名
 ```bash
+# 链接特定技能
 link_skills caveman diagnose
-```
-会将 `~/.agents/skills/caveman` 和 `~/.agents/skills/diagnose` 符号链接到当前工作目录下的 `.agents/skills/` 对应位置。
 
-### 2. 交互式多选模式 (需要安装 `fzf`)
+# 链接整个分组 (例如 startup 组下的所有技能)
+link_skills startup
+```
+会将对应的技能软链接到当前工作目录下的 `.agents/skills/` 对应位置。
+
+### 2. 交互式多选与分组管理模式 (需要安装 `fzf`)
 ```bash
 link_skills
 ```
-若不带参数运行，工具将扫描 `~/.agents/skills/` 目录，并启动 `fzf` 交互式筛选菜单，让您可以多选技能进行快捷链接。
+若不带参数运行，工具将启动 `fzf` 交互式筛选菜单，不仅可以链接技能，还可以直接在菜单中管理分组：
+- **查看与选中分组**：分组项（如 `group:startup`）会优先显示在菜单的顶部，您可以在 `fzf` 列表中**直接使用空格键选中/取消选中分组**。
+- **右侧实时预览**：当焦点处于某个分组项上时，右侧预览窗格中将以清晰的中英文格式展示该分组包含的各个技能以及它们的功能说明。
+- **创建/更新分组 (`ctrl-g`)**：在列表中使用 `空格键` 多选需要绑定的技能（或已有分组），按下 `ctrl-g`，终端会提示输入分组名称。回车保存后，返回 FZF 时菜单会自动刷新，新分组立即呈现在顶部。
+- **删除分组 (`ctrl-d`)**：将光标移动到要删除的分组项（如 `group:startup`），按下 `ctrl-d` 并输入 `y` 确认，即可删除该分组。菜单随后会自动刷新。
+- **一键批量链接**：按 `Enter` 键确认后，系统会自动解包、去重，并一键完成所有选中技能的软链接。
 
 ---
 

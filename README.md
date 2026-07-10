@@ -50,6 +50,7 @@ zsh/
 │   ├── aicp_context.py            # aicp 核心的 Token 计数与上下文生成逻辑
 │   ├── list_skills_fzf.py
 │   ├── preview_skill.py           # AI Skill 预览展示
+│   ├── resolve_skills.py          # 负责解析并展开技能分组及具体技能名称，同时提供分组增删查管理接口
 │   └── zfl_lint.py
 ├── docs/                          # 技术设计、机制说明及排障避坑文档
 │   ├── add_task.md                # 后台非阻塞启动任务管理
