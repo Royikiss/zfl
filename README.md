@@ -87,60 +87,17 @@ export CHECK_UPDATE_PROMPT_POLICY=once_per_day # 拒绝后当日不再打扰
 
 ---
 
-## 📖 核心命令指南
+## 📖 核心命令与文档
 
-### 1. `aicp` - AI 协作工具
-将当前项目结构及代码段精准打包到剪贴板，极大方便向 LLM 提问。
-*   **基础用法**：
-    ```bash
-    aicp                  # 使用默认的 balanced 模式打包整个项目
-    aicp -c core/func.zsh # 仅打包特定文件
-    aicp --changed        # 仅打包 Git 相比 HEAD 有改动及未跟踪的文件
-    ```
-*   **模式控制 (`--mode`)**：
-    - `fast`: 仅生成项目目录树及文件列表，生成速度极快。
-    - `balanced` (默认): 带有代码段上下文，控制最大单文件字符，适合日常提问。
-    - `deep`: 放宽单文件字符数上限，保留更多代码细节。
-    - `full`: 复制完整内容，无截断（完全依照 `.ignore` 规则过滤）。
-*   **交互运行模式 (`--exec`)**：
-    ```bash
-    aicp --exec
-    ```
-    执行后，除生成代码上下文外，还会接管终端。当 AI 的回复中带有特定 XML 标签时，支持在本地交互式读取文件片段（`<aicp:read>`）或在终端用户确认后自动应用 Unified Diff 补丁（`<aicp:write>`）。
+ZFL 包含的每个函数都在 [docs/](file:///home/royi/.config/zsh/docs/) 目录下有对应的详细说明文档。请点击以下链接阅读：
 
-### 2. `check_update` - 更新统计与升级
-异步静默刷新系统更新缓存，以友好无干扰的方式管理 Arch Linux 包及 Flatpak 更新。
-*   **运行**：
-    ```bash
-    check_update         # 按配置策略展示更新提示
-    check_update --force # 忽略今日已提示/已更新等抑制状态，强行发起检测交互
-    ```
-*   提示后输入 `Y` 或回车启动系统升级（pacman/yay/flatpak）；输入 `C` 预览具体可升级的软件包清单；输入 `N` 忽略。
-
-### 3. `add_task` - 启动任务管理
-管理在每次打开 Shell 终端时后台自动非阻塞执行的任务列表。
-*   **用法**：
-    ```bash
-    add_task -l                       # 列出当前所有的启动任务
-    add_task check_update             # 添加 check_update 到启动任务
-    add_task --remove check_update    # 从启动任务中删除
-    ```
-
-### 4. `link_skills` - 技能包软链工具
-将全局的 AI Agent 技能库（Skills）有选择性地同步链接到当前工作目录的 `.agents/skills/` 下，便于当前项目的 AI 助手感知专属指令。
-*   **用法**：
-    ```bash
-    link_skills                 # 启动 fzf 交互式菜单多选链接
-    link_skills my_skill_name   # 直接链接指定的技能
-    ```
-
-### 5. `countText` - 字数统计工具
-快速统计中英文混合文件中的字符数。
-*   **用法**：
-    ```bash
-    countText -zh document.txt  # 统计中文字数 (汉字数)
-    countText -cn document.txt  # 统计英文单词数
-    ```
+- 🤖 [aicp](file:///home/royi/.config/zsh/docs/aicp.md) - AI 协作工具（上下文打包、Token 计数与 `--exec` 交互协作模式）
+- 🔄 [check_update](file:///home/royi/.config/zsh/docs/check_update.md) - 异步只读更新统计与交互式系统升级
+- ⚙️ [add_task](file:///home/royi/.config/zsh/docs/add_task.md) - 后台非阻塞启动任务管理
+- 🔗 [link_skills](file:///home/royi/.config/zsh/docs/link_skills.md) - 软链接全局 AI Agent 技能配置到本地项目
+- 🌐 [verge-ipc-link](file:///home/royi/.config/zsh/docs/verge-ipc-link.md) - Clash Verge IPC Socket 软链接配置辅助
+- 📊 [countText](file:///home/royi/.config/zsh/docs/countText.md) - 中英文混排文本字数统计工具
+- 🌤️ [weather](file:///home/royi/.config/zsh/docs/weather.md) - 终端快速查询实时天气与天气预报
 
 ---
 
