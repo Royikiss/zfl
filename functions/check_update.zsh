@@ -1,3 +1,11 @@
+#? 名称: check_update
+#? 描述: 异步只读检查系统可用更新并在终端提示，支持 Pacman/AUR 和 Flatpak
+#? 作者: Royi
+#? 版本: 1.0.0
+#? 依赖: pacman, yay, flatpak
+#? 用法: check_update [--force]
+#? 示例: check_update --force
+
 # 辅助函数: 写入标记文件
 _check_update_write_to() {
     local file=$1
@@ -281,7 +289,7 @@ _check_update_schedule_cache_refresh() {
     (
         trap 'rm -rf "$lock_dir" 2>/dev/null' EXIT INT TERM
         _check_update_refresh_count_cache "$cache_file"
-    ) >/dev/null 2>&1 &!
+    ) >/dev/null 2>&1 3<&- &!
 
     return 0
 }

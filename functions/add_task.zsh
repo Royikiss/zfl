@@ -1,3 +1,11 @@
+#? 名称: add_task
+#? 描述: 管理后台非阻塞启动自动执行任务列表 (白名单管理)
+#? 作者: Royi
+#? 版本: 1.0.0
+#? 依赖: 
+#? 用法: add_task [选项] <命令> [参数...]
+#? 示例: add_task check_update
+
 _add_task_help() {
     cat <<'EOF'
 add_task - 管理启动自动执行任务列表

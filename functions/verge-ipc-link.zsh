@@ -1,3 +1,11 @@
+#? 名称: verge-ipc-link
+#? 描述: 建立 Clash Verge 服务的 IPC Socket 软链接配置辅助
+#? 作者: Royi
+#? 版本: 1.0.0
+#? 依赖: 
+#? 用法: verge-ipc-link
+#? 示例: verge-ipc-link
+
 _verge_ipc_link_help() {
     cat <<'EOF'
 verge-ipc-link - 建立 Clash Verge 服务 IPC Socket 软连接

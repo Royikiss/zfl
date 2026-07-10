@@ -1,3 +1,11 @@
+#? 名称: link_skills
+#? 描述: 选择性地将 ~/.agents/skills 中的技能软链接到当前项目的 .agents/skills/ 中
+#? 作者: Royi
+#? 版本: 1.0.0
+#? 依赖: fzf, python3
+#? 用法: link_skills [技能名称...]
+#? 示例: link_skills aicp
+
 _link_skills_help() {
     cat <<'EOF'
 link_skills - 选择性地将 ~/.agents/skills 中的 skills 软链接到当前目录的 .agents/skills/ 中
@@ -26,6 +34,7 @@ _link_skills() {
 }
 
 link_skills() {
+    zfl_require python3 || return 1
     # 加载颜色
     load_color GREEN YELLOW RED RESET
 

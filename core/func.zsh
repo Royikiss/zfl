@@ -3,24 +3,33 @@
 lazy_load_functions() {
     # 懒加载方法
     load_color RED GREEN RESET    # 加载颜色
-	local func_name=$1
+    local func_name=$1
+    local func_file=$2
     echo "${GREEN}[lazy_load]${RESET} for ${GREEN}${func_name}${RESET} ..."
-	source "$ZFL_HOME/functions/${func_name}.zsh" || {
-        echo -e "${RED}[ERROR]${RESET}: load ${func_name} failed." >&2
+    source "$func_file" || {
+        echo -e "${RED}[ERROR]${RESET}: load ${func_name} failed from ${func_file}." >&2
         return 1
     }
-	"$@"
+    shift 2
+    "${func_name}" "$@"
 }
 
-# 懒加载预处理:遍历函数目录，为每个函数创建占位符与补全占位符
-for file in $ZFL_HOME/functions/*.zsh; do
-  func_name=$(basename $file .zsh)
-  eval "${func_name}() { lazy_load_functions ${func_name} \"\$@\"; }"
-  eval "_${func_name}() { unfunction _${func_name} 2>/dev/null; source \"\$ZFL_HOME/functions/${func_name}.zsh\"; if whence -f _${func_name} >/dev/null; then _${func_name} \"\$@\"; else _default \"\$@\"; fi }"
-  if whence compdef >/dev/null; then
-    compdef "_${func_name}" "${func_name}"
-  fi
-done
+
+# 懒加载预处理:遍历社区函数与用户私有函数目录，为每个函数创建占位符与补全占位符
+() {
+    local dir file func_name
+    for dir in "$ZFL_HOME/functions" "$ZFL_HOME/custom_functions"; do
+        [[ -d "$dir" ]] || continue
+        for file in "$dir"/*.zsh(N); do
+            func_name=$(basename "$file" .zsh)
+            eval "${func_name}() { lazy_load_functions ${func_name} \"${file}\" \"\$@\"; }"
+            eval "_${func_name}() { unfunction _${func_name} 2>/dev/null; source \"${file}\"; if whence -f _${func_name} >/dev/null; then _${func_name} \"\$@\"; else _default \"\$@\"; fi }"
+            if whence compdef >/dev/null; then
+                compdef "_${func_name}" "${func_name}"
+            fi
+        done
+    done
+}
 
 # =========================
 # base.zsh - 注册颜色加载器
@@ -52,3 +61,19 @@ load_color() {
     done
 }
 # =========================
+
+# 依赖断言函数：检查外部命令依赖是否满足
+zfl_require() {
+    load_color RED RESET
+    local dep missing=()
+    for dep in "$@"; do
+        if ! (( $+commands[$dep] )); then
+            missing+=("$dep")
+        fi
+    done
+    if (( ${#missing[@]} > 0 )); then
+        echo -e "${RED}[ERROR]${RESET} 缺少必要依赖: ${missing[*]}，请先安装它们。" >&2
+        return 1
+    fi
+}
+

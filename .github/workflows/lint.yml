@@ -1,0 +1,24 @@
+name: Code Quality Lint
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Run ZFL Linter
+      run: |
+        python3 python/zfl_lint.py functions/*.zsh core/*.zsh base.zsh

@@ -1,28 +1,13 @@
-##
-# AI Copy Project (aicp)
-#
-# 功能：
-#   生成适合投喂 AI 的项目上下文（目录树 + 文件索引 + 代码片段预算裁剪），
-#   支持复制到剪贴板（wl-copy/xclip/pbcopy）以及输出到终端/文件。
-#
-# 参数（完整版见 aicp -h 或 aicp --help <topic>）：
-#   -a, --all
-#   -c, --choose <...>
-#   --mode <fast|balanced|deep|full>
-#   --init
-#   --exec
-#   --query / --query-regex
-#   --exclude / --exclude-regex
-#   --changed / --changed-from / --changed-commit-range
-#   --snippet-around-query / --snippet-context-lines
-#   --output-format / --quality-report
-#   --max-files / --max-total-chars / --max-file-chars
-#   --ignore-docs
-#   --prompt / --prompt-file
-#   --print / --out / --no-copy
-#   -h, --help [topic]
-#
+#? 名称: aicp
+#? 描述: 生成适合投喂 AI 的项目上下文（目录树 + 文件索引 + 代码片段预算裁剪）
+#? 作者: Royi
+#? 版本: 1.0.0
+#? 依赖: python3, git
+#? 用法: aicp [选项] [目标文件/目录...]
+#? 示例: aicp --changed --exec
+
 aicp() {
+    zfl_require python3 git || return 1
     load_color GREEN YELLOW RED BLUE RESET
 
     _aicp_help() {
@@ -396,7 +381,7 @@ EOF
         # 按主题名匹配
         elif [[ -n "$sel" ]]; then
             # 检查是否为可用主题
-            local matched=0
+            local matched=0 entry
             for entry in "${topics[@]}"; do
                 local t="${entry%%:*}"
                 if [[ "$t" == "$sel" ]]; then

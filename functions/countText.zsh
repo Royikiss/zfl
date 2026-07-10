@@ -1,24 +1,13 @@
-##
-# CountText - 统计文件中的字数/汉字数
-#
-# 功能：
-#   根据传入的参数，统计文件中的汉字数或单词数。
-#
-# 参数：
-#   $1 (string) - 模式参数：
-#       -zh 或 -ch : 统计汉字数（匹配中文字符）
-#       -cn        : 统计单词数（按空格分隔）
-#   $2 (string) - 文件路径
-#
-# 返回值：
-#   输出统计结果到标准输出，并返回 0 表示成功。
-#   如果文件不存在或参数错误，返回 1。
-#
-# 示例：
-#   CountText -zh my.txt   # 输出汉字数
-#   CountText -cn my.txt   # 输出单词数
-#
+#? 名称: countText
+#? 描述: 根据传入模式统计文本文件中的字数/汉字数
+#? 作者: Royi
+#? 版本: 1.0.0
+#? 依赖: grep, wc
+#? 用法: countText <模式> <文件路径>
+#? 示例: countText -zh document.txt
+
 countText() {
+    zfl_require grep wc || return 1
     local mode=$1
     local file=$2
 

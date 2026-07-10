@@ -28,7 +28,7 @@ zsh/
 ├── base.zsh                      # 框架总入口（导出 ZFL_HOME 并加载核心模块）
 ├── core/                         # 核心调度与公共模块
 │   ├── colors.zsh                # 预设的 ANSI 颜色与样式定义
-│   ├── func.zsh                  # 懒加载核心引擎（含颜色加载器与补全代理）
+│   ├── func.zsh                  # 懒加载核心引擎（含颜色加载器、依赖检测器与补全代理）
 │   ├── startup_tasks.zsh         # 非阻塞启动任务执行器（FD 3 隔离）
 │   ├── startup_task_commands.zsh # 启动执行任务白名单
 │   └── usr.zsh                   # 用户个性化配置层（可在此填写别名、代理等）
@@ -39,14 +39,17 @@ zsh/
 │   ├── countText.zsh             # 中英文数字字数统计工具
 │   ├── link_skills.zsh           # 软链接 Agent 认知技能包工具 (fzf 交互式)
 │   ├── verge-ipc-link.zsh        # Clash Verge 服务的 IPC Socket 软链接辅助
-│   └── weather.zsh               # 天气快速查询 (wttr.in)
+│   ├── weather.zsh               # 天气快速查询 (wttr.in)
+│   └── zfl.zsh                   # ZFL 框架内置命令行管理与自发现工具
+├── custom_functions/             # 用户本地私有函数目录 (已被 gitignore 忽略)
 ├── python/                       # 跨语言脚本辅助
 │   ├── aicp_context.py           # aicp 核心的 Token 计数与上下文生成逻辑
 │   └── preview_skill.py          # AI Skill 预览展示
 └── docs/                         # 技术设计、机制说明及排障避坑文档
     ├── aicp.md                   # AICP 详细设计与使用说明
     ├── aicp-exec-bug.md          # Wayland 终端下 wl-copy 导致 stdin 非阻塞闪退排障记录
-    └── check_update.md           # 自动更新检测设计、缓存及状态机制文档
+    ├── check_update.md           # 自动更新检测设计、缓存及状态机制文档
+    └── zfl.md                    # 内置管理工具及社区/用户脚本规范文档
 ```
 
 ---
@@ -91,6 +94,7 @@ export CHECK_UPDATE_PROMPT_POLICY=once_per_day # 拒绝后当日不再打扰
 
 ZFL 包含的每个函数都在 [docs/](file:///home/royi/.config/zsh/docs/) 目录下有对应的详细说明文档。请点击以下链接阅读：
 
+- ⚙️ [zfl](file:///home/royi/.config/zsh/docs/zfl.md) - ZFL 框架内置命令行管理与自发现工具
 - 🤖 [aicp](file:///home/royi/.config/zsh/docs/aicp.md) - AI 协作工具（上下文打包、Token 计数与 `--exec` 交互协作模式）
 - 🔄 [check_update](file:///home/royi/.config/zsh/docs/check_update.md) - 异步只读更新统计与交互式系统升级
 - ⚙️ [add_task](file:///home/royi/.config/zsh/docs/add_task.md) - 后台非阻塞启动任务管理
