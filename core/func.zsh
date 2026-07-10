@@ -5,7 +5,7 @@ lazy_load_functions() {
     load_color RED GREEN RESET    # 加载颜色
 	local func_name=$1
     echo "${GREEN}[lazy_load]${RESET} for ${GREEN}${func_name}${RESET} ..."
-	source "$HOME/.config/zsh/functions/${func_name}.zsh" || {
+	source "$ZFL_HOME/functions/${func_name}.zsh" || {
         echo -e "${RED}[ERROR]${RESET}: load ${func_name} failed." >&2
         return 1
     }
