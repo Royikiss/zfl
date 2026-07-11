@@ -1,14 +1,15 @@
-#? 名称: aicp
-#? 描述: 生成适合投喂 AI 的项目上下文（目录树 + 文件索引 + 代码片段预算裁剪）
-#? 作者: Royi
-#? 版本: 1.0.0
-#? 依赖: python3, git
-#? 用法: aicp [选项] [目标文件/目录...]
-#? 示例: aicp --changed --exec
+#? name: aicp
+#? description: Generate project context suitable for AI consumption (directory tree + file index + code snippet budget trimming)
+#? author: Royi
+#? version: 1.0.0
+#? deps: python3, git
+#? usage: aicp [options] [target files/directories...]
+#? example: aicp --changed --exec
 
 aicp() {
     zfl_require python3 git || return 1
     load_color GREEN YELLOW RED BLUE RESET
+    local lang=${ZFL_LANG:-${LANG%%.*}}
 
     _aicp_help() {
         local topic="${1:-general}"
@@ -18,9 +19,15 @@ aicp() {
             mode|init|filter|changed|output|examples|exec|read)
                          "_aicp_help_sub_$topic" ;;
             *)
-                echo -e "${RED}未知帮助主题:${RESET} $topic"
-                echo -e "可用主题: general mode init filter changed output examples exec read all"
-                echo -e "运行 ${GREEN}aicp -h${RESET} 查看交互式主题选择器"
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${RED}未知帮助主题:${RESET} $topic"
+                    echo -e "可用主题: general mode init filter changed output examples exec read all"
+                    echo -e "运行 ${GREEN}aicp -h${RESET} 查看交互式主题选择器"
+                else
+                    echo -e "${RED}Unknown help topic:${RESET} $topic"
+                    echo -e "Available topics: general mode init filter changed output examples exec read all"
+                    echo -e "Run ${GREEN}aicp -h${RESET} to check interactive topic selector"
+                fi
                 ;;
         esac
     }
@@ -34,73 +41,126 @@ aicp() {
     }
 
     _aicp_help_row() {
-        printf "  ${GREEN}%-30s${RESET} %-34s ${BLUE}[%s]${RESET}\n" "$1" "$2" "$3"
+        printf "  ${GREEN}%-30s${RESET} %-34s ${BLUE}[%s]${RESET}
+" "$1" "$2" "$3"
     }
 
     _aicp_help_general() {
-        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-        echo -e "${GREEN}aicp${RESET} - AI 上下文复制工具"
-        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-        echo
-        echo -e "${YELLOW}用法:${RESET}  aicp [参数...] [-c <文件/目录>...]"
-        echo
-
-        echo -e "${YELLOW}模式控制:${RESET}"
-        _aicp_help_row "-a, --all" "全量扫描当前目录" "off"
-        _aicp_help_row "-c, --choose <path>..." "手动指定目标文件/目录" "—"
-        _aicp_help_row "--mode <fast|balanced|deep|full>" "复制等级" "balanced"
-        echo
-
-        echo -e "${YELLOW}筛选聚焦:${RESET}"
-        _aicp_help_row "--query <keyword>" "关键词纳入（可多次）" "—"
-        _aicp_help_row "--query-regex <regex>" "正则纳入（可多次）" "—"
-        _aicp_help_row "--exclude <keyword>" "关键词排除（可多次）" "—"
-        _aicp_help_row "--exclude-regex <regex>" "正则排除（可多次）" "—"
-        _aicp_help_row "--ignore-docs" "过滤文档类文件" "off"
-        echo
-
-        echo -e "${YELLOW}Git 改动:${RESET}"
-        _aicp_help_row "--changed" "相对 HEAD 改动+未跟踪" "off"
-        _aicp_help_row "--changed-from <ref>" "相对某分支/标签对比" "—"
-        _aicp_help_row "--changed-commit-range <A..B>" "提交区间对比" "—"
-        echo
-
-        echo -e "${YELLOW}代码片段:${RESET}"
-        _aicp_help_row "--snippet-around-query" "命中点邻域模式" "off"
-        _aicp_help_row "--snippet-context-lines <n>" "邻域扩展行数" "auto"
-        echo
-
-        echo -e "${YELLOW}输出控制:${RESET}"
-        _aicp_help_row "--output-format <fmt>" "格式 markdown/plain/json" "markdown"
-        _aicp_help_row "--quality-report" "附质量报告" "off"
-        _aicp_help_row "--print" "打印到终端" "off"
-        _aicp_help_row "--out <file>" "写入文件" "—"
-        _aicp_help_row "--no-copy" "跳过剪贴板复制" "off"
-        _aicp_help_row "--read <path[:l1-l2]>..." "读取文件指定行到剪贴板" "—"
-        echo
-
-        echo -e "${YELLOW}预算控制:${RESET}"
-        _aicp_help_row "--max-files <n>" "文件总数上限" "auto"
-        _aicp_help_row "--max-total-chars <n>" "总字符数上限" "auto"
-        _aicp_help_row "--max-file-chars <n>" "单文件字符上限" "auto"
-        echo
-
-        echo -e "${YELLOW}预设与提示:${RESET}"
-        _aicp_help_row "--init" "项目认知预设" "off"
-        _aicp_help_row "--exec" "交互式 AI 协作模式" "off"
-        _aicp_help_row "--prompt <text>" "自定义提示词" "—"
-        _aicp_help_row "--prompt-file <path>" "从文件读取提示词" "—"
-        echo
-        echo -e "${BLUE}────────────────────────────────────────────────────────────────────────${RESET}"
-        echo -e "${YELLOW}示例速览:${RESET}"
-        echo -e "  ${GREEN}aicp --init${RESET}                          快速认知项目"
-        echo -e "  ${GREEN}aicp -a${RESET}                              全量打包"
-        echo -e "  ${GREEN}aicp --changed --prompt \"review\"${RESET}             仅改动审查"
-        echo -e "  ${GREEN}aicp -a --query auth --exclude-regex \"dist\"${RESET}    定向聚焦"
-        echo -e "  ${GREEN}aicp --exec -a${RESET}                       交互式 AI 协作"
-        echo -e "  ${GREEN}aicp --read src/main.py:10-30${RESET}         读取文件指定行到剪贴板"
-        echo
-        echo -e "深入主题:  ${GREEN}aicp --help${RESET} <mode|init|filter|changed|output|examples|exec|read|all>"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+            echo -e "${GREEN}aicp${RESET} - AI 上下文复制工具"
+            echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+            echo
+            echo -e "${YELLOW}用法:${RESET}  aicp [参数...] [-c <文件/目录>...]"
+            echo
+            echo -e "${YELLOW}模式控制:${RESET}"
+            _aicp_help_row "-a, --all" "全量扫描当前目录" "off"
+            _aicp_help_row "-c, --choose <path>..." "手动指定目标文件/目录" "—"
+            _aicp_help_row "--mode <fast|balanced|deep|full>" "复制等级" "balanced"
+            echo
+            echo -e "${YELLOW}筛选聚焦:${RESET}"
+            _aicp_help_row "--query <keyword>" "关键词纳入（可多次）" "—"
+            _aicp_help_row "--query-regex <regex>" "正则纳入（可多次）" "—"
+            _aicp_help_row "--exclude <keyword>" "关键词排除（可多次）" "—"
+            _aicp_help_row "--exclude-regex <regex>" "正则排除（可多次）" "—"
+            _aicp_help_row "--ignore-docs" "过滤文档类文件" "off"
+            echo
+            echo -e "${YELLOW}Git 改动:${RESET}"
+            _aicp_help_row "--changed" "相对 HEAD 改动+未跟踪" "off"
+            _aicp_help_row "--changed-from <ref>" "相对某分支/标签对比" "—"
+            _aicp_help_row "--changed-commit-range <A..B>" "提交区间对比" "—"
+            echo
+            echo -e "${YELLOW}代码片段:${RESET}"
+            _aicp_help_row "--snippet-around-query" "命中点邻域模式" "off"
+            _aicp_help_row "--snippet-context-lines <n>" "邻域扩展行数" "auto"
+            echo
+            echo -e "${YELLOW}输出控制:${RESET}"
+            _aicp_help_row "--output-format <fmt>" "格式 markdown/plain/json" "markdown"
+            _aicp_help_row "--quality-report" "附质量报告" "off"
+            _aicp_help_row "--print" "打印到终端" "off"
+            _aicp_help_row "--out <file>" "写入文件" "—"
+            _aicp_help_row "--no-copy" "跳过剪贴板复制" "off"
+            _aicp_help_row "--read <path[:l1-l2]>..." "读取文件指定行到剪贴板" "—"
+            echo
+            echo -e "${YELLOW}预算控制:${RESET}"
+            _aicp_help_row "--max-files <n>" "文件总数上限" "auto"
+            _aicp_help_row "--max-total-chars <n>" "总字符数上限" "auto"
+            _aicp_help_row "--max-file-chars <n>" "单文件字符上限" "auto"
+            echo
+            echo -e "${YELLOW}预设与提示:${RESET}"
+            _aicp_help_row "--init" "项目认知预设" "off"
+            _aicp_help_row "--exec" "交互式 AI 协作模式" "off"
+            _aicp_help_row "--prompt <text>" "自定义提示词" "—"
+            _aicp_help_row "--prompt-file <path>" "从文件读取提示词" "—"
+            echo
+            echo -e "${BLUE}────────────────────────────────────────────────────────────────────────${RESET}"
+            echo -e "${YELLOW}示例速览:${RESET}"
+            echo -e "  ${GREEN}aicp --init${RESET}                          快速认知项目"
+            echo -e "  ${GREEN}aicp -a${RESET}                              全量打包"
+            echo -e "  ${GREEN}aicp --changed --prompt "review"${RESET}             仅改动审查"
+            echo -e "  ${GREEN}aicp -a --query auth --exclude-regex "dist"${RESET}    定向聚焦"
+            echo -e "  ${GREEN}aicp --exec -a${RESET}                       交互式 AI 协作"
+            echo -e "  ${GREEN}aicp --read src/main.py:10-30${RESET}         读取文件指定行到剪贴板"
+            echo
+            echo -e "深入主题:  ${GREEN}aicp --help${RESET} <mode|init|filter|changed|output|examples|exec|read|all>"
+        else
+            echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+            echo -e "${GREEN}aicp${RESET} - AI Context Packaging & Copy Tool"
+            echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+            echo
+            echo -e "${YELLOW}Usage:${RESET}  aicp [options] [-c <file/dir>...]"
+            echo
+            echo -e "${YELLOW}Mode Control:${RESET}"
+            _aicp_help_row "-a, --all" "Scan the entire current directory" "off"
+            _aicp_help_row "-c, --choose <path>..." "Manually specify target files/dirs" "—"
+            _aicp_help_row "--mode <fast|balanced|deep|full>" "Context mode level" "balanced"
+            echo
+            echo -e "${YELLOW}Filters:${RESET}"
+            _aicp_help_row "--query <keyword>" "Include file if keyword matches (repeatable)" "—"
+            _aicp_help_row "--query-regex <regex>" "Include file if regex matches (repeatable)" "—"
+            _aicp_help_row "--exclude <keyword>" "Exclude file if keyword matches (repeatable)" "—"
+            _aicp_help_row "--exclude-regex <regex>" "Exclude file if regex matches (repeatable)" "—"
+            _aicp_help_row "--ignore-docs" "Ignore documentation files" "off"
+            echo
+            echo -e "${YELLOW}Git Changes:${RESET}"
+            _aicp_help_row "--changed" "Modified & untracked files relative to HEAD" "off"
+            _aicp_help_row "--changed-from <ref>" "Compare changes against a branch/tag" "—"
+            _aicp_help_row "--changed-commit-range <A..B>" "Compare changes in commit range" "—"
+            echo
+            echo -e "${YELLOW}Code Snippets:${RESET}"
+            _aicp_help_row "--snippet-around-query" "Query match window snippet mode" "off"
+            _aicp_help_row "--snippet-context-lines <n>" "Context lines around query match" "auto"
+            echo
+            echo -e "${YELLOW}Output Control:${RESET}"
+            _aicp_help_row "--output-format <fmt>" "Format: markdown/plain/json" "markdown"
+            _aicp_help_row "--quality-report" "Append code quality report" "off"
+            _aicp_help_row "--print" "Print output directly to stdout" "off"
+            _aicp_help_row "--out <file>" "Write output to file" "—"
+            _aicp_help_row "--no-copy" "Do not copy output to clipboard" "off"
+            _aicp_help_row "--read <path[:l1-l2]>..." "Read lines from files to clipboard" "—"
+            echo
+            echo -e "${YELLOW}Budget Limits:${RESET}"
+            _aicp_help_row "--max-files <n>" "Maximum files limit" "auto"
+            _aicp_help_row "--max-total-chars <n>" "Maximum total character limit" "auto"
+            _aicp_help_row "--max-file-chars <n>" "Maximum per-file character limit" "auto"
+            echo
+            echo -e "${YELLOW}Presets & Interactive:${RESET}"
+            _aicp_help_row "--init" "Initialize project context preset" "off"
+            _aicp_help_row "--exec" "Interactive AI collaboration mode" "off"
+            _aicp_help_row "--prompt <text>" "Custom instruction prompt" "—"
+            _aicp_help_row "--prompt-file <path>" "Load prompt from file" "—"
+            echo
+            echo -e "${BLUE}────────────────────────────────────────────────────────────────────────${RESET}"
+            echo -e "${YELLOW}Quick Examples:${RESET}"
+            echo -e "  ${GREEN}aicp --init${RESET}                          Quick project map onboarding"
+            echo -e "  ${GREEN}aicp -a${RESET}                              Package entire workspace"
+            echo -e "  ${GREEN}aicp --changed --prompt "review"${RESET}             Review modified files"
+            echo -e "  ${GREEN}aicp -a --query auth --exclude-regex "dist"${RESET}    Filter targeting"
+            echo -e "  ${GREEN}aicp --exec -a${RESET}                       Interactive AI collaboration"
+            echo -e "  ${GREEN}aicp --read src/main.py:10-30${RESET}         Read specific lines to clipboard"
+            echo
+            echo -e "Sub-topics:  ${GREEN}aicp --help${RESET} <mode|init|filter|changed|output|examples|exec|read|all>"
+        fi
     }
 
     _aicp_help_all() {
@@ -124,7 +184,8 @@ aicp() {
     }
 
     _aicp_help_sub_mode() {
-        cat <<'EOF'
+        if [[ "$lang" == zh* ]]; then
+            cat <<'EOF'
 [复制等级说明]
 
 fast:
@@ -150,10 +211,38 @@ full:
   - 第一步：fast 建图
   - 第二步：balanced 或 deep 深挖
 EOF
+        else
+            cat <<'EOF'
+[Context Modes Level Description]
+
+fast:
+  - Content: PROJECT TREE + FILE INDEX
+  - Code snippets are excluded
+  - Usage: Let the AI build a quick "directory & module map" first.
+
+balanced (default):
+  - Content: TREE + INDEX + code snippets under budget limits
+  - Usage: Daily code analysis, review, refactoring advice.
+
+  - Content: Same as balanced, but with higher budgets and longer snippets
+  - Usage: Complex troubleshooting, deep refactoring, cross-module analysis.
+
+full:
+  - Content: TREE + INDEX + full source files (no truncation)
+  - Covers all text files without extension filtering
+  - Respects .ignore file in root if present
+  - Usage: For feeding complete source codes to the AI.
+
+Recommendation:
+  - Step 1: Use `fast` to onboard.
+  - Step 2: Use `balanced` or `deep` to dig deeper.
+EOF
+        fi
     }
 
     _aicp_help_sub_init() {
-        cat <<'EOF'
+        if [[ "$lang" == zh* ]]; then
+            cat <<'EOF'
 [--init 说明]
 
 用途:
@@ -175,10 +264,35 @@ EOF
   aicp --init --changed
   aicp --init --output-format json
 EOF
+        else
+            cat <<'EOF'
+[--init Preset Description]
+
+Purpose:
+  Generate a "Project Onboarding Package" for the AI to quickly build a holistic map of your codebase.
+
+Default Behaviors (unless overridden):
+  - Automatically enables full scan (-a)
+  - Includes PROJECT TREE (source tree) and FILE INDEX
+  - Mode is set to 'balanced'
+  - Enables quality report (--quality-report)
+  - Default Budgets:
+      --max-files 120
+      --max-total-chars 85000
+      --max-file-chars 2200
+  - Injects onboarding prompt instructions (unless custom --prompt is passed)
+
+Combinations:
+  aicp --init --ignore-docs
+  aicp --init --changed
+  aicp --init --output-format json
+EOF
+        fi
     }
 
     _aicp_help_sub_filter() {
-        cat <<'EOF'
+        if [[ "$lang" == zh* ]]; then
+            cat <<'EOF'
 [筛选参数说明]
 
 纳入过滤（include）:
@@ -198,10 +312,33 @@ EOF
 示例:
   aicp -a --query auth --query token --exclude-regex "dist|vendor"
 EOF
+        else
+            cat <<'EOF'
+[Filters Description]
+
+Include Filters:
+  --query <keyword>
+  --query-regex <regex>
+  Files matching any of these will be included.
+
+Exclude Filters:
+  --exclude <keyword>
+  --exclude-regex <regex>
+  Files matching any of these will be excluded.
+
+Documentation Filter:
+  --ignore-docs
+  Filters out documentation files like doxygen/markdown/sphinx/wiki/manual/etc.
+
+Example:
+  aicp -a --query auth --query token --exclude-regex "dist|vendor"
+EOF
+        fi
     }
 
     _aicp_help_sub_changed() {
-        cat <<'EOF'
+        if [[ "$lang" == zh* ]]; then
+            cat <<'EOF'
 [改动筛选说明]
 
 --changed
@@ -215,10 +352,27 @@ EOF
   相对提交区间的改动 + 未跟踪文件
   例如: --changed-commit-range HEAD~5..HEAD
 EOF
+        else
+            cat <<'EOF'
+[Git Changes Description]
+
+--changed
+  Modified & untracked files relative to HEAD.
+
+--changed-from <ref>
+  Modified & untracked files relative to a branch/tag.
+  Example: --changed-from main
+
+--changed-commit-range <A..B>
+  Changes between a commit range.
+  Example: --changed-commit-range HEAD~5..HEAD
+EOF
+        fi
     }
 
     _aicp_help_sub_output() {
-        cat <<'EOF'
+        if [[ "$lang" == zh* ]]; then
+            cat <<'EOF'
 [输出与预算说明]
 
 输出格式:
@@ -235,10 +389,30 @@ EOF
 输出去向:
   默认复制剪贴板；可配合 --no-copy --print --out <file>
 EOF
+        else
+            cat <<'EOF'
+[Output & Budget Description]
+
+Output Format:
+  --output-format markdown|plain|json
+
+Quality Report:
+  --quality-report
+
+Budget Overrides:
+  --max-files <n>
+  --max-total-chars <n>
+  --max-file-chars <n>
+
+Destination:
+  Copies to clipboard by default. Control destination with --no-copy, --print, or --out <file>.
+EOF
+        fi
     }
 
     _aicp_help_sub_examples() {
-        cat <<'EOF'
+        if [[ "$lang" == zh* ]]; then
+            cat <<'EOF'
 [示例合集]
 
 1) 快速认知
@@ -277,10 +451,52 @@ EOF
     aicp --read src/main.py:10-30 src/utils.py:1-50
     aicp --read config.yaml --print
 EOF
+        else
+            cat <<'EOF'
+[Examples Collection]
+
+1) Quick project mapping
+   aicp --init
+
+2) Mapping & ignore documentation
+   aicp --init --ignore-docs
+
+3) Code change review only
+   aicp --changed --prompt "Review changes, highlight risk matrix and fix plan"
+
+4) Compare changes against main branch
+   aicp --changed-from main --mode balanced
+
+5) Commit range analysis
+   aicp --changed-commit-range HEAD~8..HEAD --output-format plain --print
+
+6) Focus on security keywords
+   aicp -a --query-regex "token|secret|password|apikey" --exclude-regex "dist|vendor|node_modules"
+
+7) Query match snippet context window
+   aicp -a --query auth --snippet-around-query --snippet-context-lines 20
+
+8) JSON format for tool consumption
+   aicp -a --output-format json --quality-report --no-copy --print
+
+9) Control context character size
+   aicp -a --max-files 60 --max-total-chars 70000 --max-file-chars 1800
+
+10) Interactive AI collaboration mode
+    aicp --exec -a
+    aicp --exec --init
+    aicp --exec --changed
+
+11) Read specific lines to clipboard
+    aicp --read src/main.py:10-30 src/utils.py:1-50
+    aicp --read config.yaml --print
+EOF
+        fi
     }
 
     _aicp_help_sub_exec() {
-        cat <<'EOF'
+        if [[ "$lang" == zh* ]]; then
+            cat <<'EOF'
 [--exec 说明]
 
 用途:
@@ -319,49 +535,104 @@ AI 回复格式:
   aicp --exec --init                  # 认知预设 + 协作模式
   aicp --exec --changed               # 改动审查 + 协作模式
 EOF
+        else
+            cat <<'EOF'
+[--exec Interactive Mode Description]
+
+Purpose:
+  Interactive AI collaboration. Packages context & appends tool capabilities,
+  allowing the AI to read/write files via XML tags.
+
+Workflow:
+  1) Packages context -> copies to clipboard.
+  2) Paste context to AI chat box.
+  3) AI replies with <aicp:read> / <aicp:write> tags.
+  4) Copy AI response and paste it back in terminal (type ---EOF--- to end).
+  5) aicp automatically parses and executes instructions:
+       - <aicp:read>...</aicp:read> / <aicp:read ... />
+         -> Displays file content with line numbers (using cat -n).
+       - <aicp:write>...</aicp:write>
+         -> Detects and applies unified diffs automatically.
+  6) Fetched read contents are automatically accumulated for the next round.
+  7) Iterate as needed.
+
+AI Response Tag Format:
+
+  Read file:
+  <aicp:read>src/foo.py:10-30</aicp:read>
+  # Or inline: <aicp:read src/foo.py:10-30 />
+
+  Modify file (patch diff):
+  <aicp:write>
+  --- a/src/foo.py
+  +++ b/src/foo.py
+  @@ -10,6 +10,8 @@
+   ...
+  </aicp:write>
+
+Example:
+  aicp --exec -a                      # Pack workspace + Interactive mode
+  aicp --exec --init                  # Map onboarding + Interactive mode
+  aicp --exec --changed               # Change review + Interactive mode
+EOF
+        fi
     }
 
     _aicp_help_fzf() {
         local choice
-        choice=$(
-            printf "%s\n" \
-                "general    速查表 · 全部参数一目了然" \
-                "mode       复制等级说明 (fast/balanced/deep/full)" \
-                "init       项目认知预设 (--init 详解)" \
-                "exec       交互式 AI 协作模式 (--exec 详解)" \
-                "filter     纳入/排除筛选参数差异" \
-                "changed    Git 改动筛选选项" \
-                "output     输出格式与预算控制" \
-                "read       文件行读取与剪贴板复制" \
-                "examples   完整组合示例" \
-                "all        展开全部帮助" |
-            fzf --prompt="aicp help > " \
-                --height=14 \
-                --border=sharp \
-                --header="选择主题 (ESC 退出)" \
-                | awk '{print $1}'
-        )
+        if [[ "$lang" == zh* ]]; then
+            choice=$(
+                printf "%s\n"                     "general    速查表 · 全部参数一目了然"                     "mode       复制等级说明 (fast/balanced/deep/full)"                     "init       项目认知预设 (--init 详解)"                     "exec       交互式 AI 协作模式 (--exec 详解)"                     "filter     纳入/排除筛选参数差异"                     "changed    Git 改动筛选选项"                     "output     输出格式与预算控制"                     "read       文件行读取与剪贴板复制"                     "examples   完整组合示例"                     "all        展开全部帮助" |
+                fzf --prompt="aicp help > "                     --height=14                     --border=sharp                     --header="选择主题 (ESC 退出)"                     | awk '{print $1}'
+            )
+        else
+            choice=$(
+                printf "%s\n"                     "general    Quick Reference Cheat Sheet"                     "mode       Context levels (fast/balanced/deep/full)"                     "init       Project onboarding preset (--init)"                     "exec       Interactive AI Collaboration (--exec)"                     "filter     Include/exclude filters"                     "changed    Git change targeting options"                     "output     Formats and budgets control"                     "read       File lines reader and clipboard"                     "examples   Usage examples collection"                     "all        Show all help contents" |
+                fzf --prompt="aicp help > "                     --height=14                     --border=sharp                     --header="Select Topic (ESC to exit)"                     | awk '{print $1}'
+            )
+        fi
         [[ -n "$choice" ]] && _aicp_help "$choice"
     }
 
     _aicp_help_topic_menu() {
         local -a topics
-        topics=(
-            "general:速查表 · 全部参数一目了然"
-            "mode:复制等级说明 (fast/balanced/deep/full)"
-            "init:项目认知预设 (--init 详解)"
-            "filter:纳入/排除筛选参数差异"
-            "changed:Git 改动筛选选项"
-            "output:输出格式与预算控制"
-            "read:文件行读取与剪贴板复制"
-            "exec:交互式 AI 协作模式 (--exec 详解)"
-            "examples:完整组合示例"
-            "all:展开全部帮助"
-        )
+        if [[ "$lang" == zh* ]]; then
+            topics=(
+                "general:速查表 · 全部参数一目了然"
+                "mode:复制等级说明 (fast/balanced/deep/full)"
+                "init:项目认知预设 (--init 详解)"
+                "filter:纳入/排除筛选参数差异"
+                "changed:Git 改动筛选选项"
+                "output:输出格式与预算控制"
+                "read:文件行读取与剪贴板复制"
+                "exec:交互式 AI 协作模式 (--exec 详解)"
+                "examples:完整组合示例"
+                "all:展开全部帮助"
+            )
+        else
+            topics=(
+                "general:Quick Reference Cheat Sheet"
+                "mode:Context levels (fast/balanced/deep/full)"
+                "init:Project onboarding preset (--init)"
+                "filter:Include/exclude filters"
+                "changed:Git change targeting options"
+                "output:Formats and budgets control"
+                "read:File lines reader and clipboard"
+                "exec:Interactive AI Collaboration (--exec)"
+                "examples:Usage examples collection"
+                "all:Show all help contents"
+            )
+        fi
 
-        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-        echo -e "${GREEN}aicp${RESET} 帮助主题"
-        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+            echo -e "${GREEN}aicp${RESET} 帮助主题"
+            echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        else
+            echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+            echo -e "${GREEN}aicp${RESET} Help Topics"
+            echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        fi
         local i topic desc
         for i in {1..${#topics[@]}}; do
             topic="${topics[$i]%%:*}"
@@ -369,7 +640,11 @@ EOF
             printf "  ${GREEN}%2d${RESET}) %-12s %s\n" "$i" "$topic" "$desc"
         done
         echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-        echo -n -e "输入编号或主题名 (${YELLOW}q${RESET} 退出): "
+        if [[ "$lang" == zh* ]]; then
+            echo -n -e "输入编号或主题名 (${YELLOW}q${RESET} 退出): "
+        else
+            echo -n -e "Enter number or topic name (${YELLOW}q${RESET} to quit): "
+        fi
         local sel
         read sel
         [[ -z "$sel" || "$sel" == "q" ]] && return 0
@@ -380,7 +655,6 @@ EOF
             _aicp_help "$topic"
         # 按主题名匹配
         elif [[ -n "$sel" ]]; then
-            # 检查是否为可用主题
             local matched=0 entry
             for entry in "${topics[@]}"; do
                 local t="${entry%%:*}"
@@ -390,12 +664,19 @@ EOF
                     break
                 fi
             done
-            [[ $matched -eq 0 ]] && echo -e "${RED}未知主题:${RESET} $sel"
+            if [[ $matched -eq 0 ]]; then
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${RED}未知主题:${RESET} $sel"
+                else
+                    echo -e "${RED}Unknown topic:${RESET} $sel"
+                fi
+            fi
         fi
     }
 
     _aicp_help_sub_read() {
-        cat <<'EOF'
+        if [[ "$lang" == zh* ]]; then
+            cat <<'EOF'
 [--read 说明]
 
 用途:
@@ -426,6 +707,39 @@ EOF
   - --read 为独立模式，不与 -a/--changed/--exec 等其它模式混用
   - 可通过 --print、--out、--no-copy 控制输出行为
 EOF
+        else
+            cat <<'EOF'
+[--read Description]
+
+Purpose:
+  Read specific line ranges of one or more files, copy them with line numbers to the clipboard.
+  Useful for feeding exact code snippets to AI or inspecting specific parts of files.
+
+Syntax:
+  aicp --read <path>[:<start>-<end>] [...]
+
+Example:
+  aicp --read src/main.py:10-30
+    Copies lines 10-30 of src/main.py (with line numbers) to the clipboard.
+
+  aicp --read src/main.py:10-30 src/utils.py:1-50
+    Reads multiple file line ranges.
+
+  aicp --read src/main.py
+    Copies the entire file.
+
+  aicp --read src/main.py:10-30 --print
+    Reads and prints to stdout.
+
+  aicp --read src/main.py:10-30 --out snippet.txt
+    Reads and writes to a file.
+
+Note:
+  - Range format must be "NN-NN" where start_line <= end_line.
+  - --read is a standalone mode and cannot be combined with -a/--changed/--exec etc.
+  - Control output behaviors via --print, --out, and --no-copy.
+EOF
+        fi
     }
 
     _aicp_handle_read() {
@@ -439,14 +753,22 @@ EOF
                 file_path="${target%%:*}"
                 line_range="${target#*:}"
                 if [[ ! "$line_range" =~ ^[0-9]+-[0-9]+$ ]]; then
-                    echo -e "${RED}[ERROR]${RESET} 无效的行范围格式: $line_range (期望: NN-NN，如 10-30)"
+                    if [[ "$lang" == zh* ]]; then
+                        echo -e "${RED}[ERROR]${RESET} 无效的行范围格式: $line_range (期望: NN-NN，如 10-30)"
+                    else
+                        echo -e "${RED}[ERROR]${RESET} Invalid line range format: $line_range (expected: NN-NN, e.g., 10-30)"
+                    fi
                     has_error=1
                     continue
                 fi
                 start_line="${line_range%-*}"
                 end_line="${line_range#*-}"
                 if (( start_line > end_line )); then
-                    echo -e "${RED}[ERROR]${RESET} 起始行大于结束行: $start_line > $end_line"
+                    if [[ "$lang" == zh* ]]; then
+                        echo -e "${RED}[ERROR]${RESET} 起始行大于结束行: $start_line > $end_line"
+                    else
+                        echo -e "${RED}[ERROR]${RESET} Start line greater than end line: $start_line > $end_line"
+                    fi
                     has_error=1
                     continue
                 fi
@@ -457,19 +779,28 @@ EOF
 
             # 文件存在性检查
             if [[ ! -f "$file_path" ]]; then
-                echo -e "${RED}[ERROR]${RESET} 文件不存在: $file_path"
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${RED}[ERROR]${RESET} 文件不存在: $file_path"
+                else
+                    echo -e "${RED}[ERROR]${RESET} File does not exist: $file_path"
+                fi
                 has_error=1
                 continue
             fi
 
             # 构建带行号的内容
             local header="### $target"
-            output+="$header"$'\n'
+            output+="$header"$'
+'
 
             if [[ -n "$line_range" ]]; then
                 content=$(sed -n "${start_line},${end_line}p" "$file_path" 2>/dev/null)
                 if [[ -z "$content" ]]; then
-                    echo -e "${YELLOW}[WARN]${RESET} $target: 指定范围内无内容"
+                    if [[ "$lang" == zh* ]]; then
+                        echo -e "${YELLOW}[WARN]${RESET} $target: 指定范围内无内容"
+                    else
+                        echo -e "${YELLOW}[WARN]${RESET} $target: No content in specified range"
+                    fi
                     continue
                 fi
                 # awk 从 start_line 开始编号
@@ -479,15 +810,25 @@ EOF
             fi
 
             if [[ -z "$content" ]]; then
-                echo -e "${YELLOW}[WARN]${RESET} $target: 空文件或无内容"
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${YELLOW}[WARN]${RESET} $target: 空文件或无内容"
+                else
+                    echo -e "${YELLOW}[WARN]${RESET} $target: Empty file or no content"
+                fi
                 continue
             fi
 
-            output+="$content"$'\n\n'
+            output+="$content"$'
+
+'
         done
 
         if [[ -z "$output" ]]; then
-            echo -e "${YELLOW}[aicp]${RESET} 未读取到任何内容"
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${YELLOW}[aicp]${RESET} 未读取到任何内容"
+            else
+                echo -e "${YELLOW}[aicp]${RESET} Read no content"
+            fi
             return $has_error
         fi
 
@@ -500,26 +841,48 @@ EOF
         if [[ $copy_mode -eq 1 ]]; then
             if command -v wl-copy >/dev/null 2>&1; then
                 wl-copy < "$tmp_file" >/dev/null 2>&1
-                echo -e "${GREEN}[SUCCESS]${RESET} 已复制到剪贴板 (wl-copy)。"
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${GREEN}[SUCCESS]${RESET} 已复制到剪贴板 (wl-copy)。"
+                else
+                    echo -e "${GREEN}[SUCCESS]${RESET} Copied to clipboard (wl-copy)."
+                fi
             elif command -v xclip >/dev/null 2>&1; then
                 xclip -selection clipboard < "$tmp_file" >/dev/null 2>&1
-                echo -e "${GREEN}[SUCCESS]${RESET} 已复制到剪贴板 (xclip)。"
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${GREEN}[SUCCESS]${RESET} 已复制到剪贴板 (xclip)。"
+                else
+                    echo -e "${GREEN}[SUCCESS]${RESET} Copied to clipboard (xclip)."
+                fi
             elif command -v pbcopy >/dev/null 2>&1; then
                 pbcopy < "$tmp_file" >/dev/null 2>&1
-                echo -e "${GREEN}[SUCCESS]${RESET} 已复制到剪贴板 (pbcopy)。"
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${GREEN}[SUCCESS]${RESET} 已复制到剪贴板 (pbcopy)。"
+                else
+                    echo -e "${GREEN}[SUCCESS]${RESET} Copied to clipboard (pbcopy)."
+                fi
             else
-                echo -e "${YELLOW}[WARN]${RESET} 未检测到剪贴板命令(wl-copy/xclip/pbcopy)，跳过复制。"
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${YELLOW}[WARN]${RESET} 未检测到剪贴板命令(wl-copy/xclip/pbcopy)，跳过复制。"
+                else
+                    echo -e "${YELLOW}[WARN]${RESET} Clipboard command not found (wl-copy/xclip/pbcopy), skipped copying."
+                fi
             fi
         fi
 
         # 输出到文件和打印
-        [[ -n "$out_file" ]] && { cp "$tmp_file" "$out_file"; echo -e "${GREEN}[aicp]${RESET} 已写入文件: $out_file"; }
+        if [[ -n "$out_file" ]]; then
+            cp "$tmp_file" "$out_file"
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${GREEN}[aicp]${RESET} 已写入文件: $out_file"
+            else
+                echo -e "${GREEN}[aicp]${RESET} Written to file: $out_file"
+            fi
+        fi
         [[ $print_mode -eq 1 ]] && cat "$tmp_file"
 
         rm -f "$tmp_file"
         return $has_error
     }
-
     _aicp_exec_loop() {
         local context_file="$1"
         local has_context=0
@@ -537,15 +900,28 @@ EOF
         while true; do
             echo
             echo -e "${BLUE}═══════════════════════════════════════════════${RESET}"
-            echo -e "${BLUE}[aicp/exec]${RESET} 第 ${round} 轮 — 上下文已就绪"
-            echo -e "${YELLOW}粘贴 AI 回复（粘贴完成后输入 ---EOF---）：${RESET}"
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${BLUE}[aicp/exec]${RESET} 第 ${round} 轮 — 上下文已就绪"
+                echo -e "${YELLOW}粘贴 AI 回复（粘贴完成后输入 ---EOF---）：${RESET}"
+            else
+                echo -e "${BLUE}[aicp/exec]${RESET} Round ${round} — Context ready"
+                echo -e "${YELLOW}Paste AI response (type ---EOF--- when done):${RESET}"
+            fi
 
             local ai_response=""
             while IFS= read -r line; do
                 [[ "$line" == "---EOF---" ]] && break
-                ai_response+="$line"$'\n'
+                ai_response+="$line"$'
+'
             done <&3
-            [[ -z "$ai_response" ]] && { echo -e "${YELLOW}[aicp/exec]${RESET} 空输入，退出"; break; }
+            if [[ -z "$ai_response" ]]; then
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${YELLOW}[aicp/exec]${RESET} 空输入，退出"
+                else
+                    echo -e "${YELLOW}[aicp/exec]${RESET} Empty input, exiting"
+                fi
+                break
+            fi
 
             local in_read=0 in_write=0
             local -a read_targets=()
@@ -553,7 +929,7 @@ EOF
             local -a write_diffs=()
 
             while IFS= read -r line; do
-                # 自闭合格式: <aicp:read path/to/file />
+                # Self-closing format: <aicp:read path/to/file />
                 if [[ "$line" =~ '<aicp:read ' ]]; then
                     local read_path="${line#*<aicp:read }"
                     read_path="${read_path%% />*}"
@@ -561,19 +937,19 @@ EOF
                     read_path="${read_path%${read_path##*[![:space:]]}}"
                     [[ -n "$read_path" ]] && read_targets+=("$read_path")
                     continue
-                # 标签对（单行）: <aicp:read>path/to/file</aicp:read>
+                # Tag pair (single line): <aicp:read>path/to/file</aicp:read>
                 elif [[ "$line" =~ '<aicp:read>' && "$line" =~ '</aicp:read>' ]]; then
                     local read_path="${line#*<aicp:read>}"
                     read_path="${read_path%</aicp:read>*}"
                     read_path="${read_path#"${read_path%%[![:space:]]*}"}"
                     read_path="${read_path%${read_path##*[![:space:]]}}"
                     [[ -n "$read_path" ]] && read_targets+=("$read_path"); continue
-                # 标签对（多行）: <aicp:read> / path / </aicp:read>
+                # Tag pair (multi-line): <aicp:read> / path / </aicp:read>
                 elif [[ "$line" == '<aicp:read>' ]]; then
                     in_read=1; continue
                 elif [[ "$line" == '</aicp:read>' && $in_read -eq 1 ]]; then
                     in_read=0; continue
-                # 容错：缺少 < 前缀（如 "aicp:read>path"）
+                # Tolerant format: missing < prefix (e.g. "aicp:read>path")
                 elif [[ "$line" =~ 'aicp:read ' && "$line" =~ '/>' ]]; then
                     local read_path="${line#*aicp:read }"
                     read_path="${read_path%% />*}"
@@ -587,7 +963,7 @@ EOF
                     read_path="${read_path#"${read_path%%[![:space:]]*}"}"
                     read_path="${read_path%${read_path##*[![:space:]]}}"
                     [[ -n "$read_path" ]] && read_targets+=("$read_path"); continue
-                # 容错：aicp:read + path + </aicp:read> (完全无 <> 包裹)
+                # Tolerant format: aicp:read + path + </aicp:read> (no brackets at all)
                 elif [[ "$line" =~ 'aicp:read' && "$line" =~ '</aicp:read>' ]]; then
                     local read_path="${line#*aicp:read}"
                     read_path="${read_path%</aicp:read>*}"
@@ -608,7 +984,8 @@ EOF
                     local trimmed="${line#"${line%%[![:space:]]*}"}"
                     [[ -n "$trimmed" ]] && read_targets+=("$trimmed")
                 elif [[ $in_write -eq 1 ]]; then
-                    write_buf+="$line"$'\n'
+                    write_buf+="$line"$'
+'
                 fi
             done <<< "$ai_response"
 
@@ -618,18 +995,25 @@ EOF
             if [[ ${#read_targets[@]} -gt 0 ]]; then
                 has_read=1
                 echo
-                echo -e "${YELLOW}→ 读取请求:${RESET}"
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${YELLOW}→ 读取请求:${RESET}"
+                else
+                    echo -e "${YELLOW}→ Read Request:${RESET}"
+                fi
                 local target
                 for target in "${read_targets[@]}"; do
                     [[ -z "$target" ]] && continue
                     local file_path="${target%%:*}"
                     local line_range=""
                     [[ "$target" == *:* ]] && line_range="${target#*:}"
-                    # "1-30" → "1,30" for sed
                     line_range="${line_range/-/,}"
 
                     if [[ ! -f "$file_path" ]]; then
-                        echo -e "  ${RED}文件不存在: $file_path${RESET}"
+                        if [[ "$lang" == zh* ]]; then
+                            echo -e "  ${RED}文件不存在: $file_path${RESET}"
+                        else
+                            echo -e "  ${RED}File does not exist: $file_path${RESET}"
+                        fi
                         continue
                     fi
 
@@ -643,11 +1027,19 @@ EOF
                     fi
                     if [[ -n "$content" ]]; then
                         echo "$content"
-                        read_output+='<aicp:fetch name="'"$target"'"'$'\n'
-                        read_output+="$content"$'\n'
-                        read_output+='</aicp:fetch>'$'\n\n'
+                        read_output+='<aicp:fetch name="'"$target"'"'$'
+'
+                        read_output+="$content"$'
+'
+                        read_output+='</aicp:fetch>'$'
+
+'
                     else
-                        echo -e "  ${YELLOW}(空文件)${RESET}"
+                        if [[ "$lang" == zh* ]]; then
+                            echo -e "  ${YELLOW}(空文件)${RESET}"
+                        else
+                            echo -e "  ${YELLOW}(Empty file)${RESET}"
+                        fi
                     fi
                 done
             fi
@@ -659,50 +1051,91 @@ EOF
                     local diff_file="$accum_dir/diff.patch"
                     echo "$wdiff" > "$diff_file"
                     echo
-                    echo -e "${YELLOW}→ 写入请求 (diff):${RESET}"
+                    if [[ "$lang" == zh* ]]; then
+                        echo -e "${YELLOW}→ 写入请求 (diff):${RESET}"
+                    else
+                        echo -e "${YELLOW}→ Write Request (diff):${RESET}"
+                    fi
                     echo "$wdiff"
 
                     local strip_level=""
                     (cd "$ZFL_HOME" && patch -p0 -t -f --dry-run -i "$diff_file" 2>/dev/null) && strip_level=0
                     [[ -z "$strip_level" ]] && (cd "$ZFL_HOME" && patch -p1 -t -f --dry-run -i "$diff_file" 2>/dev/null) && strip_level=1
                     if [[ -z "$strip_level" ]]; then
-                        echo -e "${RED}  ✗ 无法干净应用${RESET}"
+                        if [[ "$lang" == zh* ]]; then
+                            echo -e "${RED}  ✗ 无法干净应用${RESET}"
+                        else
+                            echo -e "${RED}  ✗ Cannot apply cleanly${RESET}"
+                        fi
                         continue
                     fi
 
-                    echo -e "${GREEN}  ✓ 可以干净应用${RESET}"
-                    echo -n -e "应用此 diff？${GREEN}[y/N]${RESET} "
+                    if [[ "$lang" == zh* ]]; then
+                        echo -e "${GREEN}  ✓ 可以干净应用${RESET}"
+                        echo -n -e "应用此 diff？${GREEN}[y/N]${RESET} "
+                    else
+                        echo -e "${GREEN}  ✓ Can apply cleanly${RESET}"
+                        echo -n -e "Apply this diff? ${GREEN}[y/N]${RESET} "
+                    fi
                     local confirm
                     read confirm <&3
                     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-                        echo -e "  ${YELLOW}已跳过${RESET}"
+                        if [[ "$lang" == zh* ]]; then
+                            echo -e "  ${YELLOW}已跳过${RESET}"
+                        else
+                            echo -e "  ${YELLOW}Skipped${RESET}"
+                        fi
                         continue
                     fi
 
                     if (cd "$ZFL_HOME" && patch -p"$strip_level" -t -f -i "$diff_file"); then
-                        echo -e "${GREEN}  ✓ 已应用${RESET}"
+                        if [[ "$lang" == zh* ]]; then
+                            echo -e "${GREEN}  ✓ 已应用${RESET}"
+                        else
+                            echo -e "${GREEN}  ✓ Applied${RESET}"
+                        fi
                         if git rev-parse --git-dir >/dev/null 2>&1; then
-                            echo -e "${BLUE}  改动摘要:${RESET}"
+                            if [[ "$lang" == zh* ]]; then
+                                echo -e "${BLUE}  改动摘要:${RESET}"
+                            else
+                                echo -e "${BLUE}  Change summary:${RESET}"
+                            fi
                             git diff --stat
                         fi
                     else
-                        echo -e "${RED}  ✗ 应用失败${RESET}"
+                        if [[ "$lang" == zh* ]]; then
+                            echo -e "${RED}  ✗ 应用失败${RESET}"
+                        else
+                            echo -e "${RED}  ✗ Apply failed${RESET}"
+                        fi
                     fi
                 done
             fi
 
             if [[ -n "$read_output" ]]; then
                 echo "$read_output" >> "$accum_file"
-                echo -e "${GREEN}[aicp/exec]${RESET} 读取内容已累计"
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${GREEN}[aicp/exec]${RESET} 读取内容已累计"
+                else
+                    echo -e "${GREEN}[aicp/exec]${RESET} Read content accumulated"
+                fi
             fi
 
             if [[ $has_read -eq 0 && $has_write -eq 0 ]]; then
-                echo -e "${YELLOW}[aicp/exec]${RESET} 未检测到 <aicp:read> 或 <aicp:write> 标签"
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${YELLOW}[aicp/exec]${RESET} 未检测到 <aicp:read> 或 <aicp:write> 标签"
+                else
+                    echo -e "${YELLOW}[aicp/exec]${RESET} No <aicp:read> or <aicp:write> tags detected"
+                fi
                 break
             fi
 
             echo
-            echo -n -e "继续下一轮？${GREEN}[Y/n]${RESET} "
+            if [[ "$lang" == zh* ]]; then
+                echo -n -e "继续下一轮？${GREEN}[Y/n]${RESET} "
+            else
+                echo -n -e "Continue to next round? ${GREEN}[Y/n]${RESET} "
+            fi
             local next
             read next <&3
             [[ "$next" == "n" || "$next" == "N" ]] && break
@@ -710,13 +1143,21 @@ EOF
             round=$((round + 1))
 
             if [[ $has_context -eq 1 ]]; then
-                echo -e "${BLUE}[aicp/exec]${RESET} 重新生成上下文..."
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${BLUE}[aicp/exec]${RESET} 重新生成上下文..."
+                else
+                    echo -e "${BLUE}[aicp/exec]${RESET} Regenerating context..."
+                fi
 
                 local new_tmp
                 new_tmp=$(mktemp /tmp/aicp.XXXXXX.txt) || break
                 if ! "${cmd[@]}" > "$new_tmp"; then
                     rm -f "$new_tmp"
-                    echo -e "${RED}[ERROR]${RESET} 上下文生成失败"
+                    if [[ "$lang" == zh* ]]; then
+                        echo -e "${RED}[ERROR]${RESET} 上下文生成失败"
+                    else
+                        echo -e "${RED}[ERROR]${RESET} Context generation failed"
+                    fi
                     break
                 fi
 
@@ -724,7 +1165,11 @@ EOF
                     {
                         echo ""
                         echo "---"
-                        echo "## 上一轮 AI 读取请求的结果"
+                        if [[ "$lang" == zh* ]]; then
+                            echo "## 上一轮 AI 读取请求的结果"
+                        else
+                            echo "## Results of the previous AI read requests"
+                        fi
                         cat "$accum_file"
                     } >> "$new_tmp"
                 fi
@@ -735,7 +1180,13 @@ EOF
                 elif command -v xclip >/dev/null 2>&1; then
                     xclip -selection clipboard < "$new_tmp" >/dev/null 2>&1 3<&-; copied=1
                 fi
-                [[ $copied -eq 1 ]] && echo -e "${GREEN}[aicp/exec]${RESET} 已复制到剪贴板 (第 ${round} 轮)"
+                if [[ $copied -eq 1 ]]; then
+                    if [[ "$lang" == zh* ]]; then
+                        echo -e "${GREEN}[aicp/exec]${RESET} 已复制到剪贴板 (第 ${round} 轮)"
+                    else
+                        echo -e "${GREEN}[aicp/exec]${RESET} Copied to clipboard (Round ${round})"
+                    fi
+                fi
                 rm -f "$new_tmp"
             elif [[ -s "$accum_file" ]]; then
                 if command -v wl-copy >/dev/null 2>&1; then
@@ -743,12 +1194,24 @@ EOF
                 elif command -v xclip >/dev/null 2>&1; then
                     xclip -selection clipboard < "$accum_file" >/dev/null 2>&1 3<&-
                 fi
-                echo -e "${GREEN}[aicp/exec]${RESET} 读取记录已复制到剪贴板"
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${GREEN}[aicp/exec]${RESET} 读取记录已复制到剪贴板"
+                else
+                    echo -e "${GREEN}[aicp/exec]${RESET} Read logs copied to clipboard"
+                fi
             fi
         done
 
         exec 3<&-
         rm -rf "$accum_dir"
+    }
+
+    _aicp_missing_arg() {
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[ERROR]${RESET} $1 缺少参数"
+        else
+            echo -e "${RED}[ERROR]${RESET} $1 missing argument"
+        fi
     }
 
     local mode="balanced"
@@ -800,63 +1263,63 @@ EOF
                 done
                 ;;
             --mode)
-                [[ -z "$2" ]] && { echo -e "${RED}[ERROR]${RESET} --mode 缺少参数"; return 1; }
+                [[ -z "$2" ]] && { _aicp_missing_arg "--mode"; return 1; }
                 mode="$2"; mode_user_set=1; shift 2 ;;
             --init)
                 init_mode=1; shift ;;
             --exec)
                 exec_mode=1; shift ;;
             --query)
-                [[ -z "$2" ]] && { echo -e "${RED}[ERROR]${RESET} --query 缺少参数"; return 1; }
+                [[ -z "$2" ]] && { _aicp_missing_arg "--query"; return 1; }
                 queries+=("$2"); shift 2 ;;
             --query-regex)
-                [[ -z "$2" ]] && { echo -e "${RED}[ERROR]${RESET} --query-regex 缺少参数"; return 1; }
+                [[ -z "$2" ]] && { _aicp_missing_arg "--query-regex"; return 1; }
                 query_regexes+=("$2"); shift 2 ;;
             --exclude)
-                [[ -z "$2" ]] && { echo -e "${RED}[ERROR]${RESET} --exclude 缺少参数"; return 1; }
+                [[ -z "$2" ]] && { _aicp_missing_arg "--exclude"; return 1; }
                 excludes+=("$2"); shift 2 ;;
             --exclude-regex)
-                [[ -z "$2" ]] && { echo -e "${RED}[ERROR]${RESET} --exclude-regex 缺少参数"; return 1; }
+                [[ -z "$2" ]] && { _aicp_missing_arg "--exclude-regex"; return 1; }
                 exclude_regexes+=("$2"); shift 2 ;;
             --changed)
                 changed_mode=1; shift ;;
             --changed-from)
-                [[ -z "$2" ]] && { echo -e "${RED}[ERROR]${RESET} --changed-from 缺少参数"; return 1; }
+                [[ -z "$2" ]] && { _aicp_missing_arg "--changed-from"; return 1; }
                 changed_from="$2"; shift 2 ;;
             --changed-commit-range)
-                [[ -z "$2" ]] && { echo -e "${RED}[ERROR]${RESET} --changed-commit-range 缺少参数"; return 1; }
+                [[ -z "$2" ]] && { _aicp_missing_arg "--changed-commit-range"; return 1; }
                 changed_commit_range="$2"; shift 2 ;;
             --snippet-around-query)
                 snippet_around_query=1; shift ;;
             --snippet-context-lines)
-                [[ -z "$2" ]] && { echo -e "${RED}[ERROR]${RESET} --snippet-context-lines 缺少参数"; return 1; }
+                [[ -z "$2" ]] && { _aicp_missing_arg "--snippet-context-lines"; return 1; }
                 snippet_context_lines="$2"; shift 2 ;;
             --output-format)
-                [[ -z "$2" ]] && { echo -e "${RED}[ERROR]${RESET} --output-format 缺少参数"; return 1; }
+                [[ -z "$2" ]] && { _aicp_missing_arg "--output-format"; return 1; }
                 output_format="$2"; shift 2 ;;
             --quality-report)
                 quality_report=1; shift ;;
             --ignore-docs)
                 ignore_docs=1; shift ;;
             --max-files)
-                [[ -z "$2" ]] && { echo -e "${RED}[ERROR]${RESET} --max-files 缺少参数"; return 1; }
+                [[ -z "$2" ]] && { _aicp_missing_arg "--max-files"; return 1; }
                 max_files="$2"; shift 2 ;;
             --max-total-chars)
-                [[ -z "$2" ]] && { echo -e "${RED}[ERROR]${RESET} --max-total-chars 缺少参数"; return 1; }
+                [[ -z "$2" ]] && { _aicp_missing_arg "--max-total-chars"; return 1; }
                 max_total_chars="$2"; shift 2 ;;
             --max-file-chars)
-                [[ -z "$2" ]] && { echo -e "${RED}[ERROR]${RESET} --max-file-chars 缺少参数"; return 1; }
+                [[ -z "$2" ]] && { _aicp_missing_arg "--max-file-chars"; return 1; }
                 max_file_chars="$2"; shift 2 ;;
             --prompt)
-                [[ -z "$2" ]] && { echo -e "${RED}[ERROR]${RESET} --prompt 缺少参数"; return 1; }
+                [[ -z "$2" ]] && { _aicp_missing_arg "--prompt"; return 1; }
                 prompt_text="$2"; prompt_user_set=1; shift 2 ;;
             --prompt-file)
-                [[ -z "$2" ]] && { echo -e "${RED}[ERROR]${RESET} --prompt-file 缺少参数"; return 1; }
+                [[ -z "$2" ]] && { _aicp_missing_arg "--prompt-file"; return 1; }
                 prompt_file="$2"; shift 2 ;;
             --print)
                 print_mode=1; shift ;;
             --out)
-                [[ -z "$2" ]] && { echo -e "${RED}[ERROR]${RESET} --out 缺少参数"; return 1; }
+                [[ -z "$2" ]] && { _aicp_missing_arg "--out"; return 1; }
                 out_file="$2"; shift 2 ;;
             --no-copy)
                 copy_mode=0; shift ;;
@@ -880,13 +1343,18 @@ EOF
                 fi
                 return 0 ;;
             *)
-                echo -e "${RED}[ERROR]${RESET} 未知参数: $arg"
-                echo "使用 aicp -h 查看帮助"
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${RED}[ERROR]${RESET} 未知参数: $arg"
+                    echo "使用 aicp -h 查看帮助"
+                else
+                    echo -e "${RED}[ERROR]${RESET} Unknown option: $arg"
+                    echo "Try 'aicp -h' for help"
+                fi
                 return 1 ;;
         esac
     done
 
-    # init 预设：用于 AI 快速建立项目认知
+    # init preset for project onboarding
     if [[ $init_mode -eq 1 ]]; then
         [[ $mode_user_set -eq 0 ]] && mode="balanced"
         [[ $all_mode -eq 0 && ${#targets[@]} -eq 0 ]] && all_mode=1
@@ -895,41 +1363,66 @@ EOF
         [[ -z "$max_total_chars" ]] && max_total_chars="85000"
         [[ -z "$max_file_chars" ]] && max_file_chars="2200"
         if [[ $prompt_user_set -eq 0 && -z "$prompt_file" ]]; then
-            prompt_text="请先建立该项目的认知地图：1) 分层与职责 2) 启动链路与调用路径 3) 关键模块关系 4) 高风险改动点与建议入口。"
+            if [[ "$lang" == zh* ]]; then
+                prompt_text="请先建立该项目的认知地图：1) 分层与职责 2) 启动链路与调用路径 3) 关键模块关系 4) 高风险改动点与建议入口。"
+            else
+                prompt_text="Please establish the cognitive map of this project first: 1) Architecture layers & responsibilities 2) Startup path & calling sequence 3) Key module relationships 4) High-risk change points & recommendations."
+            fi
         fi
     fi
 
     if [[ "$mode" != "fast" && "$mode" != "balanced" && "$mode" != "deep" && "$mode" != "full" ]]; then
-        echo -e "${RED}[ERROR]${RESET} --mode 仅支持 fast / balanced / deep / full"; return 1
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[ERROR]${RESET} --mode 仅支持 fast / balanced / deep / full"
+        else
+            echo -e "${RED}[ERROR]${RESET} --mode only supports fast / balanced / deep / full"
+        fi
+        return 1
     fi
     if [[ "$output_format" != "markdown" && "$output_format" != "plain" && "$output_format" != "json" ]]; then
-        echo -e "${RED}[ERROR]${RESET} --output-format 仅支持 markdown/plain/json"; return 1
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[ERROR]${RESET} --output-format 仅支持 markdown/plain/json"
+        else
+            echo -e "${RED}[ERROR]${RESET} --output-format only supports markdown/plain/json"
+        fi
+        return 1
     fi
 
     local n
     for n in "$snippet_context_lines" "$max_files" "$max_total_chars" "$max_file_chars"; do
         [[ -z "$n" ]] && continue
         if [[ ! "$n" =~ ^[0-9]+$ ]]; then
-            echo -e "${RED}[ERROR]${RESET} 数值参数必须为正整数"; return 1
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${RED}[ERROR]${RESET} 数值参数必须为正整数"
+            else
+                echo -e "${RED}[ERROR]${RESET} Numeric arguments must be positive integers"
+            fi
+            return 1
         fi
     done
 
     if [[ -n "$prompt_file" ]]; then
         if [[ ! -f "$prompt_file" || ! -r "$prompt_file" ]]; then
-            echo -e "${RED}[ERROR]${RESET} prompt 文件不存在或不可读: $prompt_file"; return 1
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${RED}[ERROR]${RESET} prompt 文件不存在或不可读: $prompt_file"
+            else
+                echo -e "${RED}[ERROR]${RESET} prompt file does not exist or is not readable: $prompt_file"
+            fi
+            return 1
         fi
         prompt_text="$(cat "$prompt_file")"
     fi
 
-    # exec 模式：注入能力声明
+    # exec mode capability injection
     if [[ $exec_mode -eq 1 ]]; then
         local exec_prompt
-        exec_prompt=$(
-            cat <<'EOP'
+        if [[ "$lang" == zh* ]]; then
+            exec_prompt=$(
+                cat <<'EOP'
 
 ## 系统能力：文件读写
 
-你可以通过以下 XML 标签请求读写文件，助手将代为执行。
+可以通过以下 XML 标签请求读写文件，助手将代为执行。
 
 ### 读取文件（优先使用）
 
@@ -957,7 +1450,7 @@ EOF
 +++ b/src/foo.py
 @@ -10,6 +10,8 @@
  ...
-</aicp:write>
+ </aicp:write>
 ```
 
 写入注意：
@@ -976,14 +1469,76 @@ EOF
 +++ b/src/main.py
 @@ -30,6 +30,8 @@
   ...
-</aicp:write>
+ </aicp:write>
 ```
 
 回复格式规则：
 1. 工具调用场景：若回复中包含任何 <aicp:read> 或 <aicp:write> 标签，则必须保持绝对静默——仅输出 XML 标签，不得附带任何解释、分析、过渡句或问候语。回复末尾单独一行添加 `---EOF---` 作为结束标记。读取返回的行号为文件实际行号，可直接用于写入补丁的 @@ 引用。
 2. 纯对话场景：若回复不含任何工具标签，正常输出文本，绝对不要在末尾添加 `---EOF---` 标记。
 EOP
-        )
+            )
+        else:
+            exec_prompt=$(
+                cat <<'EOP'
+
+## System Capability: File Read/Write
+
+You can read/write files through the following XML tags, which the helper will execute on your behalf.
+
+### Read File (Preferred)
+
+```xml
+<aicp:read>src/foo.py</aicp:read>
+<aicp:read>src/foo.py:10-30</aicp:read>
+```
+
+Or inline self-closing format:
+
+```xml
+<aicp:read src/foo.py:10-30 />
+```
+
+Reading Policy:
+1. Locate target files using the FILE INDEX.
+2. Use `<aicp:read>` to precisely fetch key function/module line ranges.
+3. The returned lines contain line numbers which can be directly referenced in patch diffs.
+
+### Modify File
+
+```xml
+<aicp:write>
+--- a/src/foo.py
++++ b/src/foo.py
+@@ -10,6 +10,8 @@
+ ...
+ </aicp:write>
+```
+
+Important Rules for Writing:
+- Use relative paths from the project root.
+- The `@@` line numbers must match those returned in previous read results.
+- Diffs will be shown to the user for confirmation before applying.
+
+Example:
+
+```xml
+<aicp:read>src/main.py:20-50</aicp:read>
+<aicp:read>src/utils.py</aicp:read>
+
+<aicp:write>
+--- a/src/main.py
++++ b/src/main.py
+@@ -30,6 +30,8 @@
+  ...
+ </aicp:write>
+```
+
+Response Format Rules:
+1. Tool Call Scenario: If your response contains any `<aicp:read>` or `<aicp:write>` tags, you MUST remain absolutely silent—output ONLY the XML tags, without any explanation, transition, or greetings. Append `---EOF---` on a separate line at the end of your response.
+2. Conversational Scenario: If your response does not contain any tool tags, output normal text and do NOT append `---EOF---`.
+EOP
+            )
+        fi
         if [[ -n "$prompt_text" ]]; then
             prompt_text="$prompt_text$exec_prompt"
         else
@@ -991,7 +1546,7 @@ EOP
         fi
     fi
 
-    # --exec 无上下文模式：直接进入交互，跳过上下文生成
+    # --exec no context mode: interactive loop directly
     if [[ $exec_mode -eq 1 && $all_mode -eq 0 && $changed_mode -eq 0 &&
           -z "$changed_from" && -z "$changed_commit_range" &&
           ${#targets[@]} -eq 0 ]]; then
@@ -1000,10 +1555,14 @@ EOP
         return 0
     fi
 
-    # --read 模式：直接处理文件读取，跳过上下文生成
+    # --read mode: read files to clipboard directly
     if [[ $read_mode -eq 1 ]]; then
         if [[ ${#read_targets[@]} -eq 0 ]]; then
-            echo -e "${RED}[ERROR]${RESET} --read 需要至少一个路径参数，格式: <path>[:<start>-<end>]"
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${RED}[ERROR]${RESET} --read 需要至少一个路径参数，格式: <path>[:<start>-<end>]"
+            else
+                echo -e "${RED}[ERROR]${RESET} --read requires at least one path argument, format: <path>[:<start>-<end>]"
+            fi
             return 1
         fi
         _aicp_handle_read
@@ -1012,17 +1571,33 @@ EOP
 
     if [[ $all_mode -eq 0 && ${#targets[@]} -eq 0 ]]; then
         if [[ $exec_mode -eq 0 ]]; then
-            echo -e "${YELLOW}[aicp]${RESET} 未指定目标，默认使用 -a 扫描当前目录"
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${YELLOW}[aicp]${RESET} 未指定目标，默认使用 -a 扫描当前目录"
+            else
+                echo -e "${YELLOW}[aicp]${RESET} No target specified, default to scanning current directory with -a"
+            fi
         fi
         all_mode=1
     fi
 
     if ! command -v python3 >/dev/null 2>&1; then
-        echo -e "${RED}[ERROR]${RESET} 未找到 python3，无法生成上下文。"; return 1
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[ERROR]${RESET} 未找到 python3，无法生成上下文。"
+        else
+            echo -e "${RED}[ERROR]${RESET} python3 not found, cannot generate context."
+        fi
+        return 1
     fi
 
     local py_script="$ZFL_HOME/python/aicp_context.py"
-    [[ ! -f "$py_script" ]] && { echo -e "${RED}[ERROR]${RESET} 缺少脚本: $py_script"; return 1; }
+    if [[ ! -f "$py_script" ]]; then
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[ERROR]${RESET} 缺少脚本: $py_script"
+        else
+            echo -e "${RED}[ERROR]${RESET} Missing script: $py_script"
+        fi
+        return 1
+    fi
 
     local tmp_file
     tmp_file=$(mktemp /tmp/aicp.XXXXXX.txt) || return 1
@@ -1053,11 +1628,19 @@ EOP
     local changed_effective=0
     [[ $changed_mode -eq 1 || -n "$changed_from" || -n "$changed_commit_range" ]] && changed_effective=1
 
-    echo -e "${BLUE}[aicp]${RESET} 生成上下文中... mode=${mode}, init=${init_mode}, format=${output_format}, changed=${changed_effective}, changed_from=${changed_from:-none}, commit_range=${changed_commit_range:-none}, query_count=${#queries[@]}, regex_count=${#query_regexes[@]}, exclude_count=${#excludes[@]}, exclude_regex_count=${#exclude_regexes[@]}, ignore_docs=${ignore_docs}, around_query=${snippet_around_query}, quality=${quality_report}"
+    if [[ "$lang" == zh* ]]; then
+        echo -e "${BLUE}[aicp]${RESET} 生成上下文中... mode=${mode}, init=${init_mode}, format=${output_format}, changed=${changed_effective}, changed_from=${changed_from:-none}, commit_range=${changed_commit_range:-none}, query_count=${#queries[@]}, regex_count=${#query_regexes[@]}, exclude_count=${#excludes[@]}, exclude_regex_count=${#exclude_regexes[@]}, ignore_docs=${ignore_docs}, around_query=${snippet_around_query}, quality=${quality_report}"
+    else
+        echo -e "${BLUE}[aicp]${RESET} Generating context... mode=${mode}, init=${init_mode}, format=${output_format}, changed=${changed_effective}, changed_from=${changed_from:-none}, commit_range=${changed_commit_range:-none}, query_count=${#queries[@]}, regex_count=${#query_regexes[@]}, exclude_count=${#excludes[@]}, exclude_regex_count=${#exclude_regexes[@]}, ignore_docs=${ignore_docs}, around_query=${snippet_around_query}, quality=${quality_report}"
+    fi
 
     if ! "${cmd[@]}" > "$tmp_file"; then
         rm -f "$tmp_file"
-        echo -e "${RED}[ERROR]${RESET} 上下文生成失败。"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[ERROR]${RESET} 上下文生成失败。"
+        else
+            echo -e "${RED}[ERROR]${RESET} Context generation failed."
+        fi
         return 1
     fi
 
@@ -1085,22 +1668,49 @@ PY
     if [[ $copy_mode -eq 1 ]]; then
         if command -v wl-copy >/dev/null 2>&1; then
             wl-copy < "$tmp_file" >/dev/null 2>&1
-            echo -e "${GREEN}[SUCCESS]${RESET} 已复制到剪贴板 (wl-copy)。"
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${GREEN}[SUCCESS]${RESET} 已复制到剪贴板 (wl-copy)。"
+            else
+                echo -e "${GREEN}[SUCCESS]${RESET} Copied to clipboard (wl-copy)."
+            fi
         elif command -v xclip >/dev/null 2>&1; then
             xclip -selection clipboard < "$tmp_file" >/dev/null 2>&1
-            echo -e "${GREEN}[SUCCESS]${RESET} 已复制到剪贴板 (xclip)。"
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${GREEN}[SUCCESS]${RESET} 已复制到剪贴板 (xclip)。"
+            else
+                echo -e "${GREEN}[SUCCESS]${RESET} Copied to clipboard (xclip)."
+            fi
         elif command -v pbcopy >/dev/null 2>&1; then
             pbcopy < "$tmp_file" >/dev/null 2>&1
-            echo -e "${GREEN}[SUCCESS]${RESET} 已复制到剪贴板 (pbcopy)。"
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${GREEN}[SUCCESS]${RESET} 已复制到剪贴板 (pbcopy)。"
+            else
+                echo -e "${GREEN}[SUCCESS]${RESET} Copied to clipboard (pbcopy)."
+            fi
         else
-            echo -e "${YELLOW}[WARN]${RESET} 未检测到剪贴板命令(wl-copy/xclip/pbcopy)，跳过复制。"
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${YELLOW}[WARN]${RESET} 未检测到剪贴板命令(wl-copy/xclip/pbcopy)，跳过复制。"
+            else
+                echo -e "${YELLOW}[WARN]${RESET} Clipboard command not found (wl-copy/xclip/pbcopy), skipped copying."
+            fi
         fi
     fi
 
-    [[ -n "$out_file" ]] && { cp "$tmp_file" "$out_file"; echo -e "${GREEN}[aicp]${RESET} 已写入文件: $out_file"; }
+    if [[ -n "$out_file" ]]; then
+        cp "$tmp_file" "$out_file"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${GREEN}[aicp]${RESET} 已写入文件: $out_file"
+        else
+            echo -e "${GREEN}[aicp]${RESET} Written to file: $out_file"
+        fi
+    fi
     [[ $print_mode -eq 1 ]] && cat "$tmp_file"
 
-    echo -e "${BLUE}[aicp]${RESET} 完成，预估 token 数: ${token_count}"
+    if [[ "$lang" == zh* ]]; then
+        echo -e "${BLUE}[aicp]${RESET} 完成，预估 token 数: ${token_count}"
+    else
+        echo -e "${BLUE}[aicp]${RESET} Finished, estimated token count: ${token_count}"
+    fi
 
     if [[ $exec_mode -eq 1 ]]; then
         echo
@@ -1110,45 +1720,21 @@ PY
     rm -f "$tmp_file"
 }
 
-# aicp 命令行自动补全
+# aicp tab completions
 _aicp() {
     local -a modes output_formats help_topics
     modes=(fast balanced deep full)
     output_formats=(markdown plain json)
     help_topics=(general mode init filter changed output examples exec read all)
+    local lang=${ZFL_LANG:-${LANG%%.*}}
 
-    _arguments -s -S \
-        '(-a --all)'{-a,--all}'[全量扫描当前目录]' \
-        '*-c[手动指定目标文件/目录]:file:_files' \
-        '*--choose[手动指定目标文件/目录]:file:_files' \
-        '--mode[复制等级]:mode:('"${modes[*]}"')' \
-        '--init[项目认知预设]' \
-        '--exec[交互式 AI 协作模式]' \
-        '*--query[关键词纳入]:keyword:' \
-        '*--query-regex[正则纳入]:regex:' \
-        '*--exclude[关键词排除]:keyword:' \
-        '*--exclude-regex[正则排除]:regex:' \
-        '--changed[相对 HEAD 改动+未跟踪]' \
-        '--changed-from[相对某分支/标签对比]:ref:' \
-        '--changed-commit-range[提交区间对比]:range:' \
-        '--snippet-around-query[命中点邻域模式]' \
-        '--snippet-context-lines[邻域扩展行数]:lines:' \
-        '--output-format[格式]:format:('"${output_formats[*]}"')' \
-        '--quality-report[附质量报告]' \
-        '--max-files[文件总数上限]:limit:' \
-        '--max-total-chars[总字符数上限]:limit:' \
-        '--max-file-chars[单文件字符上限]:limit:' \
-        '--ignore-docs[过滤文档类文件]' \
-        '--prompt[自定义提示词]:text:' \
-        '--prompt-file[从文件读取提示词]:file:_files' \
-        '--print[打印到终端]' \
-        '--out[写入文件]:file:_files' \
-        '--no-copy[跳过剪贴板复制]' \
-        '*--read[读取文件指定行到剪贴板]:file:_files' \
-        '(-h --help)'{-h,--help}'[查看帮助]:topic:('"${help_topics[*]}"')'
+    if [[ "$lang" == zh* ]]; then
+        _arguments -s -S             '(-a --all)'{-a,--all}'[全量扫描当前目录]'             '*-c[手动指定目标文件/目录]:file:_files'             '*--choose[手动指定目标文件/目录]:file:_files'             '--mode[复制等级]:mode:('"${modes[*]}"')'             '--init[项目认知预设]'             '--exec[交互式 AI 协作模式]'             '*--query[关键词纳入]:keyword:'             '*--query-regex[正则纳入]:regex:'             '*--exclude[关键词排除]:keyword:'             '*--exclude-regex[正则排除]:regex:'             '--changed[相对 HEAD 改动+未跟踪]'             '--changed-from[相对某分支/标签对比]:ref:'             '--changed-commit-range[提交区间对比]:range:'             '--snippet-around-query[命中点邻域模式]'             '--snippet-context-lines[邻域扩展行数]:lines:'             '--output-format[格式]:format:('"${output_formats[*]}"')'             '--quality-report[附质量报告]'             '--max-files[文件总数上限]:limit:'             '--max-total-chars[总字符数上限]:limit:'             '--max-file-chars[单文件字符上限]:limit:'             '--ignore-docs[过滤文档类文件]'             '--prompt[自定义提示词]:text:'             '--prompt-file[从文件读取提示词]:file:_files'             '--print[打印到终端]'             '--out[写入文件]:file:_files'             '--no-copy[跳过剪贴板复制]'             '*--read[读取文件指定行到剪贴板]:file:_files'             '(-h --help)'{-h,--help}'[查看帮助]:topic:('"${help_topics[*]}"')'
+    else
+        _arguments -s -S             '(-a --all)'{-a,--all}'[Scan all files in current directory]'             '*-c[Specify target files/directories manually]:file:_files'             '*--choose[Specify target files/directories manually]:file:_files'             '--mode[Context mode level]:mode:('"${modes[*]}"')'             '--init[Initialize project context preset]'             '--exec[Interactive AI collaboration mode]'             '*--query[Query match keyword]:keyword:'             '*--query-regex[Query match regex]:regex:'             '*--exclude[Query exclude keyword]:keyword:'             '*--exclude-regex[Query exclude regex]:regex:'             '--changed[Relative to HEAD changes and untracked]'             '--changed-from[Compare changes relative to branch/tag]:ref:'             '--changed-commit-range[Compare changes in commit range]:range:'             '--snippet-around-query[Query match window snippet mode]'             '--snippet-context-lines[Lines around query match]:lines:'             '--output-format[Format]:format:('"${output_formats[*]}"')'             '--quality-report[Append code quality report]'             '--max-files[Maximum files limit]:limit:'             '--max-total-chars[Maximum total character limit]:limit:'             '--max-file-chars[Maximum per-file character limit]:limit:'             '--ignore-docs[Filter out documentation files]'             '--prompt[Custom instruction prompt]:text:'             '--prompt-file[Load prompt from file]:file:_files'             '--print[Print output directly to stdout]'             '--out[Write output to file]:file:_files'             '--no-copy[Skip clipboard copying]'             '*--read[Read specific lines to clipboard]:file:_files'             '(-h --help)'{-h,--help}'[Check help topics]:topic:('"${help_topics[*]}"')'
+    fi
 }
 
 if whence compdef >/dev/null; then
     compdef _aicp aicp
 fi
-

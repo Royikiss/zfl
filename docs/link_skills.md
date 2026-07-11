@@ -1,99 +1,99 @@
 # link_skills
 
-`link_skills` 用于将全局定义好的 AI Agent 技能配置（Skills）选择性地以符号链接的形式引入当前项目目录。
+`link_skills` is a utility tool to link globally-defined AI Agent skills (Skills) selectively into the current project directory using symbolic links.
 
 ---
 
-## 📖 用法与选项
+## 📖 Usage & Options
 
 ```bash
-link_skills [选项] [技能名称/分组名称...]
+link_skills [options] [skill_name/group_name...]
 ```
 
-### 选项说明
+### Option Descriptions
 
 - **`-h, --help`**
-  显示帮助信息。
-- **`-s, --group-set <分组名> <技能...>`**
-  创建或更新技能分组。
-- **`-r, --group-rm <分组名>`**
-  删除指定的技能分组。
+  Show the help menu.
+- **`-s, --group-set <group_name> <skill...>`**
+  Create or update a skill group.
+- **`-r, --group-rm <group_name>`**
+  Delete a specified skill group.
 - **`-l, --group-list`**
-  列出当前定义的所有技能分组。
+  List all currently defined skill groups.
+- **`-v, --view` (or subcommand `view`)**
+  View connected skills of the current project with Chinese translation loaded from the translation cache.
 
 ---
 
-## 👥 技能分组 (Grouping)
+## 👥 Skill Groups (Grouping)
 
-为了方便管理和批量链接，`link_skills` 支持**技能分组**。您可以将常用的或者有延续性的技能归结为一个分组，通过该分组一键批量软链接。
+To simplify management and enable batch-linking, `link_skills` supports **skill groups**. You can combine multiple commonly used or related skills into a group and soft-link all of them with a single command.
 
-技能分组信息完全由脚本维护，存储在缓存路径 `~/.cache/zsh/skills_groups.json` 中。系统首次运行时会自动生成两个预设分组：
-- **`startup` (极简创业者)**：包含 `validate-idea`, `find-community`, `first-customers`, `marketing-plan`, `pricing`, `processize`, `grow-sustainably`, `minimalist-review`。
-- **`dev` (日常开发协作)**：包含 `prototype`, `improve-codebase-architecture`, `gemini-prompt-optimizer`, `grill-me`, `grill-with-docs`, `handoff`, `nuwa-skill`。
+Skill groups are stored in JSON format at `~/.cache/zsh/skills_groups.json`. The framework automatically generates two default groups when run for the first time:
+- **`startup` (Minimalist Entrepreneur)**: Contains `validate-idea`, `find-community`, `first-customers`, `marketing-plan`, `pricing`, `processize`, `grow-sustainably`, `minimalist-review`.
+- **`dev` (Daily Development Collaboration)**: Contains `prototype`, `improve-codebase-architecture`, `gemini-prompt-optimizer`, `grill-me`, `grill-with-docs`, `handoff`, `nuwa-skill`.
 
-### 分组管理示例
+### Group Management Examples
 
 ```bash
-# 创建/修改分组
+# Create/Modify group
 link_skills --group-set my-triage triage caveman
 
-# 删除分组
+# Delete group
 link_skills --group-rm my-triage
 
-# 查看现有分组
+# View current groups
 link_skills --group-list
 ```
 
 ---
 
-## 💡 示例
+## 💡 Examples
 
-### 1. 命令行直接指定技能或分组名
+### 1. Direct Command Mode
 ```bash
-# 链接特定技能
+# Link specific skills
 link_skills caveman diagnose
 
-# 链接整个分组 (例如 startup 组下的所有技能)
+# Link an entire group (e.g. all skills in startup group)
 link_skills startup
 ```
-会将对应的技能软链接到当前工作目录下的 `.agents/skills/` 对应位置。
+This symlinks the corresponding skills to `.agents/skills/` under the current directory.
 
-### 2. 交互式多选与分组管理模式 (需要安装 `fzf`)
+### 2. Interactive Selection & Group Management Mode (Requires `fzf`)
 ```bash
 link_skills
 ```
-若不带参数运行，工具将启动 `fzf` 交互式筛选菜单，不仅可以链接技能，还可以直接在菜单中管理分组：
-- **查看与选中分组**：分组项（如 `group:startup`）会优先显示在菜单的顶部，您可以在 `fzf` 列表中**直接使用空格键选中/取消选中分组**。
-- **右侧实时预览**：当焦点处于某个分组项上时，右侧预览窗格中将以清晰的中英文格式展示该分组包含的各个技能以及它们的功能说明。
-- **创建/更新分组 (`ctrl-g`)**：在列表中使用 `空格键` 多选需要绑定的技能（或已有分组），按下 `ctrl-g`，终端会提示输入分组名称。回车保存后，返回 FZF 时菜单会自动刷新，新分组立即呈现在顶部。
-- **删除分组 (`ctrl-d`)**：将光标移动到要删除的分组项（如 `group:startup`），按下 `ctrl-d` 并输入 `y` 确认，即可删除该分组。菜单随后会自动刷新。
-- **一键批量链接**：按 `Enter` 键确认后，系统会自动解包、去重，并一键完成所有选中技能的软链接。
+If run without parameters, the tool opens an `fzf` interactive menu where you can link skills and manage groups:
+- **View and Select Groups**: Group entries (e.g. `group:startup`) are shown at the top of the menu. You can **press Space in the fzf list to select/deselect them**.
+- **Real-time Preview**: When focusing on an entry, the right pane displays the details and description of the skill or group in both English and Chinese.
+- **Create/Update Group (`ctrl-g`)**: Press `Space` in the list to select multiple skills (or existing groups), then press `ctrl-g` and input the group name. After saving, the FZF menu refreshes and the new group is immediately displayed.
+- **Delete Group (`ctrl-d`)**: Focus on a group entry (e.g. `group:startup`), press `ctrl-d`, and enter `y` to confirm deletion. The menu will automatically refresh.
+- **Batch Linking**: Press `Enter` to confirm, and the tool will resolve all selected items, deduplicate, and automatically create symlinks.
 
 ---
 
-## ⚙️ 运行机制
+## ⚙️ How it Works
 
-1. **自动归宿**：链接将被创建在当前工作目录的 `.agents/skills/<技能名>` 下。如果父目录不存在，将自动创建。
-2. **软链接同步**：采用 `ln -s` 进行软链接映射。这样您在全局 `~/.agents/skills/` 下进行的任何 Skill 修改，当前项目都能自动实时同步，无需重复手动复制更新。
+1. **Destination Directory**: Symlinks are created at `.agents/skills/<skill_name>` under the current working directory. The parent directory is created automatically if it does not exist.
+2. **Symlink Synchronization**: The utility maps files using `ln -s`. Any modifications made to a Skill under global `~/.agents/skills/` will automatically sync in real-time within your project, without manual copying.
 
 ---
 
-## 🇨🇳 中文化与自愈机制
+## 🌐 Bilingual Support & Translation Cache
 
-为了方便中文用户记忆和使用各类技能，本工具内置了完善的中文化自适应设计：
+To facilitate local translation and off-line usages, ZFL implements bilingual previews and automatic API translations:
 
-### 1. 动态感知与自动清理
-当您手动删除某个 Skill 目录时，`link_skills` 会在下一次启动时自动剔除它，无任何缓存残留，保持列表干净。
+### 1. Dynamic Auto-cleaning
+When you delete a Skill folder manually from the workspace, `link_skills` automatically removes it from the index list on next run.
 
-### 2. 双语展示与使用指南
-- **列表阶段**：在 `fzf` 交互列表中，Skill 将以双语形式显示，包含中文简称及简短中文描述。
-- **右侧预览**：预览区除了展示中英文名称和中英文描述外，还会针对已知常用技能突出显示 **“💡 使用场景与指南 (中文)”**，指导您在何时及如何使用该技能。
+### 2. Bilingual Previews
+- **Selection List**: In `fzf`, Skills show their names and brief descriptions in both English and Chinese.
+- **Preview Pane**: The preview panel lists Chinese and English names, descriptions, and **"💡 Usage Scenarios & Guide"** tips.
 
-### 3. 新增技能自动翻译与本地缓存
-当您下载或添加了新的英文 Skill 目录后：
-1. 首次打开交互菜单预览该技能时，本系统将**自动调用轻量翻译引擎**通过 API 进行翻译。
-2. 翻译完成后，会将中文名称和描述自动保存至系统全局缓存目录下的 **`~/.cache/zsh/skills_zh.json`** 作为本地缓存。
-3. 后续访问该技能时，将直接以**极速、完全离线**的方式从该缓存文件中读取，不再请求网络。
-4. 如果翻译失败（如网络中断），则优雅降级为英文展示，绝不影响日常使用。
-
-
+### 3. Automatic Translation & Cache
+When a new English Skill is added:
+1. When previewed for the first time in the interactive menu, ZFL **calls a lightweight translation engine** to translate metadata.
+2. Once translated, Chinese names and descriptions are cached to **`~/.cache/zsh/skills_zh.json`**.
+3. Subsequent requests load directly from the local cache in **offline mode**, preventing network overhead.
+4. If translation fails (e.g., due to network drops), it falls back to English description gracefully.

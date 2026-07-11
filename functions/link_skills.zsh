@@ -17,6 +17,7 @@ link_skills - 选择性地将 ~/.agents/skills 中的 skills 软链接到当前�
   link_skills -s / --group-set <分组名称> [--ordered] <技能列表...>
   link_skills -r / --group-rm <分组名称>
   link_skills -l / --group-list
+  link_skills -v / --view / view
 
 示例:
   link_skills caveman diagnose       # 链接指定的 skills
@@ -29,6 +30,7 @@ link_skills - 选择性地将 ~/.agents/skills 中的 skills 软链接到当前�
                                     创建或修改技能分组，加 --ordered 则将技能列表顺序标记为推荐调用顺序
   -r, --group-rm <分组名>           删除指定的技能分组
   -l, --group-list                  列出当前定义的所有技能分组
+  -v, --view / view                 直接查看当前项目底下的已连接技能及其中文翻译
 
 说明:
   - 以符号链接（ln -s）的方式将 ~/.agents/skills/ 中的 skill 链接到当前目录的 .agents/skills/ 下。
@@ -44,6 +46,7 @@ Usage:
   link_skills -s / --group-set <group_name> [--ordered] <skills_list...>
   link_skills -r / --group-rm <group_name>
   link_skills -l / --group-list
+  link_skills -v / --view / view
 
 Examples:
   link_skills caveman diagnose       # Link specified skills
@@ -57,6 +60,7 @@ Options:
                                     as the recommended call sequence
   -r, --group-rm <grp>              Delete a specified skill group
   -l, --group-list                  List all currently defined skill groups
+  -v, --view / view                 View connected skills of the current project with Chinese translation
 
 Description:
   - Links skills from ~/.agents/skills/ to the current directory under .agents/skills/ using symlinks (ln -s).
@@ -75,6 +79,7 @@ _link_skills() {
         available_groups=( ${(f)"$(python3 "$ZFL_HOME/python/resolve_skills.py" --list-groups 2>/dev/null)"} )
     fi
 
+    local -a subcommands
     if [[ "$lang" == zh* ]]; then
         options=(
             '-h[显示帮助信息]'
@@ -86,7 +91,10 @@ _link_skills() {
             '--group-rm[删除指定的技能分组]'
             '-l[列出当前定义的所有技能分组]'
             '--group-list[列出当前定义的所有技能分组]'
+            '-v[查看当前项目已连接的技能及其中文翻译]'
+            '--view[查看当前项目已连接的技能及其中文翻译]'
         )
+        subcommands=('view:查看当前项目已连接的技能及其中文翻译')
     else
         options=(
             '-h[Show help information]'
@@ -98,7 +106,10 @@ _link_skills() {
             '--group-rm[Delete a specified skill group]'
             '-l[List all currently defined skill groups]'
             '--group-list[List all currently defined skill groups]'
+            '-v[View connected skills of the current project with Chinese translation]'
+            '--view[View connected skills of the current project with Chinese translation]'
         )
+        subcommands=('view:View connected skills of the current project')
     fi
 
     if [[ "$words[CURRENT]" == -* ]]; then
@@ -106,6 +117,7 @@ _link_skills() {
     else
         if (( CURRENT == 2 )); then
             _describe -t options 'options' options
+            _describe -t subcommands 'subcommands' subcommands
         fi
         _describe -t available_groups 'available groups' available_groups
         _describe -t available_skills 'available skills' available_skills
@@ -118,7 +130,7 @@ link_skills() {
     local lang=${ZFL_LANG:-${LANG%%.*}}
 
     local -a available_skills skills_to_link group_skills
-    local opt_set=0 opt_rm=0 opt_list=0 group_name selected line dest_dir skill src dest
+    local opt_set=0 opt_rm=0 opt_list=0 opt_view=0 group_name selected line dest_dir skill src dest
 
     available_skills=( $HOME/.agents/skills/*(/N:t) )
 
@@ -136,6 +148,11 @@ link_skills() {
             -h|--help)
                 _link_skills_help
                 return 0
+                ;;
+            -v|--view|view)
+                opt_view=1
+                shift
+                break
                 ;;
             -s|--group-set)
                 opt_set=1
@@ -214,6 +231,11 @@ link_skills() {
 
     if (( opt_set )); then
         python3 "$ZFL_HOME/python/resolve_skills.py" --set-group "$group_name" "${group_skills[@]}"
+        return $?
+    fi
+
+    if (( opt_view )); then
+        python3 "$ZFL_HOME/python/resolve_skills.py" --view-connected
         return $?
     fi
 

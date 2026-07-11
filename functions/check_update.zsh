@@ -1,10 +1,10 @@
-#? 名称: check_update
-#? 描述: 异步只读检查系统可用更新并在终端提示，支持 Pacman/AUR 和 Flatpak
-#? 作者: Royi
-#? 版本: 1.0.0
-#? 依赖: pacman, yay, flatpak
-#? 用法: check_update [--force]
-#? 示例: check_update --force
+#? name: check_update
+#? description: Asynchronously check system updates in read-only mode and prompt in terminal, supporting pacman/yay and flatpak
+#? author: Royi
+#? version: 1.0.0
+#? deps: pacman, yay, flatpak
+#? usage: check_update [--force]
+#? example: check_update --force
 
 # 辅助函数: 写入标记文件
 _check_update_write_to() {
@@ -59,29 +59,55 @@ _check_update_acquire_process_lock() {
     return 1
 }
 
-# 将“秒差”格式化为更友好的中文年龄文案
+# Format age seconds to human-readable string based on preferred language
 _check_update_format_age() {
     local age_seconds=$1
+    local lang=${ZFL_LANG:-${LANG%%.*}}
 
     if [[ -z "$age_seconds" || "$age_seconds" != <-> ]]; then
-        echo "未知"
+        if [[ "$lang" == zh* ]]; then
+            echo "未知"
+        else
+            echo "unknown"
+        fi
         return 0
     fi
 
     (( age_seconds < 0 )) && age_seconds=0
 
     if (( age_seconds < 10 )); then
-        echo "刚刚"
+        if [[ "$lang" == zh* ]]; then
+            echo "刚刚"
+        else
+            echo "just now"
+        fi
     elif (( age_seconds < 60 )); then
-        echo "${age_seconds}秒前"
+        if [[ "$lang" == zh* ]]; then
+            echo "${age_seconds}秒前"
+        else
+            echo "${age_seconds}s ago"
+        fi
     elif (( age_seconds < 3600 )); then
-        echo "$(( age_seconds / 60 ))分钟前"
+        if [[ "$lang" == zh* ]]; then
+            echo "$(( age_seconds / 60 ))分钟前"
+        else
+            echo "$(( age_seconds / 60 ))m ago"
+        fi
     elif (( age_seconds < 86400 )); then
-        echo "$(( age_seconds / 3600 ))小时前"
+        if [[ "$lang" == zh* ]]; then
+            echo "$(( age_seconds / 3600 ))小时前"
+        else
+            echo "$(( age_seconds / 3600 ))h ago"
+        fi
     else
-        echo "$(( age_seconds / 86400 ))天前"
+        if [[ "$lang" == zh* ]]; then
+            echo "$(( age_seconds / 86400 ))天前"
+        else
+            echo "$(( age_seconds / 86400 ))d ago"
+        fi
     fi
 }
+
 
 # 规范化整数环境变量：非法值回退为默认
 _check_update_int_or_default() {
@@ -108,7 +134,9 @@ _check_update_normalize_prompt_policy() {
 }
 
 _check_update_help() {
-    cat <<'EOF'
+    local lang=${ZFL_LANG:-${LANG%%.*}}
+    if [[ "$lang" == zh* ]]; then
+        cat <<'EOF'
 check_update - 启动时包更新检查与交互更新
 
 用法:
@@ -135,6 +163,35 @@ check_update - 启动时包更新检查与交互更新
   - once_per_day：同天最多提示一次，拒绝后当天静默。
   - strict_daily：仅在“非今天成功更新”时提示（除 --force）。
 EOF
+    else
+        cat <<'EOF'
+check_update - Check and run package updates during shell startup
+
+Usage:
+  check_update [options]
+
+Options:
+  -f, --force    Force checking/updating (ignores daily prompt limits)
+  -h, --help     Show this help and exit
+
+Environment Variables:
+  CHECK_UPDATE_CACHE_TTL_SECONDS
+                 Cache validity TTL for update count (seconds, default: 1800)
+  CHECK_UPDATE_LOCK_STALE_SECONDS
+                 Timeout threshold for background refresh lock (seconds, default: 600)
+  CHECK_UPDATE_PROCESS_LOCK
+                 Process lock directory path (default: ~/.cache/zsh/CheckUpdateProcess.lock)
+  CHECK_UPDATE_PROMPT_POLICY
+                 Prompt strategy: pending_first | once_per_day | strict_daily (default: pending_first)
+
+Notes:
+  - In normal mode, check_update reads local cache first and refreshes asynchronously in the background to avoid blocking shell startup.
+  - Force mode only overrides daily prompts and forces interaction, it does not disable background caching.
+  - pending_first: Prompts again if there are still pending updates on the same day.
+  - once_per_day: Prompts at most once per day; stays silent if declined.
+  - strict_daily: Only prompts if successful update did not occur today.
+EOF
+    fi
 }
 
 # 缓存写入：shell 赋值格式，便于 zsh 直接 source
@@ -411,9 +468,14 @@ _check_update_show_update_counts() {
     shift
     local -a backends=("$@")
     local backend label count total=0
+    local lang=${ZFL_LANG:-${LANG%%.*}}
 
     if (( ${#backends[@]} == 0 )); then
-        echo -e "${YELLOW}当前无可用更新源（yay/flatpak 不可用或未配置 flathub）${RESET}"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${YELLOW}当前无可用更新源（yay/flatpak 不可用或未配置 flathub）${RESET}"
+        else
+            echo -e "${YELLOW}No available update backends (yay/flatpak unavailable or flathub not configured)${RESET}"
+        fi
         return 0
     fi
 
@@ -427,10 +489,18 @@ _check_update_show_update_counts() {
 
         count=${count:-0}
         total=$(( total + count ))
-        echo -e "${label} 可更新包数量：${GREEN}${count}${RESET}"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${label} 可更新包数量：${GREEN}${count}${RESET}"
+        else
+            echo -e "${label} updates count: ${GREEN}${count}${RESET}"
+        fi
     done
 
-    echo -e "总可更新包数量：${GREEN}${total}${RESET}"
+    if [[ "$lang" == zh* ]]; then
+        echo -e "总可更新包数量：${GREEN}${total}${RESET}"
+    else
+        echo -e "Total updates count: ${GREEN}${total}${RESET}"
+    fi
 }
 
 _check_update_run_updates() {
@@ -438,23 +508,40 @@ _check_update_run_updates() {
     local -a backends=("$@")
     local backend label
     local i=0 total=${#backends[@]}
+    local lang=${ZFL_LANG:-${LANG%%.*}}
 
     for backend in "${backends[@]}"; do
         label=$(_check_update_backend_label "$backend")
         ((i++))
-        echo -e "${BOLD}${BRIGHT_BLUE}>>> [${i}/${total}] 开始更新 ${label}${RESET}"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${BOLD}${BRIGHT_BLUE}>>> [${i}/${total}] 开始更新 ${label}${RESET}"
+        else
+            echo -e "${BOLD}${BRIGHT_BLUE}>>> [${i}/${total}] Starting updates for ${label}${RESET}"
+        fi
         if ! "_check_update_backend_update_${backend}"; then
-            echo -e "${RED}${label} 更新失败${RESET} ❌"
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${RED}${label} 更新失败${RESET} ❌"
+            else
+                echo -e "${RED}${label} update failed${RESET} ❌"
+            fi
             return 1
         fi
-        echo -e "${BRIGHT_GREEN}<<< [${i}/${total}] ${label} 更新完成${RESET}"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${BRIGHT_GREEN}<<< [${i}/${total}] ${label} 更新完成${RESET}"
+        else
+            echo -e "${BRIGHT_GREEN}<<< [${i}/${total}] ${label} update finished${RESET}"
+        fi
     done
 
-    echo -e "${GREEN}${BOLD}全部更新成功${RESET} ✅"
+    if [[ "$lang" == zh* ]]; then
+        echo -e "${GREEN}${BOLD}全部更新成功${RESET} ✅"
+    else
+        echo -e "${GREEN}${BOLD}All updates succeeded${RESET} ✅"
+    fi
     return 0
 }
 
-# 辅助函数：交互式更新逻辑
+# Helper: interactive update QA logic
 _check_update_qa() {
     load_color RED GREEN YELLOW RESET
     local last=$1
@@ -464,6 +551,7 @@ _check_update_qa() {
     local now_epoch=$5
     local cache_ttl_seconds=$6
     local refresh_in_progress=$7
+    local lang=${ZFL_LANG:-${LANG%%.*}}
 
     local last_epoch="" now_epoch_val=""
     if zmodload zsh/datetime 2>/dev/null; then
@@ -471,13 +559,13 @@ _check_update_qa() {
         now_epoch_val=$(strftime -r "%Y-%m-%d" "$now" 2>/dev/null)
     fi
 
-    # 降级：若 Zsh 内置模块不可用或解析失败，尝试外部 date 命令
+    # Fallback to date CLI if datetime module is not loaded
     if [[ -z "$last_epoch" || -z "$now_epoch_val" ]]; then
         if command -v date >/dev/null 2>&1; then
-            # 1. 尝试 GNU date -d (Linux)
+            # 1. Try GNU date
             last_epoch=$(date -d "$last" +%s 2>/dev/null)
             now_epoch_val=$(date -d "$now" +%s 2>/dev/null)
-            # 2. 尝试 BSD/macOS date -j -f
+            # 2. Try BSD date
             if [[ -z "$last_epoch" || -z "$now_epoch_val" ]]; then
                 last_epoch=$(date -j -f "%Y-%m-%d" "$last" "+%s" 2>/dev/null)
                 now_epoch_val=$(date -j -f "%Y-%m-%d" "$now" "+%s" 2>/dev/null)
@@ -494,37 +582,72 @@ _check_update_qa() {
 
     available_backends=("${(z)$(_check_update_collect_available_backends)}")
 
-    echo -e "现在是${YELLOW} $now ${RESET}，距离上次成功更新已经${YELLOW} $days ${RESET}天了"
+    if [[ "$lang" == zh* ]]; then
+        echo -e "现在是${YELLOW} $now ${RESET}，距离上次成功更新已经${YELLOW} $days ${RESET}天了"
+    else
+        echo -e "It is ${YELLOW} $now ${RESET}, it has been ${YELLOW} $days ${RESET} days since last successful update."
+    fi
+
     if [[ "$cache_generated_at" == <-> ]]; then
         cache_age=$(( now_epoch - cache_generated_at ))
         cache_age_human=$(_check_update_format_age "$cache_age")
 
         if (( cache_age > cache_ttl_seconds )); then
-            echo -e "更新数量缓存：${YELLOW}${cache_age_human}${RESET}（已过期）"
+            if [[ "$lang" == zh* ]]; then
+                echo -e "更新数量缓存：${YELLOW}${cache_age_human}${RESET}（已过期）"
+            else
+                echo -e "Updates count cache: ${YELLOW}${cache_age_human}${RESET} (expired)"
+            fi
         else
-            echo -e "更新数量缓存：${YELLOW}${cache_age_human}${RESET}（有效）"
+            if [[ "$lang" == zh* ]]; then
+                echo -e "更新数量缓存：${YELLOW}${cache_age_human}${RESET}（有效）"
+            else
+                echo -e "Updates count cache: ${YELLOW}${cache_age_human}${RESET} (valid)"
+            fi
         fi
     else
-        echo -e "${YELLOW}更新数量缓存不可用${RESET}"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${YELLOW}更新数量缓存不可用${RESET}"
+        else
+            echo -e "${YELLOW}Updates count cache not available${RESET}"
+        fi
     fi
 
     if (( refresh_in_progress == 1 )); then
-        echo -e "${YELLOW}后台刷新状态：进行中（本次提示可能使用旧缓存）${RESET}"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${YELLOW}后台刷新状态：进行中（本次提示可能使用旧缓存）${RESET}"
+        else
+            echo -e "${YELLOW}Background refresh status: In progress (this prompt may use old cache)${RESET}"
+        fi
     fi
 
     if (( ${#available_backends[@]} > 0 )); then
-        echo "已启用更新源：$(for b in "${available_backends[@]}"; do _check_update_backend_label "$b"; done | paste -sd ', ' -)"
+        if [[ "$lang" == zh* ]]; then
+            echo "已启用更新源：$(for b in "${available_backends[@]}"; do _check_update_backend_label "$b"; done | paste -sd ', ' -)"
+        else
+            echo "Enabled backends: $(for b in "${available_backends[@]}"; do _check_update_backend_label "$b"; done | paste -sd ', ' -)"
+        fi
     fi
 
-    echo -n -e "请问需要${GREEN}更新${RESET}吗？\n"
-    echo -n -e "${GREEN}[Enter/Y/y:更新]${RESET}\n${YELLOW}[C/c：查看更新包数目]${RESET}\n${RED}[N/n/Other:拒绝更新]${RESET}\n"
+    if [[ "$lang" == zh* ]]; then
+        echo -n -e "请问需要${GREEN}更新${RESET}吗？\n"
+        echo -n -e "${GREEN}[Enter/Y/y:更新]${RESET}\n${YELLOW}[C/c：查看更新包数目]${RESET}\n${RED}[N/n/Other:拒绝更新]${RESET}\n"
+    else
+        echo -n -e "Would you like to ${GREEN}update${RESET} now?\n"
+        echo -n -e "${GREEN}[Enter/Y/y: Update]${RESET}\n${YELLOW}[C/c: View updates count]${RESET}\n${RED}[N/n/Other: Skip updates]${RESET}\n"
+    fi
 
     read ans
 
     while [[ "$ans" == "C" || "$ans" == "c" ]]; do
         _check_update_show_update_counts "$cache_file" "${available_backends[@]}"
-        echo -n -e "请问需要${GREEN}更新${RESET}吗？\n"
-        echo -n -e "${GREEN}[Enter/Y/y:更新]${RESET}\n${YELLOW}[C/c：查看更新包数目]${RESET}\n${RED}[N/n/Other:拒绝更新]${RESET}\n"
+        if [[ "$lang" == zh* ]]; then
+            echo -n -e "请问需要${GREEN}更新${RESET}吗？\n"
+            echo -n -e "${GREEN}[Enter/Y/y:更新]${RESET}\n${YELLOW}[C/c：查看更新包数目]${RESET}\n${RED}[N/n/Other:拒绝更新]${RESET}\n"
+        else
+            echo -n -e "Would you like to ${GREEN}update${RESET} now?\n"
+            echo -n -e "${GREEN}[Enter/Y/y: Update]${RESET}\n${YELLOW}[C/c: View updates count]${RESET}\n${RED}[N/n/Other: Skip updates]${RESET}\n"
+        fi
         read ans
     done
 
@@ -538,17 +661,22 @@ _check_update_qa() {
             return 0
             ;;
         *)
-            echo -e "你没有更新，记得更新哟，输入 '${GREEN}update${RESET}' 即可更新~"
+            if [[ "$lang" == zh* ]]; then
+                echo -e "你没有更新，记得更新哟，输入 '${GREEN}update${RESET}' 即可更新~"
+            else
+                echo -e "You did not update. Remember to update, just type '${GREEN}update${RESET}' to start updating!"
+            fi
             return 2
             ;;
     esac
 }
 
-# 主函数：这是会被懒加载触发的入口
+# Main function entry point
 check_update() {
     setopt local_traps
     local arg
     local force_update=0
+    local lang=${ZFL_LANG:-${LANG%%.*}}
 
     for arg in "$@"; do
         case "$arg" in
@@ -568,11 +696,11 @@ check_update() {
     done
 
     local cache_dir="$HOME/.cache/zsh"
-    local UpdateFlag="$cache_dir/UpdateFlag.lock"                 # 记录“上次成功更新日期”
-    local PromptFlag="$cache_dir/UpdatePromptFlag.lock"           # 记录“上次拒绝提示日期（避免当天重复打扰）"
-    local CountCache="$cache_dir/UpdateCountCache.lock"           # 记录“上次更新数量缓存”
-    local RefreshLockDir="$cache_dir/UpdateRefresh.lock"          # 后台刷新互斥锁
-    local ProcessLockDir="${CHECK_UPDATE_PROCESS_LOCK:-$cache_dir/CheckUpdateProcess.lock}"     # 进程锁：整机唯一实例
+    local UpdateFlag="$cache_dir/UpdateFlag.lock"
+    local PromptFlag="$cache_dir/UpdatePromptFlag.lock"
+    local CountCache="$cache_dir/UpdateCountCache.lock"
+    local RefreshLockDir="$cache_dir/UpdateRefresh.lock"
+    local ProcessLockDir="${CHECK_UPDATE_PROCESS_LOCK:-$cache_dir/CheckUpdateProcess.lock}"
     local cache_ttl_seconds
     cache_ttl_seconds=$(_check_update_int_or_default "${CHECK_UPDATE_CACHE_TTL_SECONDS:-1800}" 1800)
     local lock_stale_seconds
@@ -599,12 +727,20 @@ check_update() {
     local should_prompt=0
 
     if (( force_update == 1 )); then
-        echo "[check_update] 强制模式已启用（-f/--force）"
+        if [[ "$lang" == zh* ]]; then
+            echo "[check_update] 强制模式已启用（-f/--force）"
+        else
+            echo "[check_update] Force mode enabled (-f/--force)"
+        fi
     fi
 
-    # 首次安装：初始化成功更新日期（保持你原来的“首次不强制更新”行为）
+    # First time installation update flags initialization
     if [[ ! -f "$UpdateFlag" ]]; then
-        echo "首次创建更新标记文件..."
+        if [[ "$lang" == zh* ]]; then
+            echo "首次创建更新标记文件..."
+        else
+            echo "Creating update flag file for the first time..."
+        fi
         _check_update_write_to "$UpdateFlag" "$today"
     fi
 
@@ -618,7 +754,7 @@ check_update() {
         cache_generated_at=${cache_data%% *}
     fi
 
-    # 缓存缺失或过期时，后台异步刷新（不阻塞前台）
+    # Trigger background cache refresh if cache doesn't exist or is stale
     if [[ -z "$cache_generated_at" || $(( now_epoch - cache_generated_at )) -gt $cache_ttl_seconds ]]; then
         _check_update_schedule_cache_refresh "$CountCache" "$RefreshLockDir" "$lock_stale_seconds" >/dev/null 2>&1
     fi
@@ -629,12 +765,12 @@ check_update() {
         cache_total=$(_check_update_sum_cached_counts "$CountCache" "${available_backends[@]}")
     fi
 
-    # 触发提示条件：
-    # 1) 强制模式：无条件提示（忽略日期与拒绝标记）
-    # 2) 提示策略可配置（CHECK_UPDATE_PROMPT_POLICY）：
-    #    - pending_first（默认）：同天若仍有可更新包则提示
-    #    - once_per_day：同天不再提示（除 --force）
-    #    - strict_daily：仅按“上次成功更新日期”判断（除 --force）
+    # Prompt triggering logic:
+    # 1) Force mode: prompt unconditionally
+    # 2) Prompt policies (CHECK_UPDATE_PROMPT_POLICY):
+    #    - pending_first: prompt if pending updates exist
+    #    - once_per_day: prompt at most once per day
+    #    - strict_daily: prompt only if successful update was not today
     if (( force_update == 1 )); then
         should_prompt=1
     else
@@ -654,7 +790,6 @@ check_update() {
         esac
     fi
 
-    # once_per_day：今天拒绝过后当天静默（强制模式除外）
     if (( force_update == 0 )) && [[ "$prompt_policy" == "once_per_day" ]] && [[ "$last_prompt" == "$today" ]]; then
         should_prompt=0
     fi
@@ -665,20 +800,16 @@ check_update() {
 
         case "$result" in
             0)
-                # 只有真正更新成功，才刷新“上次成功更新日期”
                 _check_update_write_to "$UpdateFlag" "$today"
-                # 更新成功后清理“拒绝提示”标记，允许当天后续新包再次触发
                 [[ -f "$PromptFlag" ]] && rm -f "$PromptFlag"
-                # 更新完成后异步刷新一次缓存
                 _check_update_schedule_cache_refresh "$CountCache" "$RefreshLockDir" "$lock_stale_seconds" >/dev/null 2>&1
                 ;;
             2)
-                # 用户今天拒绝更新：只记录提示日期，不改成功更新日期
                 _check_update_write_to "$PromptFlag" "$today"
                 ;;
             *)
-                # 更新失败：不写任何标记，方便用户修复后重试
                 ;;
         esac
     fi
 }
+

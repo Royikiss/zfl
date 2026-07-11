@@ -291,6 +291,87 @@ def interactive_rm(focused_item):
     else:
         input("\nPress Enter to return to FZF...")
 
+def view_connected():
+    """
+    View currently connected skills under the current project's .agents/skills/ directory.
+    Display each skill with its Chinese translation loaded from the translation cache.
+    """
+    connected_dir = "./.agents/skills"
+    if not os.path.exists(connected_dir) or not os.path.isdir(connected_dir):
+        if IS_ZH:
+            print(f"\033[1;33m[link_skills] 当前项目下未检测到已连接的技能目录 (.agents/skills)。\033[0m")
+        else:
+            print(f"\033[1;33m[link_skills] No connected skills directory found for the current project (.agents/skills).\033[0m")
+        return
+
+    # List all subdirectories or symlinks under connected_dir
+    skills = []
+    try:
+        for item in sorted(os.listdir(connected_dir)):
+            full_path = os.path.join(connected_dir, item)
+            # Check if it is a directory or a symlink to a directory
+            if os.path.isdir(full_path):
+                skills.append(item)
+    except Exception as e:
+        if IS_ZH:
+            print(f"\033[1;31m[link_skills] 读取已连接技能时出错: {e}\033[0m")
+        else:
+            print(f"\033[1;31m[link_skills] Error reading connected skills: {e}\033[0m")
+        return
+
+    if not skills:
+        if IS_ZH:
+            print(f"\033[1;33m[link_skills] 当前项目未连接任何技能。\033[0m")
+        else:
+            print(f"\033[1;33m[link_skills] No skills connected to the current project.\033[0m")
+        return
+
+    # Load translations from cache
+    translations = {}
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import preview_skill
+        translations = preview_skill.load_user_translations()
+    except Exception:
+        pass
+
+    # ANSI colors
+    GREEN = "\033[1;32m"
+    CYAN = "\033[1;36m"
+    YELLOW = "\033[1;33m"
+    RESET = "\033[0m"
+    GREY = "\033[1;30m"
+
+    if IS_ZH:
+        print(f"{CYAN}=== 当前项目已连接的技能 (共 {len(skills)} 个) ==={RESET}")
+    else:
+        print(f"{CYAN}=== Connected Skills for Current Project (Total: {len(skills)}) ==={RESET}")
+
+    for idx, skill in enumerate(skills, 1):
+        name_zh = ""
+        desc_zh = ""
+        if skill in translations:
+            name_zh = translations[skill].get("name_zh")
+            desc_zh = translations[skill].get("desc_zh")
+            
+        # Display format
+        if name_zh:
+            print(f"  🔗 {GREEN}{skill}{RESET} ({name_zh})")
+        else:
+            if IS_ZH:
+                print(f"  🔗 {GREEN}{skill}{RESET} (无缓存翻译)")
+            else:
+                print(f"  🔗 {GREEN}{skill}{RESET} (No cached translation)")
+        
+        if desc_zh:
+            # Clean up the description
+            desc_single = " ".join([l.strip() for l in desc_zh.split("\n") if l.strip()])
+            if IS_ZH:
+                print(f"     {GREY}描述: {desc_single}{RESET}")
+            else:
+                print(f"     {GREY}Description: {desc_single}{RESET}")
+        print()
+
 def print_help():
     print("Usage: resolve_skills.py [options] [inputs...]")
     print("Options:")
@@ -300,6 +381,7 @@ def print_help():
     print("  --rm-group <name>          Remove a group")
     print("  --interactive-set <sk...>  Interactive group creation in FZF")
     print("  --interactive-rm <name>    Interactive group removal in FZF")
+    print("  --view-connected           View connected skills with Chinese translation")
     print("  --help                     Show this help message")
 
 def main():
@@ -430,6 +512,10 @@ def main():
             print("Error: --interactive-rm requires focused item name", file=sys.stderr)
             sys.exit(1)
         interactive_rm(sys.argv[2])
+        sys.exit(0)
+
+    elif arg1 == "--view-connected":
+        view_connected()
         sys.exit(0)
 
     # Otherwise, resolve the list of inputs

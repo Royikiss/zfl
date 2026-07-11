@@ -1,13 +1,15 @@
-#? 名称: add_task
-#? 描述: 管理后台非阻塞启动自动执行任务列表 (白名单管理)
-#? 作者: Royi
-#? 版本: 1.0.0
-#? 依赖: 
-#? 用法: add_task [选项] <命令> [参数...]
-#? 示例: add_task check_update
+#? name: add_task
+#? description: Manage startup tasks list (whitelist management)
+#? author: Royi
+#? version: 1.0.0
+#? deps: 
+#? usage: add_task [options] <command> [args...]
+#? example: add_task check_update
 
 _add_task_help() {
-    cat <<'EOF'
+    local lang=${ZFL_LANG:-${LANG%%.*}}
+    if [[ "$lang" == zh* ]]; then
+        cat <<'EOF'
 add_task - 管理启动自动执行任务列表
 
 用法:
@@ -28,6 +30,29 @@ add_task - 管理启动自动执行任务列表
   - add_task 会将命令规范化后写入（shell 转义格式），并避免重复添加。
   - 启动执行器会忽略空行与 # 注释行。
 EOF
+    else
+        cat <<'EOF'
+add_task - Manage startup auto-execution tasks list
+
+Usage:
+  add_task [options] <command> [arguments...]
+
+Examples:
+  add_task check_update --force
+  add_task echo "hello world"
+  add_task --remove echo "hello world"
+
+Options:
+  -l, --list               List currently configured startup tasks
+  -r, --remove <cmd...>    Delete a configured startup task (matches normalized command)
+  -h, --help               Show help
+
+Notes:
+  - Task file: $ZFL_HOME/core/startup_task_commands.zsh
+  - add_task writes commands in normalized format (shell-escaped) to avoid duplicate entries.
+  - The startup executor ignores empty lines and lines starting with #.
+EOF
+    fi
 }
 
 _add_task_task_file() {
@@ -47,7 +72,7 @@ _add_task_normalize_line() {
 
     parts=(${(Q)${(z)trimmed}})
 
-    # 兼容历史脏数据：若被解析成单 token 且含空格，尝试退回 (zQ) 再拆一次
+    # Legacy dirty data compatibility
     if (( ${#parts[@]} == 1 )) && [[ "$parts[1]" == *" "* ]]; then
         local -a fallback_parts
         fallback_parts=("${(zQ)trimmed}")
@@ -58,7 +83,7 @@ _add_task_normalize_line() {
 
     (( ${#parts[@]} > 0 )) || return 1
 
-    # 统一规范为 shell-escaped 形式，便于 startup_tasks 直接解析执行
+    # Standardize to shell-escaped format for easy execution by startup_tasks
     print -r -- "${(j: :)${(@q)parts}}"
 }
 
@@ -67,21 +92,36 @@ _add_task_ensure_file() {
     mkdir -p "${task_file:h}"
 
     if [[ ! -f "$task_file" ]]; then
-        cat > "$task_file" <<'EOF'
+        local lang=${ZFL_LANG:-${LANG%%.*}}
+        if [[ "$lang" == zh* ]]; then
+            cat > "$task_file" <<'EOF'
 # 启动任务命令列表（每行一个命令）
 # - 支持函数、别名、系统命令
 # - 支持带参数与引号（按 shell 命令行规则解析）
 # - 空行与 # 开头行会被忽略
 EOF
+        else
+            cat > "$task_file" <<'EOF'
+# Startup tasks command list (one command per line)
+# - Supports functions, aliases, and system commands
+# - Supports arguments and quotes (parsed using shell command line rules)
+# - Empty lines and lines starting with # are ignored
+EOF
+        fi
     fi
 }
 
 _add_task_list() {
     load_color YELLOW RESET
     local task_file=$1
+    local lang=${ZFL_LANG:-${LANG%%.*}}
 
     if [[ ! -f "$task_file" ]]; then
-        echo -e "${YELLOW}[add_task] 任务文件不存在:${RESET} $task_file"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${YELLOW}[add_task] 任务文件不存在:${RESET} $task_file"
+        else
+            echo -e "${YELLOW}[add_task] Task file does not exist:${RESET} $task_file"
+        fi
         return 0
     fi
 
@@ -93,7 +133,11 @@ _add_task_list() {
     done < "$task_file"
 
     if (( idx == 0 )); then
-        echo -e "${YELLOW}[add_task] 当前没有有效启动任务${RESET}"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${YELLOW}[add_task] 当前没有有效启动任务${RESET}"
+        else
+            echo -e "${YELLOW}[add_task] Currently no active startup tasks${RESET}"
+        fi
     fi
 }
 
@@ -101,14 +145,23 @@ _add_task_remove() {
     load_color GREEN YELLOW RED RESET
     local task_file=$1
     shift
+    local lang=${ZFL_LANG:-${LANG%%.*}}
 
     if (( $# == 0 )); then
-        echo -e "${RED}[add_task] --remove 需要后续命令参数${RESET}"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[add_task] --remove 需要后续命令参数${RESET}"
+        else
+            echo -e "${RED}[add_task] --remove requires command arguments${RESET}"
+        fi
         return 2
     fi
 
     if [[ ! -f "$task_file" ]]; then
-        echo -e "${YELLOW}[add_task] 任务文件不存在:${RESET} $task_file"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${YELLOW}[add_task] 任务文件不存在:${RESET} $task_file"
+        else
+            echo -e "${YELLOW}[add_task] Task file does not exist:${RESET} $task_file"
+        fi
         return 1
     fi
 
@@ -136,16 +189,25 @@ _add_task_remove() {
     mv "$tmp_file" "$task_file"
 
     if (( removed == 1 )); then
-        echo -e "${GREEN}[add_task] 已删除启动任务:${RESET} $target"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${GREEN}[add_task] 已删除启动任务:${RESET} $target"
+        else
+            echo -e "${GREEN}[add_task] Deleted startup task:${RESET} $target"
+        fi
         return 0
     else
-        echo -e "${YELLOW}[add_task] 未找到任务:${RESET} $target"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${YELLOW}[add_task] 未找到任务:${RESET} $target"
+        else
+            echo -e "${YELLOW}[add_task] Task not found:${RESET} $target"
+        fi
         return 1
     fi
 }
 
 add_task() {
     load_color GREEN YELLOW RED RESET
+    local lang=${ZFL_LANG:-${LANG%%.*}}
 
     local task_file
     task_file=$(_add_task_task_file)
@@ -167,7 +229,11 @@ add_task() {
     esac
 
     if (( $# == 0 )); then
-        echo -e "${RED}[add_task] 请提供要添加的命令${RESET}"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[add_task] 请提供要添加的命令${RESET}"
+        else
+            echo -e "${RED}[add_task] Please provide a command to add${RESET}"
+        fi
         echo "Try: add_task --help"
         return 2
     fi
@@ -182,12 +248,21 @@ add_task() {
     while IFS= read -r line || [[ -n "$line" ]]; do
         normalized=$(_add_task_normalize_line "$line") || continue
         if [[ "$normalized" == "$cmd_line" ]]; then
-            echo -e "${YELLOW}[add_task] 任务已存在，已跳过:${RESET} $cmd_line"
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${YELLOW}[add_task] 任务已存在，已跳过:${RESET} $cmd_line"
+            else
+                echo -e "${YELLOW}[add_task] Task already exists, skipped:${RESET} $cmd_line"
+            fi
             return 0
         fi
     done < "$task_file"
 
     print -r -- "$cmd_line" >> "$task_file"
-    echo -e "${GREEN}[add_task] 已添加启动任务:${RESET} $cmd_line"
-    echo "任务文件: $task_file"
+    if [[ "$lang" == zh* ]]; then
+        echo -e "${GREEN}[add_task] 已添加启动任务:${RESET} $cmd_line"
+        echo "任务文件: $task_file"
+    else
+        echo -e "${GREEN}[add_task] Added startup task:${RESET} $cmd_line"
+        echo "Task file: $task_file"
+    fi
 }

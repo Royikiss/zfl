@@ -1,24 +1,24 @@
 # weather
 
-`weather` 是一个快速在终端中查询实时天气和天气预报的小工具。
+`weather` is a quick utility to query real-time weather and weather forecasts directly from the terminal.
 
 ---
 
-## 📖 用法与示例
+## 📖 Usage & Examples
 
 ```bash
-weather [城市名称/拼音]
+weather [city_name/pinyin]
 ```
 
-### 示例
+### Examples
 ```bash
-weather beijing    # 查询北京的天气
-weather shanghai   # 查询上海的天气
+weather beijing    # Query Beijing weather
+weather shanghai   # Query Shanghai weather
 ```
 
 ---
 
-## ⚙️ 运行机制
+## ⚙️ How it Works
 
-1. 该函数动态加载终端颜色预设。
-2. 利用 `curl wttr.in/<城市名>` 接口向 [wttr.in](https://wttr.in) 发起请求，并在终端中直接渲染带有 ASCII 艺术和彩色的天气预报图表。
+1. The function dynamically loads terminal color presets.
+2. It sends an HTTP request to [wttr.in](https://wttr.in) using `curl wttr.in/<city_name>`, rendering colorized weather forecasts with ASCII art directly in the terminal.

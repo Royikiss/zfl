@@ -1,100 +1,99 @@
 # zfl
 
-`zfl` 是 ZFL (Zsh Function Library) 框架的内置命令行管理工具，用于提供函数自动发现、元数据查询、运行依赖检测等功能，帮助规范和探索可用的命令行脚本。
+`zfl` is the built-in CLI management tool for the ZFL (Zsh Function Library) framework. It provides automatic function discovery, metadata querying, and dependencies checking, helping developers standardize and explore available scripts.
 
-同时，ZFL 支持将本地个人函数与共享的社区函数进行隔离，并自动进行懒加载和自动补全代理注册。
-
----
-
-## 📂 目录隔离机制
-
-ZFL 支持以下两个目录下的函数：
-1.  `functions/`：存放社区官方/通用的公共函数。
-2.  `custom_functions/`：存放用户个人的私有脚本（此目录已被 `.gitignore` 忽略，升级框架时不会产生冲突）。
-
-当 Zfl 启动时，会自动扫描上述两个目录下的所有 `.zsh` 脚本并为其注册懒加载桩和 Tab 补全代理。
+ZFL supports isolating personal local functions from shared community functions, managing their automatic lazy loading and tab completion proxy registration.
 
 ---
 
-## 📖 用法与子命令
+## 📂 Directory Structure Isolation
+
+ZFL scans and loads scripts from two directories:
+1.  `functions/`: Community-contributed official/public functions.
+2.  `custom_functions/`: Private local scripts for individual users (ignored by `.gitignore` to avoid version control conflicts when updating the framework).
+
+Upon shell startup, ZFL automatically scans these directories to register lazy-loading stubs and tab completion proxies.
+
+---
+
+## 📖 Usage & Subcommands
 
 ```bash
-zfl <子命令> [参数]
+zfl <subcommand> [arguments]
 ```
 
-### 可用子命令
+### Available Subcommands
 
-*   **`list` 或 `ls`**
-    扫描 `functions/` 和 `custom_functions/` 下的所有函数，展示其函数名称、来源（社区/用户）及头部声明的简短描述。
-*   **`info <函数名>`**
-    查看特定函数的详细元数据（如作者、版本、必要外部依赖、用法、使用示例等）。
+*   **`list` or `ls`**
+    Scan `functions/` and `custom_functions/` directories, listing all functions with their sources (community/user) and short descriptions extracted from metadata headers.
+*   **`info <function_name>`**
+    View detailed metadata (author, version, external dependencies, usage, examples, etc.) of a specific function.
 *   **`check`**
-    扫描所有函数声明的外部系统依赖，检查它们在当前系统中是否已安装，并给出检测状态。
-*   **`lint [函数名...]`**
-    对指定的函数文件（或不传参时对所有函数）进行代码静态质量与规范校验。
-*   **`remove <函数名>` 或 `rm <函数名>`**
-    安全删除指定的函数文件（会提示确认 `[y/N]`），并在当前会话中卸载该函数与补全代理（`unfunction`），同时自动同步项目结构树。
-*   **`help` 或 `-h`**
-    显示帮助说明。
+    Check all external CLI dependencies declared in functions metadata, reporting whether they are installed in the current system.
+*   **`lint [function_name...]`**
+    Perform static code analysis on specified functions (or all functions if omitted) to check style compliance and variable leaks.
+*   **`remove <function_name>` or `rm <function_name>`**
+    Safely delete a function file (prompts with `[y/N]`), uninstall it and its completion proxies from the current session (`unfunction`), and automatically synchronize the project structure tree.
+*   **`help` or `-h`**
+    Show the help menu.
 
 ---
 
-## 💡 示例
+## 💡 Examples
 
 ```bash
-zfl list            # 列出所有可用函数
-zfl info weather    # 查看 weather 工具的元数据
-zfl check           # 校验所有函数的外部依赖状态
-zfl lint weather    # 校验 weather 函数的代码规范与潜在泄漏风险
-zfl lint            # 校验 functions/ 和 custom_functions/ 下的所有脚本
-zfl remove weather  # 安全删除 weather 函数文件并清理当前终端的会话与结构树
+zfl list            # List all available functions
+zfl info weather    # View metadata of the weather tool
+zfl check           # Check external dependency status of all functions
+zfl lint weather    # Check weather function code quality and leak risks
+zfl lint            # Lint all scripts under functions/ and custom_functions/
+zfl remove weather  # Safely delete weather and unload its hooks from current session
 ```
 
 ---
 
-## 🔍 代码静态质量校验 (zfl lint)
+## 🔍 Code Static Quality Gate (zfl lint)
 
-`zfl lint` 集成了 Python 编写的静态分析工具，用于在本地或 CI 流程中校验提交函数脚本的质量，核心校验项如下：
+`zfl lint` integrates a Python static analysis tool to inspect script quality in local environments or CI workflows. Key check items include:
 
-1.  **文件名函数 1:1 映射**：文件 `foo.zsh` 内部必须且只能定义主入口函数 `foo()`。
-2.  **全局变量泄漏隐患**：扫描函数体内赋值的变量，凡是未显式使用 `local`、`typeset` 声明，且不在系统全局白名单中的变量都会被发出泄漏警告。
-3.  **FD 3 泄漏风险**：检测包含后台任务（如 `&`、`coproc`）的语句行是否伴有关闭文件描述符 3（`3<&-`）的操作，防止多终端异步拉起进程导致父 Shell 锁死。
-4.  **硬编码颜色字符**：拦截写死 ANSI escape 转义色彩控制符的行，倡导使用框架提供的 `load_color`。
-5.  **配套文档检测**：检查 `docs/` 下是否有同名的 `.md` 格式文档，鼓励健全的文档配套机制。
-
+1.  **File-to-Function 1:1 Mapping**: File `foo.zsh` must contain and only define a main entry function `foo()`.
+2.  **Global Variable Leaks**: Scans variables assigned in functions. Any variable that is not explicitly declared using `local` or `typeset`, and is not in the system whitelist, will trigger a leak warning.
+3.  **FD 3 Leak Risks**: Checks if background tasks (like `&`, `coproc`) have file descriptor 3 safely closed (`3<&-`), preventing sub-processes from locking the parent terminal.
+4.  **Hardcoded Colors**: Flags any hardcoded ANSI escape color codes, encouraging developers to use the library's `load_color` instead.
+5.  **Companion Documentation**: Warns if a matching `.md` documentation file is missing from the `docs/` folder.
 
 ---
 
-## 📝 社区脚本元数据标准
+## 📝 Metadata Header Standard
 
-为了能被 `zfl` 命令自动识别并正确呈现说明信息，所有放入 `functions/` 或 `custom_functions/` 的脚本推荐在**文件头部**包含以下格式的元数据注释（以 `#?` 开头）：
+To enable `zfl` to parse and display function information, it is recommended to include metadata headers (lines starting with `#?`) at the top of scripts in `functions/` or `custom_functions/`:
 
 ```zsh
-#? 名称: weather
-#? 描述: 终端快速查询实时天气与天气预报
-#? 作者: Royi
-#? 版本: 1.0.0
-#? 依赖: curl
-#? 用法: weather [城市名称]
-#? 示例: weather beijing
+#? name: weather
+#? description: Query real-time weather and forecast in terminal
+#? author: Royi
+#? version: 1.0.0
+#? deps: curl
+#? usage: weather [city_name]
+#? example: weather beijing
 ```
 
-*元数据解析器在读取到非注释行或空行后将自动停止，保证极其轻量的高效执行。*
+*The metadata parser will automatically stop reading after it encounters a non-comment or empty line, ensuring lightweight and fast execution.*
 
 ---
 
-## 🛡️ 依赖声明助手 (`zfl_require`)
+## 🛡️ Dependency Check Assertions (`zfl_require`)
 
-在编写需要特定第三方命令行工具（如 `fzf`、`jq` 等）的函数时，推荐在函数入口处调用框架的 `zfl_require` 进行依赖断言。
+When writing functions that depend on third-party commands (e.g. `fzf`, `jq`), it is recommended to invoke `zfl_require` at the beginning of the main function entry.
 
-### 示例
+### Example
 
 ```zsh
 my_tool() {
-    # 声明并校验依赖，若缺失将输出红色的友好提示并返回 1
+    # Check dependencies. Missing tools will output a friendly warning and return 1.
     zfl_require fzf jq || return 1
 
-    # 实际业务逻辑
+    # Main logic
     ...
 }
 ```

@@ -231,60 +231,79 @@ def check_hardcoded_colors(raw_content):
 
 def lint_file(file_path):
     """
-    执行单文件 Lint 校验，返回错误和警告列表
+    Perform lint check on a single file, return list of errors and warnings
     """
     errors = []
     warnings = []
+    
+    lang = os.environ.get("ZFL_LANG") or os.environ.get("LANG", "en")
+    is_zh = lang.startswith("zh")
 
     if not os.path.exists(file_path):
-        errors.append(f"文件不存在: {file_path}")
+        if is_zh:
+            errors.append(f"文件不存在: {file_path}")
+        else:
+            errors.append(f"File does not exist: {file_path}")
         return errors, warnings
 
     file_name = os.path.basename(file_path)
     func_expected_name = os.path.splitext(file_name)[0]
 
-    # 特殊文件排除：有些辅助脚本不需要满足 Zsh 函数 1:1 规范，例如 core 下的脚本
+    # Exclude special files: some helper scripts in core do not need to satisfy the 1:1 rule
     is_core_file = "core/" in file_path or "base.zsh" in file_path
 
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             raw_content = f.read()
     except Exception as e:
-        errors.append(f"无法读取文件 {file_path}: {e}")
+        if is_zh:
+            errors.append(f"无法读取文件 {file_path}: {e}")
+        else:
+            errors.append(f"Cannot read file {file_path}: {e}")
         return errors, warnings
 
-    # 1. 检测文档配套
+    # 1. Check documentation completeness
     if not is_core_file:
         zfl_home = os.path.dirname(os.path.dirname(os.path.abspath(file_path)))
         doc_path = os.path.join(zfl_home, "docs", f"{func_expected_name}.md")
         if not os.path.exists(doc_path):
-            warnings.append(f"【文档缺失】未在 docs/ 目录下找到配套说明文档 docs/{func_expected_name}.md")
+            if is_zh:
+                warnings.append(f"【文档缺失】未在 docs/ 目录下找到配套说明文档 docs/{func_expected_name}.md")
+            else:
+                warnings.append(f"[Missing Documentation] Did not find associated documentation file docs/{func_expected_name}.md under docs/ directory")
 
-    # 2. 检测硬编码颜色字符
+    # 2. Check hardcoded color codes
     hardcoded_colors = check_hardcoded_colors(raw_content)
     for line_num, line_txt in hardcoded_colors:
-        # 排除 core/colors.zsh 自身的定义文件
         if "colors.zsh" not in file_name:
-            warnings.append(f"【硬编码色彩】第 {line_num} 行检测到硬编码 ANSI 颜色字符。推荐使用 'load_color' 进行变量渲染。\n  └─ {line_txt}")
+            if is_zh:
+                warnings.append(f"【硬编码色彩】第 {line_num} 行检测到硬编码 ANSI 颜色字符。推荐使用 'load_color' 进行变量渲染。\n  └─ {line_txt}")
+            else:
+                warnings.append(f"[Hardcoded Colors] Line {line_num} has hardcoded ANSI color characters. It is recommended to use 'load_color' for variable rendering.\n  └─ {line_txt}")
 
-    # 预处理代码
+    # Preprocess code
     preprocessed_code, metadata = preprocess_code(raw_content)
 
-    # 3. 提取并校验函数定义
+    # 3. Extract and validate function definitions
     funcs = extract_functions(preprocessed_code)
     if not is_core_file:
         if not funcs:
-            errors.append(f"【映射失败】文件内未检测到任何有效的 Zsh 函数定义。文件名应与函数名保持 1:1 映射。")
+            if is_zh:
+                errors.append(f"【映射失败】文件内未检测到任何有效的 Zsh 函数定义。文件名应与函数名保持 1:1 映射。")
+            else:
+                errors.append(f"[Mapping Failed] No valid Zsh function definition found in file. File name should map 1:1 with function name.")
         else:
             func_names = [f['name'] for f in funcs]
             if func_expected_name not in func_names:
-                errors.append(f"【映射失败】未在脚本中找到与文件名同名的主入口函数 '{func_expected_name}()'。")
+                if is_zh:
+                    errors.append(f"【映射失败】未在脚本中找到与文件名同名的主入口函数 '{func_expected_name}()'。")
+                else:
+                    errors.append(f"[Mapping Failed] Did not find main entry function '{func_expected_name}()' matching the file name.")
 
-    # 3.5 校验全局辅助函数的作用域与命名规范
+    # 3.5 Validate scope and naming of global helper functions
     if not is_core_file:
         for func in funcs:
             func_name = func['name']
-            # 判断是否为嵌套定义
             is_func_nested = False
             for other in funcs:
                 if other == func:
@@ -293,14 +312,15 @@ def lint_file(file_path):
                     is_func_nested = True
                     break
             
-            # 如果是全局（最外层）函数，且既不是主函数，也不是以 _主函数名 为前缀的合法辅助/补全函数
             if not is_func_nested:
                 normalized_expected = func_expected_name.replace('-', '_')
                 if func_name != func_expected_name and not func_name.startswith(f"_{func_expected_name}") and not func_name.startswith(f"_{normalized_expected}"):
-                    warnings.append(f"【全局函数污染】在文件最外层检测到非规范命名的辅助函数 '{func_name}()'。\n  建议：将其嵌套在主函数 '{func_expected_name}()' 内部定义，或者重命名为 '_{func_expected_name}_xxx' 并在函数退出前使用 'unfunction' 清理。")
+                    if is_zh:
+                        warnings.append(f"【全局函数污染】在文件最外层检测到非规范命名的辅助函数 '{func_name}()'。\n  建议：将其嵌套在主函数 '{func_expected_name}()' 内部定义，或者重命名为 '_{func_expected_name}_xxx' 并在函数退出前使用 'unfunction' 清理。")
+                    else:
+                        warnings.append(f"[Global Scope Pollution] Non-standard global helper function '{func_name}()' detected at the top-level.\n  Recommendation: Nest it inside the main function '{func_expected_name}()', or rename it to '_{func_expected_name}_xxx' and clean it up using 'unfunction' before exiting.")
 
-
-    # 4. 逐个函数分析变量泄漏
+    # 4. Analyze variable leaks per function
     for func in funcs:
         func_name = func['name']
         body = func['body']
@@ -308,10 +328,8 @@ def lint_file(file_path):
         local_vars = get_local_declarations(body)
         assigned_vars = find_assigned_variables(body)
         
-        # 寻找未在 local 声明且不在全局白名单中的变量
         leaks = []
         for var in assigned_vars:
-            # 排除以 _ 字符开头的部分系统临时内部变量，以及动态作用域的 func_meta_* 返回变量
             if var.startswith('_') and len(var) > 1:
                 continue
             if var.startswith('func_meta_'):
@@ -320,12 +338,18 @@ def lint_file(file_path):
                 leaks.append(var)
         
         if leaks:
-            warnings.append(f"【变量泄漏】函数 '{func_name}()' 中以下变量未声明为 'local'，存在污染用户 Shell 全局变量的风险：\n  └─ 泄漏变量: {', '.join(sorted(leaks))}")
+            if is_zh:
+                warnings.append(f"【变量泄漏】函数 '{func_name}()' 中以下变量未声明为 'local'，存在污染用户 Shell 全局变量的风险：\n  └─ 泄漏变量: {', '.join(sorted(leaks))}")
+            else:
+                warnings.append(f"[Variable Leak] The following variables in function '{func_name}()' are not declared as 'local', risking pollution of the global Shell namespace:\n  └─ Leaked variables: {', '.join(sorted(leaks))}")
 
-    # 5. 检测后台进程的 FD 3 泄露隐患
+    # 5. Check FD 3 leaks
     fd3_leaks = check_fd3_leak(preprocessed_code)
     for line_num, line_txt in fd3_leaks:
-        warnings.append(f"【FD 3 泄漏风险】第 {line_num} 行检测到后台任务，可能导致文件描述符 3 泄露到子进程从而锁死父 Shell。\n  建议：在命令尾部加上 '3<&-' 以安全关闭它。\n  └─ 存在隐患命令: {line_txt}")
+        if is_zh:
+            warnings.append(f"【FD 3 泄漏风险】第 {line_num} 行检测到后台任务，可能导致文件描述符 3 泄露到子进程从而锁死父 Shell。\n  建议：在命令尾部加上 '3<&-' 以安全关闭它。\n  └─ 存在隐患命令: {line_txt}")
+        else:
+            warnings.append(f"[FD 3 Leak Risk] Background task detected at line {line_num}. This could leak file descriptor 3 to the child process and hang the parent Shell.\n  Recommendation: Append '3<&-' to the command to safely close it.\n  └─ Suspect command: {line_txt}")
 
     return errors, warnings
 
@@ -337,7 +361,10 @@ def main():
     exit_code = 0
     files_to_check = sys.argv[1:]
 
-    # 终端 ANSI 色彩配置
+    lang = os.environ.get("ZFL_LANG") or os.environ.get("LANG", "en")
+    is_zh = lang.startswith("zh")
+
+    # Terminal ANSI color settings
     RED = "\033[1;31m"
     GREEN = "\033[1;32m"
     YELLOW = "\033[1;33m"
@@ -345,18 +372,30 @@ def main():
     RESET = "\033[0m"
 
     for file_path in files_to_check:
-        print(f"{CYAN}正在校验: {file_path}{RESET}")
+        if is_zh:
+            print(f"{CYAN}正在校验: {file_path}{RESET}")
+        else:
+            print(f"{CYAN}Verifying: {file_path}{RESET}")
+            
         errors, warnings = lint_file(file_path)
 
         if not errors and not warnings:
-            print(f"  {GREEN}[✓] 完美通过！未检测到任何代码规范问题。{RESET}")
+            if is_zh:
+                print(f"  {GREEN}[✓] 完美通过！未检测到任何代码规范问题。{RESET}")
+            else:
+                print(f"  {GREEN}[✓] Perfect check! No coding standard issues detected.{RESET}")
         else:
             for err in errors:
-                print(f"  {RED}[✗] 错误: {err}{RESET}")
+                if is_zh:
+                    print(f"  {RED}[✗] 错误: {err}{RESET}")
+                else:
+                    print(f"  {RED}[✗] Error: {err}{RESET}")
                 exit_code = 1
             for warn in warnings:
-                print(f"  {YELLOW}[!] 警告: {warn}{RESET}")
-                # 将警告也视作规范不通过（让 exit_code = 1，利于 CI 流程）
+                if is_zh:
+                    print(f"  {YELLOW}[!] 警告: {warn}{RESET}")
+                else:
+                    print(f"  {YELLOW}[!] Warning: {warn}{RESET}")
                 exit_code = 1
 
         print()
@@ -365,3 +404,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

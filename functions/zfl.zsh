@@ -1,14 +1,14 @@
-#? 名称: zfl
-#? 描述: ZFL 框架内置命令行管理与自发现工具
-#? 作者: Antigravity
-#? 版本: 1.0.0
-#? 依赖: 
-#? 用法: zfl <子命令> [参数]
-#? 示例: zfl list
+#? name: zfl
+#? description: ZFL framework built-in command line management and self-discovery tool
+#? author: Antigravity
+#? version: 1.0.0
+#? deps: 
+#? usage: zfl <subcommand> [args]
+#? example: zfl list
 
 _zfl_parse_metadata() {
     local file=$1
-    # 初始化输出变量（调用者需声明为 local 以接收结果）
+    # Initialize output variables (caller must declare them local)
     func_meta_name=""
     func_meta_desc=""
     func_meta_author=""
@@ -21,15 +21,14 @@ _zfl_parse_metadata() {
 
     local line content key val trimmed
     while IFS= read -r line; do
-        # 去除前导空格
         trimmed="${line##[[:space:]]}"
         
-        # 如果是空行或非注释行，说明已经离开了头部注释区域，停止解析
+        # Stop parsing if we leave the header comment area
         if [[ -n "$trimmed" && "$trimmed" != "#"* ]]; then
             break
         fi
 
-        # 解析 #? 开头的元数据行
+        # Parse metadata lines starting with #?
         if [[ "$trimmed" == "#?"* ]]; then
             content="${trimmed#\#?}"
             content="${content##[[:space:]]}"
@@ -37,7 +36,7 @@ _zfl_parse_metadata() {
                 key="${content%%:*}"
                 val="${content#*:}"
                 
-                # 去除键值两端空格
+                # Trim spaces
                 key="${key##[[:space:]]}"
                 key="${key%%[[:space:]]}"
                 val="${val##[[:space:]]}"
@@ -56,14 +55,16 @@ _zfl_parse_metadata() {
         fi
     done < "$file"
 
-    # 兜底名称
+    # Fallback to file basename
     if [[ -z "$func_meta_name" ]]; then
         func_meta_name=$(basename "$file" .zsh)
     fi
 }
 
 _zfl_help() {
-    cat <<'EOF'
+    local lang=${ZFL_LANG:-${LANG%%.*}}
+    if [[ "$lang" == zh* ]]; then
+        cat <<'EOF'
 zfl - Zsh Function Library (ZFL) 管理工具
 
 用法:
@@ -84,28 +85,69 @@ zfl - Zsh Function Library (ZFL) 管理工具
   zfl lint weather
   zfl remove weather
 EOF
-}
+    else
+        cat <<'EOF'
+zfl - Zsh Function Library (ZFL) management tool
 
+Usage:
+  zfl <subcommand> [arguments]
+
+Available subcommands:
+  list, ls         List all loaded functions and their short descriptions
+  info <name>      View detailed metadata and usage for a specific function
+  check            Check if external dependencies for all functions are installed
+  lint [name...]   Run static quality verification on specific or all functions
+  remove, rm <name> Safely delete function file and clean up placeholders/completions
+  help, -h         Show this help message
+
+Examples:
+  zfl list
+  zfl info weather
+  zfl check
+  zfl lint weather
+  zfl remove weather
+EOF
+    fi
+}
 
 _zfl_list() {
     load_color GREEN YELLOW CYAN RED RESET BOLD
-    echo -e "${BOLD}${CYAN}ZFL (Zsh Function Library) 函数列表:${RESET}"
-    echo -e "--------------------------------------------------------"
-    # 表头对齐：函数名(18) | 来源(4) | 描述
-    printf "%-18s | %-4s | %s\n" "函数名称" "来源" "简短描述"
-    echo -e "--------------------------------------------------------"
+    local lang=${ZFL_LANG:-${LANG%%.*}}
+
+    if [[ "$lang" == zh* ]]; then
+        echo -e "${BOLD}${CYAN}ZFL (Zsh Function Library) 函数列表:${RESET}"
+        echo -e "--------------------------------------------------------"
+        printf "%-18s | %-4s | %s\n" "函数名称" "来源" "简短描述"
+        echo -e "--------------------------------------------------------"
+    else
+        echo -e "${BOLD}${CYAN}ZFL (Zsh Function Library) Function List:${RESET}"
+        echo -e "--------------------------------------------------------"
+        printf "%-18s | %-6s | %s\n" "Function Name" "Source" "Short Description"
+        echo -e "--------------------------------------------------------"
+    fi
 
     local dir file fname source_type color_source
-    # 声明用于解析的局部变量，通过动态作用域由 _zfl_parse_metadata 写入
     local func_meta_name func_meta_desc func_meta_author func_meta_version func_meta_deps func_meta_usage func_meta_example
 
     for dir in "$ZFL_HOME/functions" "$ZFL_HOME/custom_functions"; do
         [[ -d "$dir" ]] || continue
         if [[ "$dir" == *"/custom_functions" ]]; then
-            source_type="用户"
+            if [[ "$lang" == zh* ]]; then
+                source_type="用户"
+                local padded_source="${(r:4:)source_type}"
+            else
+                source_type="User"
+                local padded_source="${(r:6:)source_type}"
+            fi
             color_source="${YELLOW}"
         else
-            source_type="社区"
+            if [[ "$lang" == zh* ]]; then
+                source_type="社区"
+                local padded_source="${(r:4:)source_type}"
+            else
+                source_type="System"
+                local padded_source="${(r:6:)source_type}"
+            fi
             color_source="${GREEN}"
         fi
 
@@ -113,25 +155,38 @@ _zfl_list() {
             fname=$(basename "$file" .zsh)
             _zfl_parse_metadata "$file"
             
-            # 使用 Zsh 填充修饰符保证对齐，避免 ANSI 颜色字符干扰 printf 宽度计算
             local padded_name="${(r:18:)fname}"
             local colored_name="${BOLD}${CYAN}${padded_name}${RESET}"
             
-            local padded_source="${(r:4:)source_type}"
             local colored_source="${color_source}${padded_source}${RESET}"
 
-            printf "%b | %b | %s\n" "$colored_name" "$colored_source" "${func_meta_desc:-暂无描述}"
+            local no_desc="No description"
+            if [[ "$lang" == zh* ]]; then
+                no_desc="暂无描述"
+            fi
+
+            printf "%b | %b | %s\n" "$colored_name" "$colored_source" "${func_meta_desc:-$no_desc}"
         done
     done
     echo -e "--------------------------------------------------------"
-    echo -e "提示: 使用 ${GREEN}zfl info <函数名>${RESET} 查看详细用法与依赖。"
+    if [[ "$lang" == zh* ]]; then
+        echo -e "提示: 使用 ${GREEN}zfl info <函数名>${RESET} 查看详细用法与依赖。"
+    else
+        echo -e "Tip: Use ${GREEN}zfl info <func_name>${RESET} to view detailed usage and dependencies."
+    fi
 }
 
 _zfl_info() {
     load_color GREEN YELLOW CYAN RED RESET BOLD
     local target=$1
+    local lang=${ZFL_LANG:-${LANG%%.*}}
+
     if [[ -z "$target" ]]; then
-        echo -e "${RED}[ERROR]${RESET} 请指定函数名称。例如: zfl info weather" >&2
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[ERROR]${RESET} 请指定函数名称。例如: zfl info weather" >&2
+        else
+            echo -e "${RED}[ERROR]${RESET} Please specify function name. E.g.: zfl info weather" >&2
+        fi
         return 1
     fi
 
@@ -144,34 +199,60 @@ _zfl_info() {
     done
 
     if [[ -z "$path_found" ]]; then
-        echo -e "${RED}[ERROR]${RESET} 函数 '${target}' 不存在。" >&2
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[ERROR]${RESET} 函数 '${target}' 不存在。" >&2
+        else
+            echo -e "${RED}[ERROR]${RESET} Function '${target}' does not exist." >&2
+        fi
         return 1
     fi
 
-    # 声明解析的局部变量
     local func_meta_name func_meta_desc func_meta_author func_meta_version func_meta_deps func_meta_usage func_meta_example
     _zfl_parse_metadata "$path_found"
 
-    echo -e "${BOLD}${CYAN}函数详情: ${target}${RESET}"
-    echo -e "----------------------------------------"
-    echo -e "${BOLD}文件路径:${RESET} ${path_found}"
-    echo -e "${BOLD}简短描述:${RESET} ${func_meta_desc:-暂无}"
-    echo -e "${BOLD}脚本作者:${RESET} ${func_meta_author:-未知}"
-    echo -e "${BOLD}当前版本:${RESET} ${func_meta_version:-1.0.0}"
-    echo -e "${BOLD}必要依赖:${RESET} ${func_meta_deps:-无}"
-    echo -e "${BOLD}使用方法:${RESET} ${func_meta_usage:-暂无}"
-    if [[ -n "$func_meta_example" ]]; then
-        echo -e "${BOLD}使用示例:${RESET} ${GREEN}${func_meta_example}${RESET}"
+    if [[ "$lang" == zh* ]]; then
+        echo -e "${BOLD}${CYAN}函数详情: ${target}${RESET}"
+        echo -e "----------------------------------------"
+        echo -e "${BOLD}文件路径:${RESET} ${path_found}"
+        echo -e "${BOLD}简短描述:${RESET} ${func_meta_desc:-暂无}"
+        echo -e "${BOLD}脚本作者:${RESET} ${func_meta_author:-未知}"
+        echo -e "${BOLD}当前版本:${RESET} ${func_meta_version:-1.0.0}"
+        echo -e "${BOLD}必要依赖:${RESET} ${func_meta_deps:-无}"
+        echo -e "${BOLD}使用方法:${RESET} ${func_meta_usage:-暂无}"
+        if [[ -n "$func_meta_example" ]]; then
+            echo -e "${BOLD}使用示例:${RESET} ${GREEN}${func_meta_example}${RESET}"
+        fi
+    else
+        echo -e "${BOLD}${CYAN}Function Details: ${target}${RESET}"
+        echo -e "----------------------------------------"
+        echo -e "${BOLD}File Path:      ${RESET} ${path_found}"
+        echo -e "${BOLD}Description:    ${RESET} ${func_meta_desc:-None}"
+        echo -e "${BOLD}Author:         ${RESET} ${func_meta_author:-Unknown}"
+        echo -e "${BOLD}Version:        ${RESET} ${func_meta_version:-1.0.0}"
+        echo -e "${BOLD}Dependencies:   ${RESET} ${func_meta_deps:-None}"
+        echo -e "${BOLD}Usage:          ${RESET} ${func_meta_usage:-None}"
+        if [[ -n "$func_meta_example" ]]; then
+            echo -e "${BOLD}Example:        ${RESET} ${GREEN}${func_meta_example}${RESET}"
+        fi
     fi
     echo -e "----------------------------------------"
 }
 
 _zfl_check() {
     load_color GREEN YELLOW CYAN RED RESET BOLD
-    echo -e "${BOLD}${CYAN}正在检测 ZFL 所有函数的系统依赖状态...${RESET}"
-    echo -e "--------------------------------------------------------"
-    printf "%-18s | %-8s | %s\n" "函数名称" "依赖状态" "缺失依赖"
-    echo -e "--------------------------------------------------------"
+    local lang=${ZFL_LANG:-${LANG%%.*}}
+
+    if [[ "$lang" == zh* ]]; then
+        echo -e "${BOLD}${CYAN}正在检测 ZFL 所有函数的系统依赖状态...${RESET}"
+        echo -e "--------------------------------------------------------"
+        printf "%-18s | %-8s | %s\n" "函数名称" "依赖状态" "缺失依赖"
+        echo -e "--------------------------------------------------------"
+    else
+        echo -e "${BOLD}${CYAN}Checking ZFL dependency status for all functions...${RESET}"
+        echo -e "--------------------------------------------------------"
+        printf "%-18s | %-8s | %s\n" "Function Name" "Status" "Missing Deps"
+        echo -e "--------------------------------------------------------"
+    fi
 
     local dir file fname
     local func_meta_name func_meta_desc func_meta_author func_meta_version func_meta_deps func_meta_usage func_meta_example
@@ -219,13 +300,13 @@ _zfl_check() {
 
 _zfl_lint() {
     load_color RED GREEN RESET
+    local lang=${ZFL_LANG:-${LANG%%.*}}
 
     local -a files_to_lint
     local target file path_found dir
     if (( $# > 0 )); then
         for target in "$@"; do
             path_found=""
-            # 如果传入的直接是个存在的文件路径
             if [[ -f "$target" ]]; then
                 path_found="$target"
             else
@@ -240,12 +321,15 @@ _zfl_lint() {
             if [[ -n "$path_found" ]]; then
                 files_to_lint+=("$path_found")
             else
-                echo -e "${RED}[ERROR]${RESET} 找不到函数或文件: $target" >&2
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${RED}[ERROR]${RESET} 找不到函数或文件: $target" >&2
+                else
+                    echo -e "${RED}[ERROR]${RESET} Cannot find function or file: $target" >&2
+                fi
                 return 1
             fi
         done
     else
-        # 默认扫描所有函数文件
         for dir in "$ZFL_HOME/functions" "$ZFL_HOME/custom_functions"; do
             [[ -d "$dir" ]] || continue
             for file in "$dir"/*.zsh(N); do
@@ -255,25 +339,38 @@ _zfl_lint() {
     fi
 
     if (( ${#files_to_lint[@]} == 0 )); then
-        echo "未发现任何待扫描的文件。"
+        if [[ "$lang" == zh* ]]; then
+            echo "未发现任何待扫描的文件。"
+        else
+            echo "No files found to scan."
+        fi
         return 0
     fi
 
-    # 调用 Python 静态校验脚本并继承退出码
     python3 "$ZFL_HOME/python/zfl_lint.py" "${files_to_lint[@]}"
 }
 
 _zfl_remove() {
     load_color RED GREEN YELLOW RESET BOLD
     local target=$1
+    local lang=${ZFL_LANG:-${LANG%%.*}}
+
     if [[ -z "$target" ]]; then
-        echo -e "${RED}[ERROR]${RESET} 请指定要删除的函数名称。例如: zfl remove weather" >&2
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[ERROR]${RESET} 请指定要删除的函数名称。例如: zfl remove weather" >&2
+        else
+            echo -e "${RED}[ERROR]${RESET} Please specify function name. E.g.: zfl remove weather" >&2
+        fi
         return 1
     fi
 
-    # 保护 zfl 自己，不要把自己删了
+    # Protect zfl itself
     if [[ "$target" == "zfl" ]]; then
-        echo -e "${RED}[ERROR]${RESET} 不能删除 zfl 核心管理工具本身！" >&2
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[ERROR]${RESET} 不能删除 zfl 核心管理工具本身！" >&2
+        else
+            echo -e "${RED}[ERROR]${RESET} Cannot delete zfl core management tool itself!" >&2
+        fi
         return 1
     fi
 
@@ -286,61 +383,110 @@ _zfl_remove() {
     done
 
     if [[ -z "$path_found" ]]; then
-        echo -e "${RED}[ERROR]${RESET} 函数 '${target}' 不存在。" >&2
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[ERROR]${RESET} 函数 '${target}' 不存在。" >&2
+        else
+            echo -e "${RED}[ERROR]${RESET} Function '${target}' does not exist." >&2
+        fi
         return 1
     fi
 
-    echo -e "${YELLOW}确定要删除函数文件 ${BOLD}${path_found}${RESET}${YELLOW} 吗？ [y/N]${RESET}"
+    if [[ "$lang" == zh* ]]; then
+        echo -e "${YELLOW}确定要删除函数文件 ${BOLD}${path_found}${RESET}${YELLOW} 吗？ [y/N]${RESET}"
+    else
+        echo -e "${YELLOW}Are you sure you want to delete function file ${BOLD}${path_found}${RESET}${YELLOW}? [y/N]${RESET}"
+    fi
+
     local confirm
     read -r confirm
     if [[ "$confirm" != [yY] && "$confirm" != [yY][eE][sS] ]]; then
-        echo "已取消删除。"
+        if [[ "$lang" == zh* ]]; then
+            echo "已取消删除。"
+        else
+            echo "Deletion cancelled."
+        fi
         return 0
     fi
 
-    # 删除文件
     rm "$path_found" || {
-        echo -e "${RED}[ERROR]${RESET} 无法删除文件 ${path_found}。" >&2
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[ERROR]${RESET} 无法删除文件 ${path_found}。" >&2
+        else
+            echo -e "${RED}[ERROR]${RESET} Failed to delete file ${path_found}." >&2
+        fi
         return 1
     }
 
-    echo -e "${GREEN}[SUCCESS]${RESET} 已删除函数文件: ${path_found}"
+    if [[ "$lang" == zh* ]]; then
+        echo -e "${GREEN}[SUCCESS]${RESET} 已删除函数文件: ${path_found}"
+    else
+        echo -e "${GREEN}[SUCCESS]${RESET} Deleted function file: ${path_found}"
+    fi
 
-    # 检测并同步删除技术文档
+    # Detect and delete documentation
     local doc_file="$ZFL_HOME/docs/${target}.md"
     local confirm_doc
     if [[ -f "$doc_file" ]]; then
-        echo -e "${YELLOW}检测到该函数关联的技术文档 ${BOLD}${doc_file}${RESET}${YELLOW}，是否一并删除？ [y/N]${RESET}"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${YELLOW}检测到该函数关联的技术文档 ${BOLD}${doc_file}${RESET}${YELLOW}，是否一并删除？ [y/N]${RESET}"
+        else
+            echo -e "${YELLOW}Detected associated documentation ${BOLD}${doc_file}${RESET}${YELLOW}, delete it as well? [y/N]${RESET}"
+        fi
         read -r confirm_doc
         if [[ "$confirm_doc" == [yY] || "$confirm_doc" == [yY][eE][sS] ]]; then
             rm "$doc_file" || {
-                echo -e "${RED}[WARNING]${RESET} 无法删除文档文件 ${doc_file}。" >&2
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${RED}[WARNING]${RESET} 无法删除文档文件 ${doc_file}。" >&2
+                else
+                    echo -e "${RED}[WARNING]${RESET} Failed to delete documentation file ${doc_file}." >&2
+                fi
             }
-            echo -e "${GREEN}[SUCCESS]${RESET} 已删除文档文件: ${doc_file}"
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${GREEN}[SUCCESS]${RESET} 已删除文档文件: ${doc_file}"
+            else
+                echo -e "${GREEN}[SUCCESS]${RESET} Deleted documentation file: ${doc_file}"
+            fi
         else
-            echo "保留文档文件。"
+            if [[ "$lang" == zh* ]]; then
+                echo "保留文档文件。"
+            else
+                echo "Documentation file kept."
+            fi
         fi
     fi
 
-    # 清理当前会话的函数和补全
+    # Clean up function and completion from active session
     if whence -f "$target" >/dev/null; then
         unfunction "$target" 2>/dev/null
-        echo -e "${GREEN}[CLEAN]${RESET} 已卸载当前会话中的函数 ${target}"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${GREEN}[CLEAN]${RESET} 已卸载当前会话中的函数 ${target}"
+        else
+            echo -e "${GREEN}[CLEAN]${RESET} Unloaded function ${target} from current session"
+        fi
     fi
     if whence -f "_$target" >/dev/null; then
         unfunction "_$target" 2>/dev/null
-        echo -e "${GREEN}[CLEAN]${RESET} 已卸载当前会话中的补全代理 _$target"
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${GREEN}[CLEAN]${RESET} 已卸载当前会话中的补全代理 _$target"
+        else
+            echo -e "${GREEN}[CLEAN]${RESET} Unloaded completion agent _$target from current session"
+        fi
     fi
 
-    # 同步项目结构树
+    # Sync project structure
     if [[ -f "$ZFL_HOME/automation/sync_readme.py" ]]; then
-        echo -e "正在同步项目结构树..."
+        if [[ "$lang" == zh* ]]; then
+            echo -e "正在同步项目结构树..."
+        else
+            echo -e "Syncing project structure tree..."
+        fi
         python3 "$ZFL_HOME/automation/sync_readme.py"
     fi
 }
 
 zfl() {
     load_color RED GREEN RESET
+    local lang=${ZFL_LANG:-${LANG%%.*}}
 
     local cmd=$1
     if [[ -z "$cmd" ]]; then
@@ -369,29 +515,53 @@ zfl() {
             _zfl_help
             ;;
         *)
-            echo -e "${RED}[ERROR]${RESET} 未知子命令: $cmd" >&2
-            echo "使用 'zfl help' 查看帮助。" >&2
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${RED}[ERROR]${RESET} 未知子命令: $cmd" >&2
+                echo "使用 'zfl help' 查看帮助。" >&2
+            else
+                echo -e "${RED}[ERROR]${RESET} Unknown subcommand: $cmd" >&2
+                echo "Use 'zfl help' to view help." >&2
+            fi
             return 1
             ;;
     esac
 }
 
-# 补全代理函数
+# Completion agent function
 _zfl() {
     local -a commands
-    commands=(
-        'list:列出所有函数及其简短描述'
-        'ls:列出所有函数及其简短描述'
-        'info:查看特定函数的详细元数据'
-        'check:检查所有函数的外部依赖项'
-        'lint:对指定的函数或全部函数进行静态质量校验'
-        'remove:安全删除指定的函数文件并清理桩函数'
-        'rm:安全删除指定的函数文件并清理桩函数'
-        'help:显示帮助信息'
-    )
+    local lang=${ZFL_LANG:-${LANG%%.*}}
+
+    if [[ "$lang" == zh* ]]; then
+        commands=(
+            'list:列出所有函数及其简短描述'
+            'ls:列出所有函数及其简短描述'
+            'info:查看特定函数的详细元数据'
+            'check:检查所有函数的外部依赖项'
+            'lint:对指定的函数或全部函数进行静态质量校验'
+            'remove:安全删除指定的函数文件并清理桩函数'
+            'rm:安全删除指定的函数文件并清理桩函数'
+            'help:显示帮助信息'
+        )
+    else
+        commands=(
+            'list:List all functions and their short descriptions'
+            'ls:List all functions and their short descriptions'
+            'info:View detailed metadata for a specific function'
+            'check:Check external dependencies for all functions'
+            'lint:Run static quality verification on specific or all functions'
+            'remove:Safely delete function file and clean up placeholders'
+            'rm:Safely delete function file and clean up placeholders'
+            'help:Show help information'
+        )
+    fi
 
     if (( CURRENT == 2 )); then
-        _describe -t commands 'zfl 子命令' commands
+        local desc_msg="zfl subcommand"
+        if [[ "$lang" == zh* ]]; then
+            desc_msg="zfl 子命令"
+        fi
+        _describe -t commands "$desc_msg" commands
     elif (( CURRENT == 3 )); then
         case "$words[2]" in
             info|lint|remove|rm)
@@ -404,9 +574,14 @@ _zfl() {
                         funcs+=("$fname")
                     done
                 done
-                _describe -t funcs '可用函数' funcs
+                local desc_func="available functions"
+                if [[ "$lang" == zh* ]]; then
+                    desc_func="可用函数"
+                fi
+                _describe -t funcs "$desc_func" funcs
                 ;;
         esac
     fi
 }
+
 

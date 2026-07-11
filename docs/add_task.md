@@ -1,49 +1,49 @@
 # add_task
 
-`add_task` 是 ZFL 框架中用于管理启动时自动执行任务的命令行工具。
+`add_task` is a CLI tool in the ZFL framework used to manage startup tasks that execute automatically when a shell starts.
 
 ---
 
-## 📖 用法与选项
+## 📖 Usage & Options
 
 ```bash
-add_task [选项] <命令> [参数...]
+add_task [options] <command> [arguments...]
 ```
 
-### 选项说明
+### Option Descriptions
 
 - **`-l, --list`**
-  列出当前已配置的所有启动任务。
-- **`-r, --remove <命令...>`**
-  删除一条已配置的任务（将按规范化后的命令字符串进行匹配）。
+  List all currently configured startup tasks.
+- **`-r, --remove <command...>`**
+  Remove a configured startup task (matches against the normalized command string).
 - **`-h, --help`**
-  显示帮助信息。
+  Show the help menu.
 
 ---
 
-## 💡 示例
+## 💡 Examples
 
-### 1. 添加启动任务
+### 1. Add a startup task
 ```bash
 add_task check_update --force
 add_task echo "hello world"
 ```
 
-### 2. 查看已配置任务列表
+### 2. View configured tasks
 ```bash
 add_task -l
 ```
 
-### 3. 删除启动任务
+### 3. Remove a startup task
 ```bash
 add_task --remove echo "hello world"
 ```
 
 ---
 
-## ⚙️ 运行机制
+## ⚙️ How it Works
 
-1. **任务存储**：所有任务均存储在文件 `$ZFL_HOME/core/startup_task_commands.zsh` 中，每行代表一条需要执行的完整命令。
-2. **规范化写入**：`add_task` 会自动规范化输入的命令（如处理转义和引号），并去重防止重复添加相同的任务行。
-3. **安全启动执行**：在每次打开交互式 Shell 终端时，ZFL 启动执行器会从任务文件中逐行读取指令，并使用独立的文件描述符（FD 3）进行隔离执行，确保前台交互式 `stdin` 不被抢占。
-4. **注释与空行**：任务文件中的空行和以 `#` 开头的行将被执行器自动忽略。
+1. **Task Storage**: Startup tasks are stored in `$ZFL_HOME/core/startup_task_commands.zsh`. Each non-empty line represents a command.
+2. **Normalized Writing**: `add_task` automatically normalizes the input command (handling escapes and quotes) and deduplicates to prevent duplicate task entries.
+3. **Isolated Startup Execution**: Every time an interactive shell starts, the ZFL startup executor reads instructions line-by-line from the task file and isolates their execution using file descriptor 3 (FD 3), preventing child processes from hijacking the foreground interactive stdin.
+4. **Comments & Empty Lines**: Empty lines and lines starting with `#` in the task file are automatically ignored by the executor.

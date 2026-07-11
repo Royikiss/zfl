@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# 描述: README.md 项目结构树自动同步与检测工具
+# description: Automatically synchronize and verify the README.md project structure tree
 
 import os
 import re
@@ -20,25 +20,25 @@ TOP_LEVEL_ITEMS = [
     'automation/'
 ]
 
-# 静态 fallback 描述字典
+# Static fallback description dictionary
 FALLBACK_DESCS = {
-    'core/': '核心调度与公共模块',
-    'functions/': '模块化业务函数目录 (文件名与函数名 1:1 映射)',
-    'custom_functions/': '用户本地私有函数目录 (已被 gitignore 忽略)',
-    'python/': '跨语言脚本辅助',
-    'docs/': '技术设计、机制说明及排障避坑文档',
-    'automation/': 'AI 编程自动化检测与同步脚本',
-    'base.zsh': '框架总入口（导出 ZFL_HOME 并加载核心模块）',
+    'core/': 'Core dispatch and public modules',
+    'functions/': 'Modular function directory (1:1 mapping between file name and function name)',
+    'custom_functions/': 'User private local functions directory (ignored by git)',
+    'python/': 'Cross-language helper scripts',
+    'docs/': 'Technical design, core mechanics, and troubleshooting documentation',
+    'automation/': 'AI programming automation verification and sync scripts',
+    'base.zsh': 'Framework entry point (exports ZFL_HOME and loads core modules)',
 }
 
 def extract_zsh_desc(filepath):
-    """提取 Zsh 函数文件中的元数据描述"""
+    """Extract metadata description from Zsh function file"""
     if not os.path.exists(filepath):
         return None
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             for line in f:
-                match = re.search(r'#\?\s*描述:\s*(.*)', line)
+                match = re.search(r'#\?\s*(?:描述|description):\s*(.*)', line, re.IGNORECASE)
                 if match:
                     return match.group(1).strip()
     except Exception:
@@ -46,7 +46,7 @@ def extract_zsh_desc(filepath):
     return None
 
 def extract_py_desc(filepath):
-    """提取 Python 脚本文件首部注释中的描述"""
+    """Extract metadata description from Python script file header comments"""
     if not os.path.exists(filepath):
         return None
     try:
@@ -62,9 +62,10 @@ def extract_py_desc(filepath):
         pass
     return None
 
+
 def parse_existing_readme(readme_content):
-    """从现有的 README.md 的结构树中解析并保留已存在的描述信息"""
-    match = re.search(r'## 📂 项目结构\s*\n\s*```bash\s*\n(.*?)\n\s*```', readme_content, re.DOTALL)
+    """Parse and retain existing description information from the README.md structure tree"""
+    match = re.search(r'## 📂 (?:项目结构|Project Structure)\s*\n\s*```bash\s*\n(.*?)\n\s*```', readme_content, re.IGNORECASE | re.DOTALL)
     if not match:
         return {}
     
@@ -72,14 +73,14 @@ def parse_existing_readme(readme_content):
     lines = block_content.splitlines()
     
     existing_descs = {}
-    active_dirs = {0: ""} # level -> 当前嵌套路径
+    active_dirs = {0: ""} # level -> current nested path
     
     for line in lines:
         line = line.rstrip()
         if not line:
             continue
         
-        # 提取注释
+        # Extract comment
         comment = ""
         if '#' in line:
             parts = line.split('#', 1)
@@ -251,11 +252,11 @@ def sync():
             
     new_tree_block = "\n".join(new_tree_lines)
     
-    # 替换 README.md 中的内容
-    pattern = re.compile(r'(## 📂 项目结构\s*\n\s*```bash\s*\n).*?(\n\s*```)', re.DOTALL)
+    # Replace the contents in README.md
+    pattern = re.compile(r'(## 📂 (?:项目结构|Project Structure)\s*\n\s*```bash\s*\n).*?(\n\s*```)', re.IGNORECASE | re.DOTALL)
     
     if not pattern.search(readme_content):
-        print("Error: Could not find ## 📂 项目结构 and ```bash block in README.md")
+        print("Error: Could not find ## 📂 Project Structure and ```bash block in README.md")
         return False
         
     updated_content = pattern.sub(rf'\g<1>{new_tree_block}\g<2>', readme_content)

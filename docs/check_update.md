@@ -1,255 +1,255 @@
-# check_update 详细文档
+# check_update Detailed Documentation
 
-本文档说明 `functions/check_update.zsh` 的设计目标、执行流程、配置项、状态文件、故障排查与运维建议。
+This document explains the design goals, execution flow, configurations, status files, troubleshooting, and maintenance guidelines for `functions/check_update.zsh`.
 
-适用范围：当前仓库 `base.zsh -> core/startup_tasks.zsh -> check_update` 启动链路。
-
----
-
-## 1. 目标与设计原则
-
-`check_update` 是一个“启动时提示 + 按需执行更新”的函数，目标是：
-
-1) 启动不阻塞
-- 前台优先读取缓存。
-- 缓存缺失/过期时，后台异步刷新。
-
-2) 后台不触发 sudo
-- 后台仅做只读计数（`checkupdates` / `pacman -Qu` / `yay -Qua` / `flatpak remote-ls`）。
-- 真正需要权限的更新仅在用户确认后执行（`yay -Syu` / `flatpak update`）。
-
-3) 可控提示频率
-- 支持策略化提示（避免“太吵”或“漏更新”）。
-
-4) 可恢复
-- 锁文件支持陈旧锁自愈，避免后台刷新永久卡住。
+Scope: The startup workflow defined in `base.zsh -> core/startup_tasks.zsh -> check_update`.
 
 ---
 
-## 2. 入口与调用方式
+## 1. Goals & Design Principles
 
-- 自动入口：`core/startup_task_commands.zsh` 中的 `check_update`
-- 手动调用：
+`check_update` triggers prompts at shell startup and runs package updates on demand. Its goals are:
+
+1. **Non-blocking Startup**
+   - The foreground reads from local cache first.
+   - If the cache is missing or expired, it spawns an asynchronous background job to refresh the cache.
+
+2. **No sudo in Background**
+   - Background tasks only run read-only update queries (`checkupdates`, `pacman -Qu`, `yay -Qua`, `flatpak remote-ls`).
+   - Privilege-escalation commands (`yay -Syu`, `flatpak update`) are executed only after user confirmation.
+
+3. **Configurable Prompt Frequency**
+   - Supports strategy-based prompt policies to prevent update prompts from being too noisy.
+
+4. **Self-Healing Locks**
+   - Detects and clears stale lock directories to prevent background refresh processes from hanging indefinitely.
+
+---
+
+## 2. Entrance & Invocation
+
+- **Automatic Trigger**: Sourced from `check_update` listed in `core/startup_task_commands.zsh`.
+- **Manual Invocation**:
   - `check_update`
   - `check_update --force`
   - `check_update --help`
 
-参数：
+### Parameter Options:
 
 - `-f, --force`
-  - 忽略日常抑制条件，强制进入一次交互流程。
+  - Ignore standard frequency constraints and enter the interactive prompt immediately.
 - `-h, --help`
-  - 显示帮助。
+  - Show the help menu.
 
 ---
 
-## 3. 后端与职责划分
+## 3. Backends & Responsibility Division
 
-当前内置后端：
+Currently supported package backends:
 
-1) `aur_pacman`
-- 可用性：`yay` 存在。
-- 计数（只读）：
-  - 官方仓：`checkupdates`（若无则 fallback `pacman -Qu`）
-  - AUR：`yay -Qua`
-  - 总数 = 官方仓 + AUR
-- 执行更新：`yay -Syu`
+1. **`aur_pacman`**
+   - Availability: `yay` exists.
+   - Counting (Read-only):
+     - Official repository: `checkupdates` (falls back to `pacman -Qu` if missing)
+     - AUR: `yay -Qua`
+     - Total = Official + AUR
+   - Perform Update: `yay -Syu`
 
-2) `flathub`
-- 可用性：`flatpak` 存在且 remotes 中有 `flathub`
-- 计数（只读）：`flatpak remote-ls --updates --columns=application,origin`
-- 执行更新：按 ref 逐个 `flatpak update -y <ref>`，并显示 `[idx/total]` 进度
-
----
-
-## 4. 关键状态文件
-
-目录：`~/.cache/zsh`
-
-1) `UpdateFlag.lock`
-- 含义：上次“成功更新”日期（YYYY-MM-DD）。
-- 仅在更新成功后写入。
-
-2) `UpdatePromptFlag.lock`
-- 含义：上次“拒绝更新提示”日期。
-- 仅在用户拒绝时写入。
-
-3) `UpdateCountCache.lock`
-- 含义：更新数量缓存（shell 赋值格式）。
-- 字段：
-  - `generated_at=<epoch>`
-  - `aur_pacman=<count>`
-  - `flathub=<count>`
-
-4) `UpdateRefresh.lock/`
-- 含义：后台刷新互斥锁目录。
-- 含时间戳：`.timestamp`（epoch）。
-- 超时后可自动回收（见环境变量）。
-
-5) `CheckUpdateProcess.lock/`
-- 含义：`check_update` 进程锁目录（整机唯一实例）。
-- 字段：
-  - `pid`（进程号）
-  - `.timestamp`（epoch）
-- 若进程已退出，下一次运行会回收旧锁并重新加锁。
-
-备注：标记文件会以只读权限保存（0400），写入前临时放开权限，写完再恢复，防止误改。
+2. **`flathub`**
+   - Availability: `flatpak` exists and remotes contain `flathub`.
+   - Counting (Read-only): `flatpak remote-ls --updates --columns=application,origin`
+   - Perform Update: Runs `flatpak update -y <ref>` for each update, displaying `[idx/total]` progress.
 
 ---
 
-## 5. 交互流程（主流程）
+## 4. Key Status Files
 
-1) 参数解析
-- 识别 `--force` / `--help`。
-- 其他参数报错并返回非 0。
+Directory: `~/.cache/zsh`
 
-2) 初始化状态
-- 首次运行若无 `UpdateFlag.lock`，初始化为今天（保持“首次不强制更新”）。
+1. **`UpdateFlag.lock`**
+   - Meaning: The date of the last successful update (YYYY-MM-DD).
+   - Written only after a successful package update.
 
-3) 读取缓存与后端
-- 探测可用后端。
-- 读取 `UpdateCountCache.lock`。
-- 缓存缺失或过期时，异步触发刷新（不阻塞前台）。
+2. **`UpdatePromptFlag.lock`**
+   - Meaning: The date of the last skipped/rejected update prompt.
+   - Written only when the user chooses to skip updates.
 
-4) 计算是否提示
-- 由 `CHECK_UPDATE_PROMPT_POLICY` 控制（详见第 6 节）。
-- `--force` 始终优先。
+3. **`UpdateCountCache.lock`**
+   - Meaning: Cache of available update counts (in Shell assignment format).
+   - Fields:
+     - `generated_at=<epoch>`
+     - `aur_pacman=<count>`
+     - `flathub=<count>`
 
-5) 进入问答
-- 输入：
-  - `Enter / Y / y` => 执行更新
-  - `C / c` => 查看各后端可更新数量后继续问
-  - `N / n / 其他` => 拒绝更新
+4. **`UpdateRefresh.lock/`**
+   - Meaning: Mutex lock directory for background cache refreshes.
+   - Contains: `.timestamp` (epoch value).
+   - Automatically recycled after timing out.
 
-6) 写回状态
-- 更新成功：写 `UpdateFlag.lock`，删除同日拒绝标记，异步刷新缓存。
-- 用户拒绝：写 `UpdatePromptFlag.lock`。
-- 更新失败：不写成功/拒绝标记，便于后续重试。
+5. **`CheckUpdateProcess.lock/`**
+   - Meaning: Mutex process lock directory (ensuring a single instance run across the machine).
+   - Contains:
+     - `pid` (process ID)
+     - `.timestamp` (epoch value)
+   - If the process exited, the next run will recycle the stale lock and re-acquire it.
+
+*Note: Lock files are written with read-only permissions (0400), temporarily modifying permission during writes and restoring it afterwards to prevent accidental modifications.*
 
 ---
 
-## 6. 环境变量（可调策略）
+## 5. Execution Flow
 
-1) `CHECK_UPDATE_CACHE_TTL_SECONDS`
-- 含义：更新数量缓存有效期（秒）。
-- 默认：`1800`。
-- 非法值会回退到默认值。
+1. **Parameter Parsing**
+   - Parses `--force` and `--help`.
+   - Rejects other parameters, returning a non-zero exit code.
 
-2) `CHECK_UPDATE_LOCK_STALE_SECONDS`
-- 含义：后台刷新锁“陈旧阈值”（秒）。
-- 默认：`600`。
-- 若锁时间戳超过阈值，自动回收锁后重建。
-- 非法值会回退到默认值。
+2. **Status Initialization**
+   - If `UpdateFlag.lock` is missing on first run, it initializes it with today's date (so that it does not prompt on first install).
 
-3) `CHECK_UPDATE_PROCESS_LOCK`
-- 含义：进程锁目录（默认 `~/.cache/zsh/CheckUpdateProcess.lock`）。
-- 作用：确保同一台机器同一时刻只有一个 `check_update` 实例运行。
+3. **Cache & Backend Query**
+   - Detects available backends.
+   - Reads `UpdateCountCache.lock`.
+   - If cache is missing or stale, it schedules a background task to refresh the count (without blocking startup).
 
-4) `CHECK_UPDATE_PROMPT_POLICY`
-- 可选值：
-  - `pending_first`（默认）
-    - 同天若仍有待更新包，仍会提示（减少漏更新）。
-  - `once_per_day`
-    - 同天最多提示一次；当日拒绝后静默。
-  - `strict_daily`
-    - 仅依据“上次成功更新日期”是否为今天；同天不再提示。
-- 非法值会回退到 `pending_first`。
+4. **Policy Evaluation**
+   - Checks `CHECK_UPDATE_PROMPT_POLICY` to decide if it should prompt the user (see Section 6).
+   - `--force` overrides any policy checks.
 
-建议配置示例（可放 `core/usr.zsh`）：
+5. **Interactive QA Loop**
+   - Inputs:
+     - `Enter / Y / y` => Run package updates
+     - `C / c` => List available update counts from each backend and query again
+     - `N / n / other` => Skip updates
+
+6. **Status Persistence**
+   - Update succeeded: Writes `UpdateFlag.lock`, removes the daily skip flag, and triggers a background refresh.
+   - User skipped: Writes `UpdatePromptFlag.lock`.
+   - Update failed: Does not write any flags, making it easy for the user to retry after fixing issues.
+
+---
+
+## 6. Environment Variables (Customizable Policies)
+
+1. **`CHECK_UPDATE_CACHE_TTL_SECONDS`**
+   - Meaning: Validity duration of the cached update count (seconds).
+   - Default: `1800`.
+   - Falls back to default if invalid.
+
+2. **`CHECK_UPDATE_LOCK_STALE_SECONDS`**
+   - Meaning: Stale threshold of the background refresh lock directory (seconds).
+   - Default: `600`.
+   - If the lock timestamp exceeds this threshold, the lock is cleared and rebuilt.
+   - Falls back to default if invalid.
+
+3. **`CHECK_UPDATE_PROCESS_LOCK`**
+   - Meaning: Path of the process lock directory (defaults to `~/.cache/zsh/CheckUpdateProcess.lock`).
+   - Purpose: Prevents multiple foreground check instances from running concurrently.
+
+4. **`CHECK_UPDATE_PROMPT_POLICY`**
+   - Supported values:
+     - `pending_first` (default)
+       - Prompts the user if there are still pending updates on the same day (reduces missed updates).
+     - `once_per_day`
+       - Prompts at most once a day; silences further prompts once the user skips.
+     - `strict_daily`
+       - Prompts only if the last successful update date was not today.
+   - Falls back to `pending_first` if invalid.
+
+### Recommended Configuration Example (can be placed in `core/usr.zsh`):
 
 ```zsh
-# 缓存30分钟
+# Cache validity: 30 minutes
 export CHECK_UPDATE_CACHE_TTL_SECONDS=1800
 
-# 锁超时10分钟自动回收
+# Background lock expiry: 10 minutes
 export CHECK_UPDATE_LOCK_STALE_SECONDS=600
 
-# 提示策略：同天只提示一次
+# Prompt policy: prompt once per day
 export CHECK_UPDATE_PROMPT_POLICY=once_per_day
 ```
 
 ---
 
-## 7. 与 startup task 执行器的协作约束
+## 7. Startup Tasks Executor Cooperation
 
-`core/startup_tasks.zsh` 已使用独立文件描述符读取任务文件（fd 3），避免占用全局 stdin。
+`core/startup_tasks.zsh` isolates startup commands by reading task files from file descriptor 3 (FD 3), preventing stdin conflicts.
 
-意义：
-- `check_update` 内部 `read` 会从真实终端读取。
-- 不会再误读任务文件后续行（例如注释）导致“看起来像自动按了 N”。
-
----
-
-## 8. 输出与退出码语义
-
-在 startup 执行器视角：
-- `0`：任务成功（包括“用户拒绝更新”这种受控分支，函数内部已处理）。
-- 非 0：任务失败（例如参数错误或更新执行失败未被吞掉）。
-
-在 `check_update` 内部问答函数语义：
-- `0`：更新成功
-- `2`：用户拒绝
-- 其他：更新失败
-
-主函数会把拒绝分支处理为“业务成功结束”，因此启动日志可见 `exit=0`。
+Significance:
+- `check_update` interactive `read` queries read from the real terminal stdin.
+- The executor will not misread lines or comments in the task file, avoiding false skips.
 
 ---
 
-## 9. 故障排查
+## 8. Exit Code Meanings
 
-1) 现象：启动不再刷新数量
-- 排查：`~/.cache/zsh/UpdateRefresh.lock` 是否残留。
-- 处理：
-  - 正常应被自动回收（超时机制）。
-  - 手动兜底：`rm -rf ~/.cache/zsh/UpdateRefresh.lock`
+From the startup executor perspective:
+- `0`: Task succeeded (including controlled paths like user skips).
+- Non-zero: Task failed (e.g. invalid arguments or package update error).
 
-2) 现象：总是提示更新
-- 检查：
-  - 当前策略是否 `pending_first`
-  - `UpdateCountCache.lock` 中计数是否持续 > 0
-- 可改策略：`once_per_day` 或 `strict_daily`
+Within the `check_update` QA handler:
+- `0`: Update succeeded.
+- `2`: User skipped.
+- Other: Update failed.
 
-3) 现象：后台提示 sudo 密码
-- 当前实现不应出现。
-- 若出现，通常是外部脚本/其他任务触发，不是 `check_update` 后台计数路径。
-
-4) 现象：帮助信息/策略不生效
-- 确认已加载最新函数文件（重新开 shell 或重新 source `base.zsh`）。
+The main function maps the skip branch (`2`) to a successful execution return (`0`), ensuring startup logs show `exit=0`.
 
 ---
 
-## 10. 运维建议
+## 9. Troubleshooting
 
-1) 变更前先打 checkpoint commit
-- 启动链路改动影响面大，建议始终先做空提交锚点。
+1. **Issue: Startup count cache does not refresh**
+   - Diagnosis: Check if `~/.cache/zsh/UpdateRefresh.lock` remains.
+   - Solution:
+     - It should be auto-recycled by lock stale checks.
+     - Manual override: run `rm -rf ~/.cache/zsh/UpdateRefresh.lock`
 
-2) 把“检测”和“更新”分离到底
-- 检测阶段禁止 sudo。
-- 只在用户确认更新时请求权限。
+2. **Issue: Prompting for updates on every shell startup**
+   - Diagnosis:
+     - Check if the prompt policy is `pending_first`.
+     - Check if the counts in `UpdateCountCache.lock` are continuously > 0.
+   - Solution: Switch policy to `once_per_day` or `strict_daily`.
 
-3) 优先保留可观测性
-- 保留缓存年龄、锁状态、后端可用性等提示，便于现场诊断。
+3. **Issue: Prompting for sudo passwords in the background**
+   - This should not occur under the current design.
+   - If it happens, it is usually triggered by external tasks, not the `check_update` cache count queries.
 
-4) 新增后端时遵循约定
-- 每个后端提供 3 个函数：
-  - `_check_update_backend_available_<name>`
-  - `_check_update_backend_count_<name>`
-  - `_check_update_backend_update_<name>`
-
----
-
-## 11. 未来可选增强
-
-1) 增加 `quiet/info/debug` 日志级别
-2) 将后端注册进一步插件化（从硬编码数组解耦）
-3) 增加最小 smoke test（zsh -n + 关键函数 dry-run）
-4) 引入 per-backend 缓存时间戳，展示更细粒度新鲜度
+4. **Issue: Policies or help edits not taking effect**
+   - Solution: Reload the shell environment or run `source core/func.zsh` again.
 
 ---
 
-## 12. 相关文件
+## 10. Development Guidelines
+
+1. **Make a checkpoint commit before editing**
+   - Startup hooks can affect shell load. Always make a git commit anchor first.
+
+2. **Keep "Query" and "Update" logic strictly separate**
+   - Never run `sudo` during the query stage.
+   - Request privileges only when the user confirms the update.
+
+3. **Maintain Observability**
+   - Keep details such as cache age, lock status, and backend availability visible to help troubleshoot issues.
+
+4. **Adhere to conventions when adding new backends**
+   - Each backend must implement 3 functions:
+     - `_check_update_backend_available_<name>`
+     - `_check_update_backend_count_<name>`
+     - `_check_update_backend_update_<name>`
+
+---
+
+## 11. Future Enhancements
+
+1. Add `quiet/info/debug` logging levels.
+2. Modularize backend registrations (decoupling from static arrays).
+3. Implement smoke tests (such as syntax validations and dry-run parameters).
+4. Introduce per-backend cache timestamps for finer refresh granularity.
+
+---
+
+## 12. Related Files
 
 - `functions/check_update.zsh`
 - `core/startup_tasks.zsh`
 - `core/startup_task_commands.zsh`
-- `PROJECT_ARCHITECTURE.md`
+- `README.md`

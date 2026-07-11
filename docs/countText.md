@@ -1,36 +1,36 @@
 # countText
 
-`countText` 是一个用于快速统计中英文混合文本文件中字数和汉字个数的实用工具。
+`countText` is a utility tool to quickly count words, characters, and Chinese characters in mixed Chinese-English text files.
 
 ---
 
-## 📖 用法与选项
+## 📖 Usage & Options
 
 ```bash
-countText <模式> <文件路径>
+countText <mode> <file_path>
 ```
 
-### 选项说明
+### Option Descriptions
 
-- **`-zh` 或 `-ch`**
-  统计文本文件中的汉字数量（仅匹配中文字符范围）。
+- **`-zh` or `-ch`**
+  Count the number of Chinese characters in the text file (matching Chinese Unicode ranges only).
 - **`-cn`**
-  统计文本文件中的英文单词/字符数量（以空格及常见标点分隔进行计数）。
+  Count the number of English words/characters in the text file (based on whitespace and punctuation word separation).
 - **`-h`**
-  显示帮助信息。
+  Show the help menu.
 
 ---
 
-## 💡 示例
+## 💡 Examples
 
 ```bash
-countText -zh document.txt   # 输出 document.txt 中的中文字数
-countText -cn document.txt   # 输出 document.txt 中的单词总数
+countText -zh document.txt   # Count Chinese characters in document.txt
+countText -cn document.txt   # Count English words in document.txt
 ```
 
 ---
 
-## ⚙️ 运行机制
+## ⚙️ How it Works
 
-- 校验文件是否存在且具有可读权限（不可读时返回退出码 `1`）。
-- 内部采用高效的文本过滤算法（如中文字符范围匹配），输出规范易读的统计数值。
+- Verifies that the file exists and is readable (returns exit code `1` if not readable).
+- Utilizes efficient character matching algorithms (such as Chinese character range matching) to calculate and output formatted statistics.
