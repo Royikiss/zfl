@@ -179,6 +179,9 @@ def main():
         sys.exit(1)
 
     skill = sys.argv[1]
+    
+    lang = os.environ.get("ZFL_LANG") or os.environ.get("LANG", "en")
+    is_zh = lang.startswith("zh")
 
     if skill.startswith("group:"):
         # Group preview logic
@@ -192,55 +195,89 @@ def main():
             groups = {}
         
         if gkey not in groups:
-            print(f"\033[1;31m错误：未找到分组 '{gkey}'\033[0m")
+            if is_zh:
+                print(f"\033[1;31m错误：未找到分组 '{gkey}'\033[0m")
+            else:
+                print(f"\033[1;31mError: Group '{gkey}' not found\033[0m")
             sys.exit(0)
             
         ginfo = groups[gkey]
         if isinstance(ginfo, dict):
             gname = ginfo.get("name", gkey)
             gskills = ginfo.get("skills", [])
+            is_ordered = ginfo.get("ordered", False)
         else:
             gname = gkey
             gskills = ginfo
-            
+            is_ordered = False
+
+        def circled_num(n):
+            return chr(0x245F + n) if 1 <= n <= 20 else f"({n})"
+
         print("\033[1;36m" + "=" * 55 + "\033[0m")
-        print(f"\033[1;32m 技能分组: \033[1;37m{gname} ({gkey})\033[0m")
-        print("\033[1;36m" + "=" * 55 + "\033[0m")
-        print(f"\033[1;35m💡 该分组包含以下 {len(gskills)} 个技能 (空格键多选，Enter 键批量链接):\033[0m\n")
+        if is_zh:
+            print(f"\033[1;32m 技能分组: \033[1;37m{gname} ({gkey})\033[0m")
+            print("\033[1;36m" + "=" * 55 + "\033[0m")
+            if is_ordered:
+                print(f"\033[1;33m⚑ 有序分组 — 推荐按以下顺序依次调用：\033[0m\n")
+            else:
+                print(f"\033[1;35m💡 该分组包含以下 {len(gskills)} 个技能 (空格键多选，Enter 键批量链接):\033[0m\n")
+        else:
+            print(f"\033[1;32m Skill Group: \033[1;37m{gname} ({gkey})\033[0m")
+            print("\033[1;36m" + "=" * 55 + "\033[0m")
+            if is_ordered:
+                print(f"\033[1;33m⚑ Ordered group — recommended call order:\033[0m\n")
+            else:
+                print(f"\033[1;35m💡 This group contains the following {len(gskills)} skills (Space to multi-select, Enter to bulk link):\033[0m\n")
         
         user_translations = load_user_translations()
         skills_dir = os.path.expanduser("~/.agents/skills")
-        for s in gskills:
+        for idx, s in enumerate(gskills):
             name_display = s
             desc_display = ""
-            if s in user_translations:
-                name_display = user_translations[s].get("name_zh") or user_translations[s].get("name", s)
-                desc_display = user_translations[s].get("desc_zh") or user_translations[s].get("description", "")
-            else:
-                zh_paths = [
-                    os.path.join(skills_dir, s, "SKILL.zh.md"),
-                    os.path.join(skills_dir, s, "SKILL.zh-CN.md")
-                ]
-                zh_data = None
-                for p in zh_paths:
-                    if os.path.exists(p):
-                        zh_data = parse_md_content(p)[0]
-                        if zh_data:
-                            break
-                if zh_data:
-                    name_display = zh_data.get("name") or s
-                    desc_display = zh_data.get("description") or ""
-                else:
-                    en_path = os.path.join(skills_dir, s, "SKILL.md")
-                    en_data = parse_md_content(en_path)[0]
-                    if en_data:
-                        name_display = en_data.get("name") or s
-                        desc_display = en_data.get("description") or ""
             
-            print(f"  \033[1;32m• {s}\033[0m ({name_display})")
+            if is_zh:
+                if s in user_translations:
+                    name_display = user_translations[s].get("name_zh") or user_translations[s].get("name", s)
+                    desc_display = user_translations[s].get("desc_zh") or user_translations[s].get("description", "")
+                else:
+                    zh_paths = [
+                        os.path.join(skills_dir, s, "SKILL.zh.md"),
+                        os.path.join(skills_dir, s, "SKILL.zh-CN.md")
+                    ]
+                    zh_data = None
+                    for p in zh_paths:
+                        if os.path.exists(p):
+                            zh_data = parse_md_content(p)[0]
+                            if zh_data:
+                                break
+                    if zh_data:
+                        name_display = zh_data.get("name") or s
+                        desc_display = zh_data.get("description") or ""
+                    else:
+                        en_path = os.path.join(skills_dir, s, "SKILL.md")
+                        en_data = parse_md_content(en_path)[0]
+                        if en_data:
+                            name_display = en_data.get("name") or s
+                            desc_display = en_data.get("description") or ""
+            else:
+                en_path = os.path.join(skills_dir, s, "SKILL.md")
+                en_data = parse_md_content(en_path)[0]
+                if en_data:
+                    name_display = en_data.get("name") or s
+                    desc_display = en_data.get("description") or ""
+            
+            if is_ordered:
+                bullet = f"\033[1;33m{circled_num(idx + 1)}\033[0m"
+            else:
+                bullet = "\033[1;32m•\033[0m"
+            print(f"  {bullet} \033[1;32m{s}\033[0m ({name_display})")
             if desc_display:
                 desc_single = " ".join([l.strip() for l in desc_display.split("\n") if l.strip()])
-                print(f"    \033[1;30m描述: {desc_single}\033[0m")
+                if is_zh:
+                    print(f"    \033[1;30m描述: {desc_single}\033[0m")
+                else:
+                    print(f"    \033[1;30mDescription: {desc_single}\033[0m")
             print()
         sys.exit(0)
 
@@ -249,16 +286,20 @@ def main():
     en_path = os.path.join(skill_dir, "SKILL.md")
 
     if not os.path.exists(en_path):
-        print(f"\033[1;31m错误：未找到技能 '{skill}' 的 SKILL.md 文件\033[0m")
-        print(f"搜索路径: {en_path}")
+        if is_zh:
+            print(f"\033[1;31m错误：未找到技能 '{skill}' 的 SKILL.md 文件\033[0m")
+            print(f"搜索路径: {en_path}")
+        else:
+            print(f"\033[1;31mError: SKILL.md file not found for skill '{skill}'\033[0m")
+            print(f"Search path: {en_path}")
         sys.exit(0)
 
-    # 1. Load user cache translation DB from ~/.cache/zsh/skills_zh.json (initialize if needed)
+    # 1. Load user cache translation DB
     cache_dir = os.path.expanduser("~/.cache/zsh")
     cache_path = os.path.join(cache_dir, "skills_zh.json")
     user_translations = load_user_translations()
 
-    # 2. Check if a local Chinese translation file exists (in skill directory)
+    # 2. Check if a local Chinese translation file exists
     zh_paths = [
         os.path.join(skill_dir, "SKILL.zh.md"),
         os.path.join(skill_dir, "SKILL.zh-CN.md")
@@ -274,9 +315,9 @@ def main():
     if zh_path:
         zh_meta, zh_body = parse_md_content(zh_path)
 
-    # 3. Dynamic translation if not found in user cache or local SKILL.zh.md
+    # 3. Dynamic translation if not found and preference is Chinese
     cached_to_file = False
-    if not zh_meta and skill not in user_translations and en_meta:
+    if is_zh and not zh_meta and skill not in user_translations and en_meta:
         en_name = en_meta.get("name") or skill
         en_desc = en_meta.get("description") or ""
         
@@ -304,13 +345,14 @@ def main():
     desc_zh = ""
     usage_zh = ""
     
-    if skill in user_translations:
-        name_zh = user_translations[skill].get("name_zh")
-        desc_zh = user_translations[skill].get("desc_zh")
-        usage_zh = user_translations[skill].get("usage_zh", "") # Get from defaults if present
-    elif zh_meta:
-        name_zh = zh_meta.get("name")
-        desc_zh = zh_meta.get("description")
+    if is_zh:
+        if skill in user_translations:
+            name_zh = user_translations[skill].get("name_zh")
+            desc_zh = user_translations[skill].get("desc_zh")
+            usage_zh = user_translations[skill].get("usage_zh", "")
+        elif zh_meta:
+            name_zh = zh_meta.get("name")
+            desc_zh = zh_meta.get("description")
 
     # Clean description lists
     desc_en_lines = [l.strip() for l in desc_en.split("\n") if l.strip()]
@@ -318,14 +360,17 @@ def main():
 
     # Print layout
     print("\033[1;36m" + "=" * 55 + "\033[0m")
-    if name_zh:
-        print(f"\033[1;32m 技能: \033[1;37m{name_zh} ({name_en})\033[0m")
+    if is_zh:
+        if name_zh:
+            print(f"\033[1;32m 技能: \033[1;37m{name_zh} ({name_en})\033[0m")
+        else:
+            print(f"\033[1;32m 技能: \033[1;37m{name_en}\033[0m")
     else:
-        print(f"\033[1;32m 技能: \033[1;37m{name_en}\033[0m")
+        print(f"\033[1;32m Skill: \033[1;37m{name_en}\033[0m")
     print("\033[1;36m" + "=" * 55 + "\033[0m")
     
     # Chinese Description
-    if desc_zh_lines:
+    if is_zh and desc_zh_lines:
         print("\033[1;33m功能描述 (中文):\033[0m")
         for line in desc_zh_lines:
             print(f"  {line}")
@@ -333,20 +378,27 @@ def main():
 
     # English Description
     if desc_en_lines:
-        print("\033[1;33m功能描述 (英文):\033[0m")
+        if is_zh:
+            print("\033[1;33m功能描述 (英文):\033[0m")
+        else:
+            print("\033[1;33mFunctional Description:\033[0m")
         for line in desc_en_lines:
             print(f"  {line}")
         print("\033[1;36m" + "-" * 55 + "\033[0m")
 
     # Usage Tips
-    if usage_zh:
+    if is_zh and usage_zh:
         print("\033[1;35m💡 使用场景与指南 (中文):\033[0m")
         print(f"  {usage_zh}")
         print("\033[1;36m" + "-" * 55 + "\033[0m")
 
-    # Content Preview (bilingual body if zh exists)
-    print("\033[1;34m内容预览:\033[0m")
-    body_to_print = zh_body if zh_body else en_body
+    # Content Preview
+    if is_zh:
+        print("\033[1;34m内容预览:\033[0m")
+    else:
+        print("\033[1;34mContent Preview:\033[0m")
+        
+    body_to_print = zh_body if (is_zh and zh_body) else en_body
     if body_to_print:
         body_lines = body_to_print.strip().split("\n")
         printed_lines = 0
@@ -358,8 +410,9 @@ def main():
         if len(body_lines) > 25:
             print("\033[1;30m  ... (more content below) ...\033[0m")
             
-    if cached_to_file:
+    if is_zh and cached_to_file:
         print("\033[1;30m  *已自动翻译元数据并缓存至 ~/.cache/zsh/skills_zh.json*\033[0m")
+
 
 if __name__ == "__main__":
     main()

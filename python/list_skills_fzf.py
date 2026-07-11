@@ -159,6 +159,9 @@ def main():
         print(f"Error: {skills_dir} does not exist", file=sys.stderr)
         sys.exit(1)
 
+    lang = os.environ.get("ZFL_LANG") or os.environ.get("LANG", "en")
+    is_zh = lang.startswith("zh")
+
     # Load translations from ~/.cache/zsh/skills_zh.json (initialize if needed)
     user_translations = load_user_translations()
 
@@ -175,11 +178,26 @@ def main():
         if isinstance(info, dict):
             name = info.get("name", gid)
             gskills = info.get("skills", [])
+            is_ordered = info.get("ordered", False)
         else:
             name = gid
             gskills = info
-        gskills_str = ", ".join(gskills)
-        print(f"group:{gid} | [分组: {name}] 包含: {gskills_str}")
+            is_ordered = False
+
+        if is_ordered:
+            def _cn(n):
+                return chr(0x245F + n) if 1 <= n <= 20 else f"({n})"
+            numbered = " ".join(f"{_cn(i+1)}{s}" for i, s in enumerate(gskills))
+            if is_zh:
+                print(f"group:{gid} | [分组: {name}] \u2691 有序 · {numbered}")
+            else:
+                print(f"group:{gid} | [Group: {name}] \u2691 Ordered · {numbered}")
+        else:
+            gskills_str = ", ".join(gskills)
+            if is_zh:
+                print(f"group:{gid} | [分组: {name}] 包含: {gskills_str}")
+            else:
+                print(f"group:{gid} | [Group: {name}] Contains: {gskills_str}")
 
     # Scan available skills
     skills = []
@@ -193,33 +211,41 @@ def main():
         name_display = skill
         desc_display = ""
         
-        # 1. Check database cache
-        if skill in user_translations:
-            name_display = user_translations[skill].get("name_zh") or user_translations[skill].get("name", skill)
-            desc_display = user_translations[skill].get("desc_zh") or user_translations[skill].get("description", "")
-        else:
-            # 2. Check local SKILL.zh.md or SKILL.zh-CN.md (fallback)
-            zh_paths = [
-                os.path.join(skills_dir, skill, "SKILL.zh.md"),
-                os.path.join(skills_dir, skill, "SKILL.zh-CN.md")
-            ]
-            zh_data = None
-            for p in zh_paths:
-                if os.path.exists(p):
-                    zh_data = parse_md_frontmatter(p)
-                    if zh_data:
-                        break
-            
-            if zh_data:
-                name_display = zh_data.get("name") or skill
-                desc_display = zh_data.get("description") or ""
+        if is_zh:
+            # 1. Check database cache for Chinese translations
+            if skill in user_translations:
+                name_display = user_translations[skill].get("name_zh") or user_translations[skill].get("name", skill)
+                desc_display = user_translations[skill].get("desc_zh") or user_translations[skill].get("description", "")
             else:
-                # 3. Fallback to English SKILL.md
-                en_path = os.path.join(skills_dir, skill, "SKILL.md")
-                en_data = parse_md_frontmatter(en_path)
-                if en_data:
-                    name_display = en_data.get("name") or skill
-                    desc_display = en_data.get("description") or ""
+                # 2. Check local SKILL.zh.md or SKILL.zh-CN.md (fallback)
+                zh_paths = [
+                    os.path.join(skills_dir, skill, "SKILL.zh.md"),
+                    os.path.join(skills_dir, skill, "SKILL.zh-CN.md")
+                ]
+                zh_data = None
+                for p in zh_paths:
+                    if os.path.exists(p):
+                        zh_data = parse_md_frontmatter(p)
+                        if zh_data:
+                            break
+                
+                if zh_data:
+                    name_display = zh_data.get("name") or skill
+                    desc_display = zh_data.get("description") or ""
+                else:
+                    # 3. Fallback to English SKILL.md
+                    en_path = os.path.join(skills_dir, skill, "SKILL.md")
+                    en_data = parse_md_frontmatter(en_path)
+                    if en_data:
+                        name_display = en_data.get("name") or skill
+                        desc_display = en_data.get("description") or ""
+        else:
+            # English preference: load from English SKILL.md directly
+            en_path = os.path.join(skills_dir, skill, "SKILL.md")
+            en_data = parse_md_frontmatter(en_path)
+            if en_data:
+                name_display = en_data.get("name") or skill
+                desc_display = en_data.get("description") or ""
 
         # Make description single line and truncate if necessary
         desc_single = " ".join([l.strip() for l in desc_display.split("\n") if l.strip()])
@@ -230,3 +256,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

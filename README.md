@@ -1,138 +1,136 @@
 # ZFL (Zsh Function Library)
 
-ZFL 是一个面向高性能、模块化的 Zsh 配置与函数库。在保持 Shell 极速启动（零文件加载延迟）的同时，内置了非阻塞启动任务调度、AI 辅助开发上下文打包工具、更新检测以及各类便捷的系统工具。
+ZFL is a high-performance, modular configuration and function library for Zsh. While maintaining instant shell startup speeds (zero file-loading delay), it features non-blocking startup task scheduling, an AI-assisted development context packager, update detection, and various system utilities.
 
 ---
 
-## 🚀 核心特性
+## 🚀 Core Features
 
-- **⚡ 零延迟启动 (Lazy Loading)**
-  - 启动时仅为 `functions/` 下的脚本注册同名占位函数，只有在实际执行命令时才 `source` 导入。
-  - 独特的**补全懒加载代理**：首次触发 Tab 补全时动态导入完整补全规则，兼顾极致启动速度与极致补全体验。
-- **🛡️ 非阻塞启动任务 (FD 3 隔离)**
-  - 利用系统描述符 3 (`exec 3< ...`) 进行启动任务的读取与执行，使启动流与 `stdin` 完全隔离。
-  - 防止启动任务中的交互式命令（如 `read`）误吞标准输入，消除终端锁死或闪退隐患。
-- **🤖 AI 协作友好 (AICP)**
-  - 内置 `aicp` 协作工具，支持多级别（`fast`/`balanced`/`deep`/`full`）的 Token 预算控制与多维度路径/关键词过滤。
-  - 提供 `--exec` 交互模式，AI 可以生成 `<aicp:read>` 及 `<aicp:write>` 标签让终端自动展示源码或在用户确认后自动应用 Unified Diff 补丁。
-- **🔄 只读、非阻塞更新检测 (check_update)**
-  - 启动时异步检测系统可更新项（Pacman/AUR、Flatpak），只读计数，绝不在后台请求 `sudo`。
-  - 内置进程锁、互斥锁、自愈陈旧锁与多种提示策略（`pending_first`、`once_per_day`、`strict_daily`），提示频率可按需精细配置。
-- **🔍 静态代码质量防御与管理 (zfl)**
-  - 内置 `zfl` 工具提供本地静态质量 Lint 分析（自动化扫描变量/描述符泄漏，命名规范，颜色硬编码，文档配套），并部署 GitHub Actions PR 流水线门禁拦截。
-  - 规范函数注释头元数据标准，自动生成可用指令列表展示，并在运行前对各函数的外部系统依赖进行检测校验。
+- **⚡ Zero-Delay Startup (Lazy Loading)**
+  - Registers lightweight stubs for scripts under `functions/` on startup. Code files are sourced only when the commands are actually executed.
+  - Proxy completion loaders dynamically import complete autocomplete mappings on the first Tab trigger, maintaining both instant shell startups and complete autocomplete experiences.
+- **🛡️ Non-Blocking Startup Tasks (FD 3 Isolation)**
+  - Reads and executes startup tasks through system file descriptor 3 (`exec 3< ...`), completely isolating them from standard stdin.
+  - Prevents background interactive prompts from hijacking foreground stdin, resolving shell locking or crashing issues.
+- **🤖 AI-Collaboration Friendly (AICP)**
+  - Built-in `aicp` tool packages codebase context under token budgets (`fast`/`balanced`/`deep`/`full` levels) and multi-dimensional filters.
+  - Interactive `--exec` mode handles tool execution via XML tags, displaying source ranges and interactively applying unified diff patches upon user confirmation.
+- **🔄 Read-only, Non-Blocking Update Checks (check_update)**
+  - Query updates asynchronously (Pacman/AUR, Flatpak) on shell startup. Processes only count packages and never invoke `sudo` in the background.
+  - Lock directories prevent duplicate checks, and customizable policies (`pending_first`, `once_per_day`, `strict_daily`) control prompt frequency.
+- **🔍 Static Quality Gates & Management (zfl)**
+  - Built-in `zfl` static code checker lints variable/file-descriptor leaks, naming styles, hardcoded colors, and missing documentation. Integrates with GitHub Actions gate checks.
+  - Parses standardized metadata comment headers to auto-generate lists of available tools and verify system CLI dependencies.
 
 ---
 
-## 📂 项目结构
+## 📂 Project Structure
 
 ```bash
 zsh/
-├── base.zsh                       # 框架总入口（导出 ZFL_HOME 并加载核心模块）
-├── core/                          # 核心调度与公共模块
-│   ├── colors.zsh                 # 预设的 ANSI 颜色与样式定义
-│   ├── func.zsh                   # 懒加载核心引擎（含颜色加载器、依赖检测器与补全代理）
-│   ├── startup_task_commands.zsh  # 启动执行任务白名单
-│   ├── startup_tasks.zsh          # 非阻塞启动任务执行器（FD 3 隔离）
-│   ├── usr.zsh                    # 用户个性化配置层（可在此填写别名、代理等）
+├── base.zsh                       # Framework entry point (exports ZFL_HOME and loads core modules)
+├── core/                          # Core dispatch and public modules
+│   ├── colors.zsh
+│   ├── func.zsh
+│   ├── startup_task_commands.zsh
+│   ├── startup_tasks.zsh
+│   ├── usr.zsh
 │   └── usr.zsh.example
-├── functions/                     # 模块化业务函数目录 (文件名与函数名 1:1 映射)
-│   ├── add_task.zsh               # 管理后台非阻塞启动自动执行任务列表 (白名单管理)
-│   ├── aicp.zsh                   # 生成适合投喂 AI 的项目上下文（目录树 + 文件索引 + 代码片段预算裁剪）
-│   ├── check_update.zsh           # 异步只读检查系统可用更新并在终端提示，支持 Pacman/AUR 和 Flatpak
-│   ├── countText.zsh              # 根据传入模式统计文本文件中的字数/汉字数
-│   ├── link_skills.zsh            # 选择性地将 ~/.agents/skills 中的技能软链接到当前项目的 .agents/skills/ 中
-│   ├── weather.zsh                # 终端快速查询实时天气与天气预报
-│   └── zfl.zsh                    # ZFL 框架内置命令行管理与自发现工具
-├── custom_functions/              # 用户本地私有函数目录 (已被 gitignore 忽略)
-├── python/                        # 跨语言脚本辅助
-│   ├── aicp_context.py            # aicp 核心的 Token 计数与上下文生成逻辑
+├── functions/                     # Modular function directory (1:1 mapping between file name and function name)
+│   ├── add_task.zsh               # Manage startup tasks list (whitelist management)
+│   ├── aicp.zsh                   # Generate project context suitable for AI consumption (directory tree + file index + code snippet budget trimming)
+│   ├── check_update.zsh           # Asynchronously check system updates in read-only mode and prompt in terminal, supporting pacman/yay and flatpak
+│   ├── countText.zsh              # Count words or Chinese characters in a text file based on the specified mode
+│   ├── link_skills.zsh            # Selectively symlink skills from ~/.agents/skills/ into .agents/skills/ of the current project
+│   ├── weather.zsh                # Query real-time weather and weather forecast in terminal
+│   └── zfl.zsh                    # ZFL framework built-in command line management and self-discovery tool
+├── custom_functions/              # User private local functions directory (ignored by git)
+├── python/                        # Cross-language helper scripts
+│   ├── aicp_context.py
 │   ├── list_skills_fzf.py
-│   ├── preview_skill.py           # AI Skill 预览展示
-│   ├── resolve_skills.py          # 负责解析并展开技能分组及具体技能名称，同时提供分组增删查管理接口
+│   ├── preview_skill.py
+│   ├── resolve_skills.py          # Parse and expand skill groups and skill names, and provide interfaces to manage groups
 │   └── zfl_lint.py
-├── docs/                          # 技术设计、机制说明及排障避坑文档
-│   ├── add_task.md                # 后台非阻塞启动任务管理
-│   ├── aicp.md                    # AI 协作工具（上下文打包、Token 计数与 `--exec` 交互协作模式）
-│   ├── check_update.md            # 异步只读更新统计与交互式系统升级
-│   ├── countText.md               # 中英文混排文本字数统计工具
-│   ├── link_skills.md             # 软链接全局 AI Agent 技能配置到本地项目
-│   ├── weather.md                 # 终端快速查询实时天气与天气预报
-│   └── zfl.md                     # ZFL 框架内置命令行管理与自发现工具
-└── automation/                    # AI 编程自动化检测与同步脚本
-    └── sync_readme.py             # README.md 项目结构树自动同步与检测工具
+├── docs/                          # Technical design, core mechanics, and troubleshooting documentation
+│   ├── add_task.md                # Non-blocking startup command and schedule scheduler.
+│   ├── aicp.md                    # AI context packaging, token estimation, and interactive `--exec` loop helper.
+│   ├── check_update.md            # Non-blocking package queries and interactive system upgrade coordinator.
+│   ├── countText.md               # Characters and words counting tool for mixed English-Chinese texts.
+│   ├── link_skills.md             # Symbolic link management for globally-defined AI Agent skills.
+│   ├── weather.md                 # Quick weather forecast query.
+│   └── zfl.md                     # Built-in ZFL CLI manager and auto-discovery engine.
+└── automation/                    # AI programming automation verification and sync scripts
+    └── sync_readme.py             # Automatically synchronize and verify the README.md project structure tree
 ```
 
 ---
 
-## 🛠️ 安装与启用
+## 🛠️ Installation & Activation
 
-1. 将本项目克隆或放置到 `~/.config/zsh` 目录下：
+1. Clone ZFL to your `~/.config/zsh` directory:
    ```bash
    git clone https://github.com/Royikiss/zfl.git ~/.config/zsh
    ```
-2. 在您的主 `~/.zshrc` 配置文件尾部添加以下行引入 ZFL：
+2. Append the following lines to your `~/.zshrc` file to source ZFL:
    ```zsh
    if [[ -f "$HOME/.config/zsh/base.zsh" ]]; then
        source "$HOME/.config/zsh/base.zsh"
    fi
    ```
-3. 重新打开终端或执行 `source ~/.zshrc` 即可加载。
+3. Restart your terminal or run `source ~/.zshrc` to reload.
 
 ---
 
-## ⚙️ 个性化配置 (`core/usr.zsh`)
+## ⚙️ Custom Configurations (`core/usr.zsh`)
 
-为了保持主框架文件的整洁及避免 Git 冲突，`core/usr.zsh` 已加入 `.gitignore` 且不被 Git 跟踪。
+To keep core framework files clean and avoid version control conflicts, `core/usr.zsh` is ignored by `.gitignore` and untracked.
 
-您可以将模板文件复制一份，然后在其中填写您个人的环境变量、代理、别名等：
+Copy the template file to create your own configuration:
 
 ```bash
 cp core/usr.zsh.example core/usr.zsh
 ```
 
-`core/usr.zsh` 配置示例如下：
+Example configurations inside `core/usr.zsh`:
 
 ```zsh
-# 用户自定义别名
+# User custom aliases
 alias ls='eza --icons'
 alias l='eza -lgh --header --git --icons'
 
-# 网络代理配置
+# Network proxies
 export HTTPS_PROXY=http://127.0.0.1:7897
 export HTTP_PROXY=http://127.0.0.1:7897
 
-# 调节 check_update 更新检测选项
-export CHECK_UPDATE_CACHE_TTL_SECONDS=1800   # 缓存30分钟
-export CHECK_UPDATE_PROMPT_POLICY=once_per_day # 拒绝后当日不再打扰
+# check_update configs
+export CHECK_UPDATE_CACHE_TTL_SECONDS=1800   # Cache duration: 30 minutes
+export CHECK_UPDATE_PROMPT_POLICY=once_per_day # Silent on subsequent prompts today if skipped
 ```
 
+---
+
+## 📖 Core Commands & Documentation
+
+Each tool in ZFL has a companion markdown documentation under [docs/](file:///home/royi/.config/zsh/docs/). Click the links below to view details:
+
+- ⚙️ [zfl](file:///home/royi/.config/zsh/docs/zfl.md) - Built-in ZFL CLI manager and auto-discovery engine.
+- 🤖 [aicp](file:///home/royi/.config/zsh/docs/aicp.md) - AI context packaging, token estimation, and interactive `--exec` loop helper.
+- 🔄 [check_update](file:///home/royi/.config/zsh/docs/check_update.md) - Non-blocking package queries and interactive system upgrade coordinator.
+- ⚙️ [add_task](file:///home/royi/.config/zsh/docs/add_task.md) - Non-blocking startup command and schedule scheduler.
+- 🔗 [link_skills](file:///home/royi/.config/zsh/docs/link_skills.md) - Symbolic link management for globally-defined AI Agent skills.
+- 📊 [countText](file:///home/royi/.config/zsh/docs/countText.md) - Characters and words counting tool for mixed English-Chinese texts.
+- 🌤️ [weather](file:///home/royi/.config/zsh/docs/weather.md) - Quick weather forecast query.
 
 ---
 
-## 📖 核心命令与文档
+## 🎨 Development Guidelines & Coding Standards
 
-ZFL 包含的每个函数都在 [docs/](file:///home/royi/.config/zsh/docs/) 目录下有对应的详细说明文档。请点击以下链接阅读：
+If you plan to contribute new tools or modify functions in ZFL, please adhere to the conventions defined in [CONTRIBUTING.md](file:///home/royi/.config/zsh/CONTRIBUTING.md) and [AGENTS.md](file:///home/royi/.config/zsh/AGENTS.md):
 
-- ⚙️ [zfl](file:///home/royi/.config/zsh/docs/zfl.md) - ZFL 框架内置命令行管理与自发现工具
-- 🤖 [aicp](file:///home/royi/.config/zsh/docs/aicp.md) - AI 协作工具（上下文打包、Token 计数与 `--exec` 交互协作模式）
-- 🔄 [check_update](file:///home/royi/.config/zsh/docs/check_update.md) - 异步只读更新统计与交互式系统升级
-- ⚙️ [add_task](file:///home/royi/.config/zsh/docs/add_task.md) - 后台非阻塞启动任务管理
-- 🔗 [link_skills](file:///home/royi/.config/zsh/docs/link_skills.md) - 软链接全局 AI Agent 技能配置到本地项目
-- 🌐 [verge-ipc-link](file:///home/royi/.config/zsh/docs/verge-ipc-link.md) - Clash Verge IPC Socket 软链接配置辅助
-- 📊 [countText](file:///home/royi/.config/zsh/docs/countText.md) - 中英文混排文本字数统计工具
-- 🌤️ [weather](file:///home/royi/.config/zsh/docs/weather.md) - 终端快速查询实时天气与天气预报
-
----
-
-## 🎨 开发设计规范
-
-如果您打算向 ZFL 提交新的工具函数，请务必阅读并遵守 [CONTRIBUTING.md](file:///home/royi/.config/zsh/CONTRIBUTING.md) 与 [AGENTS.md](file:///home/royi/.config/zsh/AGENTS.md) 中规定的以下规范：
-1.  **文件与主函数 1:1 对应**：新功能需放在 `functions/<函数名>.zsh` 中，且内部仅包含一个同名的全局主入口函数。
-2.  **标准化元数据注释头**：文件最顶部必须包含以 `#?` 开头的名称、描述、作者、版本、依赖和用法声明。
-3.  **变量强局部化**：所有临时变量、循环变量和输入读取变量必须显式声明为 `local`，防止污染用户 Shell 命名空间。
-4.  **全局辅助函数回收**：外部辅助函数命名必须以 `_主函数名_` 开头，并在主函数退出前执行 `unfunction` 清理；推荐直接采用内部嵌套函数定义。
-5.  **FD 3 安全关闭**：任何后台任务（`&`）或 fork 子 shell 的命令中，必须在其指令流中重定向并关闭文件描述符 3（`3<&-`），避免父终端异常挂起或锁死。
-6.  **色彩载入与依赖声明**：严禁硬编码颜色转义字符，请使用 `load_color`；若有第三方 CLI 依赖，请在函数首行使用 `zfl_require` 保护。
-7.  **静态代码自检**：在提交任何更改前，请在本地运行并完美通过 `zfl lint <函数名>`，确认退出状态码为 0。
-
+1. **File-to-Function 1:1 Mapping**: New features must reside under `functions/<name>.zsh` containing exactly one entry function named `<name>()`.
+2. **Metadata Header Standards**: Include standardized metadata descriptions (lines starting with `#?`) declaring name, description, author, version, deps, and usage at the very top of files.
+3. **Strong Variable Declarations**: All loop iterators, read buffers, and temporary variables must be explicitly declared as `local` to prevent namespace pollution.
+4. **Helper Function Cleanup**: Out-of-scope helper functions must start with `_parentname_` and be unloaded using `unfunction` before the parent exits. Embedded inner function structures are highly recommended.
+5. **FD 3 Safe Closing**: Background tasks (`&`, `coproc`) or subshell forks must explicitly close file descriptor 3 (`3<&-`), preventing parent shells from hanging or locking.
+6. **No Hardcoded Colors**: Use `load_color` instead of hardcoding ANSI escape codes. Declare CLI requirements at the top of functions using `zfl_require`.
+7. **Local Static Verification**: Run `zfl lint <name>` and verify that it returns exit code `0` before committing changes.

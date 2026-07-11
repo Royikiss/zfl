@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# 描述: 负责解析并展开技能分组及具体技能名称，同时提供分组增删查管理接口
+# Description: Parse and expand skill groups and skill names, and provide interfaces to manage groups
 
 import os
 import sys
 import json
 
+# Detect language
+LANG = os.environ.get("ZFL_LANG") or os.environ.get("LANG", "en")
+IS_ZH = LANG.startswith("zh")
+
 GROUPS_FILE = os.path.expanduser("~/.cache/zsh/skills_groups.json")
 
 DEFAULT_GROUPS = {
     "startup": {
-        "name": "极简创业者",
+        "name": "极简创业者" if IS_ZH else "Minimalist Entrepreneur",
+        "ordered": True,
         "skills": [
             "validate-idea",
             "find-community",
@@ -23,7 +28,8 @@ DEFAULT_GROUPS = {
         ]
     },
     "dev": {
-        "name": "日常开发协作",
+        "name": "日常开发协作" if IS_ZH else "Daily Development Collaboration",
+        "ordered": False,
         "skills": [
             "prototype",
             "improve-codebase-architecture",
@@ -35,6 +41,12 @@ DEFAULT_GROUPS = {
         ]
     }
 }
+
+def circled_num(n):
+    """Return a circled number character for n (1-20), else fallback to (n)."""
+    if 1 <= n <= 20:
+        return chr(0x245F + n)  # U+2460 = ①
+    return f"({n})"
 
 def load_groups():
     """
@@ -53,17 +65,22 @@ def load_groups():
         with open(GROUPS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
             if isinstance(data, dict):
-                # Migrate old default names if present
                 migrated = False
-                old_names = {"极简创业者 (Startup)": "极简创业者", "日常开发协作 (Development)": "日常开发协作"}
-                for gid, new_name in old_names.items():
-                    if gid in data and isinstance(data[gid], dict) and data[gid].get("name") == gid:
-                        data[gid]["name"] = new_name
-                        migrated = True
-                    # Also support if the key is 'startup' or 'dev' but name is the old one
-                    for k in ("startup", "dev"):
-                        if k in data and isinstance(data[k], dict) and data[k].get("name") == ( "极简创业者 (Startup)" if k == "startup" else "日常开发协作 (Development)" ):
-                            data[k]["name"] = old_names[data[k]["name"]]
+                # Migrate default names based on current language preference
+                for k in ("startup", "dev"):
+                    if k in data and isinstance(data[k], dict):
+                        curr_name = data[k].get("name")
+                        if not IS_ZH and curr_name in ("极简创业者", "极简创业者 (Startup)"):
+                            data[k]["name"] = "Minimalist Entrepreneur"
+                            migrated = True
+                        elif not IS_ZH and curr_name in ("日常开发协作", "日常开发协作 (Development)"):
+                            data[k]["name"] = "Daily Development Collaboration"
+                            migrated = True
+                        elif IS_ZH and curr_name in ("Minimalist Entrepreneur", "极简创业者 (Startup)"):
+                            data[k]["name"] = "极简创业者"
+                            migrated = True
+                        elif IS_ZH and curr_name in ("Daily Development Collaboration", "日常开发协作 (Development)"):
+                            data[k]["name"] = "日常开发协作"
                             migrated = True
                 if migrated:
                     save_groups(data)
@@ -114,21 +131,70 @@ def interactive_set(selected_args):
             unique_skills.append(s)
             
     if not unique_skills:
-        print("\033[1;31m错误：未选中任何技能，请先使用空格键在列表中选择技能！\033[0m")
-        input("\n按回车键返回 FZF...")
-        return
-        
-    print("\033[1;36m" + "=" * 55 + "\033[0m")
-    print("\033[1;32m即将为以下技能创建/更新分组：\033[0m")
-    for s in unique_skills:
-        print(f"  • {s}")
-    print("\033[1;36m" + "=" * 55 + "\033[0m")
-    
-    try:
-        gname = input("请输入要创建/修改的分组名称 (或按回车键取消): ").strip()
-        if not gname:
-            print("\033[1;33m操作已取消。\033[0m")
+        if IS_ZH:
+            print("\033[1;31m错误：未选中任何技能，请先使用空格键在列表中选择技能！\033[0m")
             input("\n按回车键返回 FZF...")
+        else:
+            print("\033[1;31mError: No skills selected. Please select skills using Space first!\033[0m")
+            input("\nPress Enter to return to FZF...")
+        return
+    
+    # --- Step 1: Show selected skills and allow reordering by index ---
+    print("\033[1;36m" + "=" * 55 + "\033[0m")
+    if IS_ZH:
+        print(f"\033[1;32m已选中 {len(unique_skills)} 个技能：\033[0m")
+    else:
+        print(f"\033[1;32mSelected {len(unique_skills)} skills:\033[0m")
+    for i, s in enumerate(unique_skills, 1):
+        print(f"  {i}) {s}")
+    print("\033[1;36m" + "=" * 55 + "\033[0m")
+
+    try:
+        if IS_ZH:
+            reorder_input = input('请输入新的排列顺序（如 "3 1 2"，直接回车保持现有顺序）: ').strip()
+        else:
+            reorder_input = input('Enter new order (e.g. "3 1 2", or press Enter to keep current): ').strip()
+        if reorder_input:
+            try:
+                indices = [int(x) - 1 for x in reorder_input.split()]
+                if sorted(indices) == list(range(len(unique_skills))):
+                    unique_skills = [unique_skills[i] for i in indices]
+                    if IS_ZH:
+                        print("\033[1;32m已重新排列：\033[0m")
+                    else:
+                        print("\033[1;32mReordered:\033[0m")
+                    for i, s in enumerate(unique_skills, 1):
+                        print(f"  {i}) {s}")
+                else:
+                    if IS_ZH:
+                        print("\033[1;33m序号不合法，已忽略，保持原有顺序。\033[0m")
+                    else:
+                        print("\033[1;33mInvalid indices, keeping original order.\033[0m")
+            except ValueError:
+                if IS_ZH:
+                    print("\033[1;33m输入有误，已忽略，保持原有顺序。\033[0m")
+                else:
+                    print("\033[1;33mInvalid input, keeping original order.\033[0m")
+
+        # --- Step 2: Ask if this group is ordered ---
+        if IS_ZH:
+            ordered_ans = input("是否设为有序分组（即上方顺序为推荐调用顺序）？(y/N): ").strip().lower()
+        else:
+            ordered_ans = input("Mark as ordered group (above order = recommended call order)? (y/N): ").strip().lower()
+        is_ordered = ordered_ans in ('y', 'yes')
+
+        # --- Step 3: Ask for group name ---
+        if IS_ZH:
+            gname = input("请输入要创建/修改的分组名称 (或按回车键取消): ").strip()
+        else:
+            gname = input("Please enter group name to create/modify (or press Enter to cancel): ").strip()
+        if not gname:
+            if IS_ZH:
+                print("\033[1;33m操作已取消。\033[0m")
+                input("\n按回车键返回 FZF...")
+            else:
+                print("\033[1;33mOperation cancelled.\033[0m")
+                input("\nPress Enter to return to FZF...")
             return
             
         disp_name = gname
@@ -137,49 +203,93 @@ def interactive_set(selected_args):
             
         groups[gname] = {
             "name": disp_name,
+            "ordered": is_ordered,
             "skills": unique_skills
         }
         if save_groups(groups):
-            print(f"\n\033[1;32m成功保存分组 '{gname}'，包含 {len(unique_skills)} 个技能！\033[0m")
+            ordered_label = ("有序" if IS_ZH else "ordered") if is_ordered else ("无序" if IS_ZH else "unordered")
+            if IS_ZH:
+                print(f"\n\033[1;32m成功保存{ordered_label}分组 '{gname}'，包含 {len(unique_skills)} 个技能！\033[0m")
+            else:
+                print(f"\n\033[1;32mSuccessfully saved {ordered_label} group '{gname}' containing {len(unique_skills)} skills!\033[0m")
         else:
-            print("\n\033[1;31m保存失败。\033[0m")
+            if IS_ZH:
+                print("\n\033[1;31m保存失败。\033[0m")
+            else:
+                print("\n\033[1;31mFailed to save.\033[0m")
     except KeyboardInterrupt:
-        print("\n\033[1;33m操作已取消。\033[0m")
+        if IS_ZH:
+            print("\n\033[1;33m操作已取消。\033[0m")
+        else:
+            print("\n\033[1;33mOperation cancelled.\033[0m")
         
-    input("\n按回车键返回 FZF...")
+    if IS_ZH:
+        input("\n按回车键返回 FZF...")
+    else:
+        input("\nPress Enter to return to FZF...")
 
 def interactive_rm(focused_item):
     if not focused_item.startswith("group:"):
-        print("\033[1;31m错误：当前所选项不是一个技能分组，无法删除！\033[0m")
-        print(f"所选项: {focused_item}")
-        input("\n按回车键返回 FZF...")
+        if IS_ZH:
+            print("\033[1;31m错误：当前所选项不是一个技能分组，无法删除！\033[0m")
+            print(f"所选项: {focused_item}")
+            input("\n按回车键返回 FZF...")
+        else:
+            print("\033[1;31mError: Current item is not a skill group, cannot delete!\033[0m")
+            print(f"Selected item: {focused_item}")
+            input("\nPress Enter to return to FZF...")
         return
         
     gkey = focused_item[6:]
     groups = load_groups()
     if gkey not in groups:
-        print(f"\033[1;31m错误：分组 '{gkey}' 不存在。\033[0m")
-        input("\n按回车键返回 FZF...")
+        if IS_ZH:
+            print(f"\033[1;31m错误：分组 '{gkey}' 不存在。\033[0m")
+            input("\n按回车键返回 FZF...")
+        else:
+            print(f"\033[1;31mError: Group '{gkey}' does not exist.\033[0m")
+            input("\nPress Enter to return to FZF...")
         return
         
     print("\033[1;36m" + "=" * 55 + "\033[0m")
-    print(f"\033[1;31m确定要删除技能分组 '{gkey}' 吗？\033[0m")
+    if IS_ZH:
+        print(f"\033[1;31m确定要删除技能分组 '{gkey}' 吗？\033[0m")
+    else:
+        print(f"\033[1;31mAre you sure you want to delete skill group '{gkey}'?\033[0m")
     print("\033[1;36m" + "=" * 55 + "\033[0m")
     
     try:
-        confirm = input("请输入 y 确认删除 (或按回车键取消): ").strip().lower()
+        if IS_ZH:
+            confirm = input("请输入 y 确认删除 (或按回车键取消): ").strip().lower()
+        else:
+            confirm = input("Please enter y to confirm deletion (or press Enter to cancel): ").strip().lower()
         if confirm in ('y', 'yes'):
             del groups[gkey]
             if save_groups(groups):
-                print(f"\n\033[1;32m分组 '{gkey}' 已成功删除！\033[0m")
+                if IS_ZH:
+                    print(f"\n\033[1;32m分组 '{gkey}' 已成功删除！\033[0m")
+                else:
+                    print(f"\n\033[1;32mGroup '{gkey}' deleted successfully!\033[0m")
             else:
-                print("\n\033[1;31m删除失败。\033[0m")
+                if IS_ZH:
+                    print("\n\033[1;31m删除失败。\033[0m")
+                else:
+                    print("\n\033[1;31mDeletion failed.\033[0m")
         else:
-            print("\n\033[1;33m操作已取消。\033[0m")
+            if IS_ZH:
+                print("\n\033[1;33m操作已取消。\033[0m")
+            else:
+                print("\n\033[1;33mOperation cancelled.\033[0m")
     except KeyboardInterrupt:
-        print("\n\033[1;33m操作已取消。\033[0m")
+        if IS_ZH:
+            print("\n\033[1;33m操作已取消。\033[0m")
+        else:
+            print("\n\033[1;33mOperation cancelled.\033[0m")
         
-    input("\n按回车键返回 FZF...")
+    if IS_ZH:
+        input("\n按回车键返回 FZF...")
+    else:
+        input("\nPress Enter to return to FZF...")
 
 def print_help():
     print("Usage: resolve_skills.py [options] [inputs...]")
@@ -212,46 +322,79 @@ def main():
 
     elif arg1 == "--list-groups-detailed":
         if not groups:
-            print("没有定义任何技能分组。")
+            if IS_ZH:
+                print("没有定义任何技能分组。")
+            else:
+                print("No skill groups defined.")
             sys.exit(0)
         # ANSI colors
         GREEN = "\033[1;32m"
         CYAN = "\033[1;36m"
+        YELLOW = "\033[1;33m"
         RESET = "\033[0m"
-        print(f"{CYAN}=== 技能分组列表 ==={RESET}")
+        if IS_ZH:
+            print(f"{CYAN}=== 技能分组列表 ==={RESET}")
+        else:
+            print(f"{CYAN}=== Skill Groups List ==={RESET}")
         for gid, info in sorted(groups.items()):
             if isinstance(info, dict):
                 name = info.get("name", gid)
                 skills = info.get("skills", [])
+                is_ordered = info.get("ordered", False)
             else:
                 name = gid
                 skills = info
-            skills_str = ", ".join(skills)
-            print(f"{GREEN}• {gid}{RESET} ({name}):")
-            print(f"  包含技能: {skills_str}")
+                is_ordered = False
+            ordered_tag = (f" {YELLOW}[有序]{RESET}" if IS_ZH else f" {YELLOW}[ordered]{RESET}") if is_ordered else ""
+            print(f"{GREEN}• {gid}{RESET} ({name}){ordered_tag}:")
+            if is_ordered:
+                numbered = " ".join(f"{circled_num(i+1)}{s}" for i, s in enumerate(skills))
+                if IS_ZH:
+                    print(f"  推荐调用顺序: {numbered}")
+                else:
+                    print(f"  Recommended call order: {numbered}")
+            else:
+                skills_str = ", ".join(skills)
+                if IS_ZH:
+                    print(f"  包含技能: {skills_str}")
+                else:
+                    print(f"  Contains skills: {skills_str}")
         sys.exit(0)
 
     elif arg1 == "--set-group":
         if len(sys.argv) < 3:
             print("Error: --set-group requires a group name", file=sys.stderr)
             sys.exit(1)
-        gname = sys.argv[2]
-        skills = sys.argv[3:]
+        # Support optional --ordered flag after --set-group
+        rest_args = sys.argv[2:]
+        is_ordered = False
+        if "--ordered" in rest_args:
+            is_ordered = True
+            rest_args = [a for a in rest_args if a != "--ordered"]
+        gname = rest_args[0] if rest_args else ""
+        skills = rest_args[1:]
+        if not gname:
+            print("Error: --set-group requires a group name", file=sys.stderr)
+            sys.exit(1)
         if not skills:
             print("Error: Please provide at least one skill name", file=sys.stderr)
             sys.exit(1)
         
-        # Preserve original name if group already exists
         disp_name = gname
         if gname in groups and isinstance(groups[gname], dict):
             disp_name = groups[gname].get("name", gname)
 
         groups[gname] = {
             "name": disp_name,
+            "ordered": is_ordered,
             "skills": skills
         }
         if save_groups(groups):
-            print(f"成功保存分组 '{gname}'，包含 {len(skills)} 个技能。")
+            ordered_label = ("有序" if IS_ZH else "ordered ") if is_ordered else ""
+            if IS_ZH:
+                print(f"成功保存{ordered_label}分组 '{gname}'，包含 {len(skills)} 个技能。")
+            else:
+                print(f"Successfully saved {ordered_label}group '{gname}' containing {len(skills)} skills.")
             sys.exit(0)
         else:
             sys.exit(1)
@@ -264,12 +407,18 @@ def main():
         if gname in groups:
             del groups[gname]
             if save_groups(groups):
-                print(f"已成功删除分组 '{gname}'。")
+                if IS_ZH:
+                    print(f"已成功删除分组 '{gname}'。")
+                else:
+                    print(f"Successfully deleted group '{gname}'.")
                 sys.exit(0)
             else:
                 sys.exit(1)
         else:
-            print(f"错误: 分组 '{gname}' 不存在。", file=sys.stderr)
+            if IS_ZH:
+                print(f"错误: 分组 '{gname}' 不存在。", file=sys.stderr)
+            else:
+                print(f"Error: Group '{gname}' does not exist.", file=sys.stderr)
             sys.exit(1)
 
     elif arg1 == "--interactive-set":
@@ -287,7 +436,6 @@ def main():
     inputs = sys.argv[1:]
     resolved = []
     for item in inputs:
-        # Check if it starts with group:
         if item.startswith("group:"):
             gkey = item[len("group:"):]
             if gkey in groups:
@@ -295,7 +443,6 @@ def main():
                 skills = ginfo.get("skills", []) if isinstance(ginfo, dict) else ginfo
                 resolved.extend(skills)
             else:
-                # Group doesn't exist, treat it as a literal skill
                 resolved.append(item)
         elif item in groups:
             ginfo = groups[item]
@@ -313,3 +460,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
