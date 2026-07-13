@@ -179,8 +179,13 @@ def main():
         force_translate = True
         sys.argv.remove("--force-translate")
 
+    show_full = False
+    if "--full" in sys.argv:
+        show_full = True
+        sys.argv.remove("--full")
+
     if len(sys.argv) < 2:
-        print("Usage: preview_skill.py [--force-translate] <skill_name>")
+        print("Usage: preview_skill.py [--force-translate] [--full] <skill_name>")
         sys.exit(1)
 
     skill = sys.argv[1]
@@ -411,11 +416,11 @@ def main():
         body_lines = body_to_print.strip().split("\n")
         printed_lines = 0
         for line in body_lines:
-            if printed_lines >= 25:
+            if not show_full and printed_lines >= 25:
                 break
             print(f"  {line}")
             printed_lines += 1
-        if len(body_lines) > 25:
+        if not show_full and len(body_lines) > 25:
             print("\033[1;30m  ... (more content below) ...\033[0m")
             
     if is_zh and cached_to_file:

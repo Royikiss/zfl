@@ -253,7 +253,7 @@ link_skills() {
                 --bind 'ctrl-g:execute(python3 "'"$ZFL_HOME"'/python/resolve_skills.py" --interactive-set {+1})+reload(python3 "'"$ZFL_HOME"'/python/list_skills_fzf.py")' \
                 --bind 'ctrl-d:execute(python3 "'"$ZFL_HOME"'/python/resolve_skills.py" --interactive-rm {1})+reload(python3 "'"$ZFL_HOME"'/python/list_skills_fzf.py")' \
                 --bind 'ctrl-t:execute-silent(python3 "'"$ZFL_HOME"'/python/preview_skill.py" --force-translate {1})+reload(python3 "'"$ZFL_HOME"'/python/list_skills_fzf.py")' \
-                --bind 'ctrl-v:change-preview-window(right:90%:wrap|right:50%:wrap)' \
+                --bind 'ctrl-v:change-preview(python3 "'"$ZFL_HOME"'/python/preview_skill.py" --full {1}|python3 "'"$ZFL_HOME"'/python/preview_skill.py" {1})+change-preview-window(right:90%:wrap|right:50%:wrap)' \
                 --bind 'preview-scroll-up:preview-up,preview-scroll-down:preview-down' \
                 --bind 'ctrl-j:preview-down,ctrl-k:preview-up' \
                 --preview 'python3 "'"$ZFL_HOME"'/python/preview_skill.py" {1}' \
