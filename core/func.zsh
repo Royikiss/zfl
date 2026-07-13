@@ -36,6 +36,7 @@ lazy_load_functions() {
 # =========================
 
 load_color() {
+    local name
     # If called directly from an interactive terminal (toplevel), reject execution
     if [[ $ZSH_EVAL_CONTEXT == "toplevel" ]]; then
         local lang=${ZFL_LANG:-${LANG%%.*}}
