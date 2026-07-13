@@ -68,6 +68,7 @@ If run without parameters, the tool opens an `fzf` interactive menu where you ca
 - **View and Select Groups**: Group entries (e.g. `group:startup`) are shown at the top of the menu. You can **press Space in the fzf list to select/deselect them**.
 - **Real-time Preview**: When focusing on an entry, the right pane displays the details and description of the skill or group in both English and Chinese.
 - **Scroll Preview**: Hover the mouse over the preview pane and scroll the wheel, or press `ctrl-j` (scroll down) / `ctrl-k` (scroll up) to scroll the preview window.
+- **Expand Preview Window (`ctrl-v`)**: Press `ctrl-v` to toggle the preview window size between `50%` and `90%` (expand to full text) for easier reading of detailed descriptions.
 - **Create/Update Group (`ctrl-g`)**: Press `Space` in the list to select multiple skills (or existing groups), then press `ctrl-g` and input the group name. After saving, the FZF menu refreshes and the new group is immediately displayed.
 - **Delete Group (`ctrl-d`)**: Focus on a group entry (e.g. `group:startup`), press `ctrl-d`, and enter `y` to confirm deletion. The menu will automatically refresh.
 - **Batch Linking**: Press `Enter` to confirm, and the tool will resolve all selected items, deduplicate, and automatically create symlinks.

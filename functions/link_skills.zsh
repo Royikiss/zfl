@@ -244,15 +244,16 @@ link_skills() {
         if (( $+commands[fzf] )); then
             local prompt_msg
             if [[ "$lang" == zh* ]]; then
-                prompt_msg="选择要链接的 Skill/分组 (空格多选，ctrl-g:创建/更新组，ctrl-d:删除组，ctrl-t:重新翻译，Enter确认): "
+                prompt_msg="选择要链接的 Skill/分组 (空格多选，ctrl-g:创建/更新组，ctrl-d:删除组，ctrl-t:重新翻译，ctrl-v:展开/收起预览，Enter确认): "
             else
-                prompt_msg="Select skills/groups to link (Space to multi-select, ctrl-g:create/update group, ctrl-d:delete group, ctrl-t:re-translate, Enter to confirm): "
+                prompt_msg="Select skills/groups to link (Space to multi-select, ctrl-g:create/update group, ctrl-d:delete group, ctrl-t:re-translate, ctrl-v:toggle-expand, Enter to confirm): "
             fi
             selected=$(python3 "$ZFL_HOME/python/list_skills_fzf.py" | fzf -m \
                 --bind "space:toggle" \
                 --bind 'ctrl-g:execute(python3 "'"$ZFL_HOME"'/python/resolve_skills.py" --interactive-set {+1})+reload(python3 "'"$ZFL_HOME"'/python/list_skills_fzf.py")' \
                 --bind 'ctrl-d:execute(python3 "'"$ZFL_HOME"'/python/resolve_skills.py" --interactive-rm {1})+reload(python3 "'"$ZFL_HOME"'/python/list_skills_fzf.py")' \
                 --bind 'ctrl-t:execute-silent(python3 "'"$ZFL_HOME"'/python/preview_skill.py" --force-translate {1})+reload(python3 "'"$ZFL_HOME"'/python/list_skills_fzf.py")' \
+                --bind 'ctrl-v:change-preview-window(right:90%:wrap|right:50%:wrap)' \
                 --bind 'preview-scroll-up:preview-up,preview-scroll-down:preview-down' \
                 --bind 'ctrl-j:preview-down,ctrl-k:preview-up' \
                 --preview 'python3 "'"$ZFL_HOME"'/python/preview_skill.py" {1}' \
