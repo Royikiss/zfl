@@ -174,11 +174,19 @@ def load_user_translations():
         return DEFAULT_TRANSLATIONS
 
 def main():
+    force_translate = False
+    if "--force-translate" in sys.argv:
+        force_translate = True
+        sys.argv.remove("--force-translate")
+
     if len(sys.argv) < 2:
-        print("Usage: preview_skill.py <skill_name>")
+        print("Usage: preview_skill.py [--force-translate] <skill_name>")
         sys.exit(1)
 
     skill = sys.argv[1]
+    
+    if force_translate and skill.startswith("group:"):
+        sys.exit(0)
     
     lang = os.environ.get("ZFL_LANG") or os.environ.get("LANG", "en")
     is_zh = lang.startswith("zh")
@@ -315,9 +323,9 @@ def main():
     if zh_path:
         zh_meta, zh_body = parse_md_content(zh_path)
 
-    # 3. Dynamic translation if not found and preference is Chinese
+    # 3. Dynamic translation if not found (or force translate) and preference is Chinese
     cached_to_file = False
-    if is_zh and not zh_meta and skill not in user_translations and en_meta:
+    if (is_zh or force_translate) and not zh_meta and en_meta and (skill not in user_translations or force_translate):
         en_name = en_meta.get("name") or skill
         en_desc = en_meta.get("description") or ""
         
@@ -325,10 +333,10 @@ def main():
         zh_desc_trans = translate_via_google(en_desc)
         
         if zh_name_trans or zh_desc_trans:
-            user_translations[skill] = {
-                "name_zh": zh_name_trans or en_name,
-                "desc_zh": zh_desc_trans or en_desc
-            }
+            if skill not in user_translations:
+                user_translations[skill] = {}
+            user_translations[skill]["name_zh"] = zh_name_trans or en_name
+            user_translations[skill]["desc_zh"] = zh_desc_trans or en_desc
             try:
                 os.makedirs(cache_dir, exist_ok=True)
                 with open(cache_path, "w", encoding="utf-8") as f:
