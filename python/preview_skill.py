@@ -184,15 +184,12 @@ def main():
         show_full = True
         sys.argv.remove("--full")
 
+    import shutil
     # Detect fzf preview window size to decide whether to show full text
     fzf_preview_cols = int(os.environ.get('FZF_PREVIEW_COLUMNS', '0'))
     total_cols = int(os.environ.get('COLUMNS', '0') or os.environ.get('FZF_COLUMNS', '0') or '0')
     if total_cols == 0:
-        try:
-            with open('/dev/tty') as fd:
-                total_cols = os.get_terminal_size(fd.fileno()).columns
-        except Exception:
-            pass
+        total_cols = shutil.get_terminal_size().columns
 
     if fzf_preview_cols > 0 and total_cols > 0:
         ratio = fzf_preview_cols / total_cols
