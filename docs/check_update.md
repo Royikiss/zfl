@@ -132,7 +132,7 @@ Directory: `~/.cache/zsh`
 
 1. **`CHECK_UPDATE_CACHE_TTL_SECONDS`**
    - Meaning: Validity duration of the cached update count (seconds).
-   - Default: `1800`.
+   - Default: `3600`.
    - Falls back to default if invalid.
 
 2. **`CHECK_UPDATE_LOCK_STALE_SECONDS`**
@@ -158,8 +158,8 @@ Directory: `~/.cache/zsh`
 ### Recommended Configuration Example (can be placed in `core/usr.zsh`):
 
 ```zsh
-# Cache validity: 30 minutes
-export CHECK_UPDATE_CACHE_TTL_SECONDS=1800
+# Cache validity: 1 hour
+export CHECK_UPDATE_CACHE_TTL_SECONDS=3600
 
 # Background lock expiry: 10 minutes
 export CHECK_UPDATE_LOCK_STALE_SECONDS=600

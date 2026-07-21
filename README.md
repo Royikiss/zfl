@@ -103,7 +103,7 @@ export HTTPS_PROXY=http://127.0.0.1:7897
 export HTTP_PROXY=http://127.0.0.1:7897
 
 # check_update configs
-export CHECK_UPDATE_CACHE_TTL_SECONDS=1800   # Cache duration: 30 minutes
+export CHECK_UPDATE_CACHE_TTL_SECONDS=3600   # Cache duration: 1 hour
 export CHECK_UPDATE_PROMPT_POLICY=once_per_day # Silent on subsequent prompts today if skipped
 ```
 

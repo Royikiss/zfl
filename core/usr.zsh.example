@@ -16,6 +16,6 @@
 # export PATH=$PATH:~/.local/bin
 
 # Options to tune check_update detection policies:
-# export CHECK_UPDATE_CACHE_TTL_SECONDS=1800
+# export CHECK_UPDATE_CACHE_TTL_SECONDS=3600
 # export CHECK_UPDATE_PROMPT_POLICY=once_per_day
 

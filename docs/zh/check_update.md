@@ -132,7 +132,7 @@
 
 1) `CHECK_UPDATE_CACHE_TTL_SECONDS`
 - 含义：更新数量缓存有效期（秒）。
-- 默认：`1800`。
+- 默认：`3600`。
 - 非法值会回退到默认值。
 
 2) `CHECK_UPDATE_LOCK_STALE_SECONDS`
@@ -158,8 +158,8 @@
 建议配置示例（可放 `core/usr.zsh`）：
 
 ```zsh
-# 缓存30分钟
-export CHECK_UPDATE_CACHE_TTL_SECONDS=1800
+# 缓存1小时
+export CHECK_UPDATE_CACHE_TTL_SECONDS=3600
 
 # 锁超时10分钟自动回收
 export CHECK_UPDATE_LOCK_STALE_SECONDS=600

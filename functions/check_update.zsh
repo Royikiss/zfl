@@ -148,7 +148,7 @@ check_update - 启动时包更新检查与交互更新
 
 环境变量:
   CHECK_UPDATE_CACHE_TTL_SECONDS
-                 更新数量缓存有效期（秒），默认 1800
+                 更新数量缓存有效期（秒），默认 3600
   CHECK_UPDATE_LOCK_STALE_SECONDS
                  后台刷新锁超时阈值（秒），默认 600；超过则自动回收陈旧锁
   CHECK_UPDATE_PROCESS_LOCK
@@ -176,7 +176,7 @@ Options:
 
 Environment Variables:
   CHECK_UPDATE_CACHE_TTL_SECONDS
-                 Cache validity TTL for update count (seconds, default: 1800)
+                 Cache validity TTL for update count (seconds, default: 3600)
   CHECK_UPDATE_LOCK_STALE_SECONDS
                  Timeout threshold for background refresh lock (seconds, default: 600)
   CHECK_UPDATE_PROCESS_LOCK
@@ -463,7 +463,7 @@ _check_update_sum_cached_counts() {
 }
 
 _check_update_show_update_counts() {
-    load_color GREEN YELLOW RESET
+    load_color BOLD BRIGHT_CYAN GREEN YELLOW RESET
     local cache_file=$1
     shift
     local -a backends=("$@")
@@ -472,9 +472,9 @@ _check_update_show_update_counts() {
 
     if (( ${#backends[@]} == 0 )); then
         if [[ "$lang" == zh* ]]; then
-            echo -e "${YELLOW}当前无可用更新源（yay/flatpak 不可用或未配置 flathub）${RESET}"
+            echo -e "${YELLOW}   • 当前无可用更新源（yay/flatpak 不可用或未配置）${RESET}"
         else
-            echo -e "${YELLOW}No available update backends (yay/flatpak unavailable or flathub not configured)${RESET}"
+            echo -e "${YELLOW}   • No available update backends (yay/flatpak unavailable)${RESET}"
         fi
         return 0
     fi
@@ -490,17 +490,11 @@ _check_update_show_update_counts() {
         count=${count:-0}
         total=$(( total + count ))
         if [[ "$lang" == zh* ]]; then
-            echo -e "${label} 可更新包数量：${GREEN}${count}${RESET}"
+            printf "   • %-12s : ${GREEN}%d${RESET} 个包\n" "$label" "$count"
         else
-            echo -e "${label} updates count: ${GREEN}${count}${RESET}"
+            printf "   • %-12s : ${GREEN}%d${RESET} pkgs\n" "$label" "$count"
         fi
     done
-
-    if [[ "$lang" == zh* ]]; then
-        echo -e "总可更新包数量：${GREEN}${total}${RESET}"
-    else
-        echo -e "Total updates count: ${GREEN}${total}${RESET}"
-    fi
 }
 
 _check_update_run_updates() {
@@ -520,9 +514,9 @@ _check_update_run_updates() {
         fi
         if ! "_check_update_backend_update_${backend}"; then
             if [[ "$lang" == zh* ]]; then
-                echo -e "${RED}${label} 更新失败${RESET} ❌"
+                echo -e "${RED}${label} 更新失败${RESET}"
             else
-                echo -e "${RED}${label} update failed${RESET} ❌"
+                echo -e "${RED}${label} update failed${RESET}"
             fi
             return 1
         fi
@@ -534,16 +528,16 @@ _check_update_run_updates() {
     done
 
     if [[ "$lang" == zh* ]]; then
-        echo -e "${GREEN}${BOLD}全部更新成功${RESET} ✅"
+        echo -e "${GREEN}${BOLD}全部更新成功${RESET}"
     else
-        echo -e "${GREEN}${BOLD}All updates succeeded${RESET} ✅"
+        echo -e "${GREEN}${BOLD}All updates succeeded${RESET}"
     fi
     return 0
 }
 
 # Helper: interactive update QA logic
 _check_update_qa() {
-    load_color RED GREEN YELLOW RESET
+    load_color RED GREEN YELLOW RESET BOLD BRIGHT_CYAN BRIGHT_YELLOW
     local last=$1
     local now=$2
     local cache_file=$3
@@ -578,93 +572,69 @@ _check_update_qa() {
         days=$(( (now_epoch_val - last_epoch) / 86400 ))
     fi
     local -a available_backends
-    local ans cache_age cache_age_human
+    local ans cache_age cache_age_human cache_status_str total_count=0
 
     available_backends=("${(z)$(_check_update_collect_available_backends)}")
-
-    if [[ "$lang" == zh* ]]; then
-        echo -e "现在是${YELLOW} $now ${RESET}，距离上次成功更新已经${YELLOW} $days ${RESET}天了"
-    else
-        echo -e "It is ${YELLOW} $now ${RESET}, it has been ${YELLOW} $days ${RESET} days since last successful update."
-    fi
+    total_count=$(_check_update_sum_cached_counts "$cache_file" "${available_backends[@]}")
 
     if [[ "$cache_generated_at" == <-> ]]; then
         cache_age=$(( now_epoch - cache_generated_at ))
         cache_age_human=$(_check_update_format_age "$cache_age")
 
         if (( cache_age > cache_ttl_seconds )); then
-            if [[ "$lang" == zh* ]]; then
-                echo -e "更新数量缓存：${YELLOW}${cache_age_human}${RESET}（已过期）"
-            else
-                echo -e "Updates count cache: ${YELLOW}${cache_age_human}${RESET} (expired)"
-            fi
+            cache_status_str="${cache_age_human}已过期"
         else
-            if [[ "$lang" == zh* ]]; then
-                echo -e "更新数量缓存：${YELLOW}${cache_age_human}${RESET}（有效）"
-            else
-                echo -e "Updates count cache: ${YELLOW}${cache_age_human}${RESET} (valid)"
-            fi
+            cache_status_str="${cache_age_human}有效"
         fi
     else
-        if [[ "$lang" == zh* ]]; then
-            echo -e "${YELLOW}更新数量缓存不可用${RESET}"
-        else
-            echo -e "${YELLOW}Updates count cache not available${RESET}"
-        fi
+        cache_status_str="无缓存"
+    fi
+
+    if [[ "$lang" == zh* ]]; then
+        echo -e "${BOLD}${BRIGHT_CYAN}[check_update] 发现 ${GREEN}${total_count}${BRIGHT_CYAN} 个可更新软件包${RESET} ${YELLOW}(距上次更新 ${days} 天，缓存: ${cache_status_str})${RESET}"
+    else
+        echo -e "${BOLD}${BRIGHT_CYAN}[check_update] Pending updates: ${GREEN}${total_count}${RESET} ${YELLOW}(last updated ${days}d ago, cache: ${cache_status_str})${RESET}"
     fi
 
     if (( refresh_in_progress == 1 )); then
         if [[ "$lang" == zh* ]]; then
-            echo -e "${YELLOW}后台刷新状态：进行中（本次提示可能使用旧缓存）${RESET}"
+            echo -e "${YELLOW}   [后台正在刷新最新数量...]${RESET}"
         else
-            echo -e "${YELLOW}Background refresh status: In progress (this prompt may use old cache)${RESET}"
+            echo -e "${YELLOW}   [Background refreshing...]${RESET}"
         fi
     fi
 
-    if (( ${#available_backends[@]} > 0 )); then
-        if [[ "$lang" == zh* ]]; then
-            echo "已启用更新源：$(for b in "${available_backends[@]}"; do _check_update_backend_label "$b"; done | paste -sd ', ' -)"
-        else
-            echo "Enabled backends: $(for b in "${available_backends[@]}"; do _check_update_backend_label "$b"; done | paste -sd ', ' -)"
-        fi
-    fi
+    _check_update_show_update_counts "$cache_file" "${available_backends[@]}"
 
     if [[ "$lang" == zh* ]]; then
-        echo -n -e "请问需要${GREEN}更新${RESET}吗？\n"
-        echo -n -e "${GREEN}[Enter/Y/y:更新]${RESET}\n${YELLOW}[C/c：查看更新包数目]${RESET}\n${RED}[N/n/Other:拒绝更新]${RESET}\n"
+        echo -n -e "${BOLD}是否立即更新？${RESET} ${GREEN}[Y/n/c]${RESET} (${GREEN}Y:更新${RESET} | ${YELLOW}c:重新查看${RESET} | ${RED}n:取消${RESET}): "
     else
-        echo -n -e "Would you like to ${GREEN}update${RESET} now?\n"
-        echo -n -e "${GREEN}[Enter/Y/y: Update]${RESET}\n${YELLOW}[C/c: View updates count]${RESET}\n${RED}[N/n/Other: Skip updates]${RESET}\n"
+        echo -n -e "${BOLD}Update now?${RESET} ${GREEN}[Y/n/c]${RESET} (${GREEN}Y:Update${RESET} | ${YELLOW}c:Re-check${RESET} | ${RED}n:Skip${RESET}): "
     fi
 
     read ans
 
     while [[ "$ans" == "C" || "$ans" == "c" ]]; do
+        echo ""
         _check_update_show_update_counts "$cache_file" "${available_backends[@]}"
         if [[ "$lang" == zh* ]]; then
-            echo -n -e "请问需要${GREEN}更新${RESET}吗？\n"
-            echo -n -e "${GREEN}[Enter/Y/y:更新]${RESET}\n${YELLOW}[C/c：查看更新包数目]${RESET}\n${RED}[N/n/Other:拒绝更新]${RESET}\n"
+            echo -n -e "${BOLD}是否立即更新？${RESET} ${GREEN}[Y/n/c]${RESET} (${GREEN}Y:更新${RESET} | ${YELLOW}c:重新查看${RESET} | ${RED}n:取消${RESET}): "
         else
-            echo -n -e "Would you like to ${GREEN}update${RESET} now?\n"
-            echo -n -e "${GREEN}[Enter/Y/y: Update]${RESET}\n${YELLOW}[C/c: View updates count]${RESET}\n${RED}[N/n/Other: Skip updates]${RESET}\n"
+            echo -n -e "${BOLD}Update now?${RESET} ${GREEN}[Y/n/c]${RESET} (${GREEN}Y:Update${RESET} | ${YELLOW}c:Re-check${RESET} | ${RED}n:Skip${RESET}): "
         fi
         read ans
     done
 
     case "$ans" in
-        [Yy])
-            _check_update_run_updates "${available_backends[@]}" || return 1
-            return 0
-            ;;
-        "")
+        [Yy]|"")
             _check_update_run_updates "${available_backends[@]}" || return 1
             return 0
             ;;
         *)
             if [[ "$lang" == zh* ]]; then
-                echo -e "你没有更新，记得更新哟，输入 '${GREEN}update${RESET}' 即可更新~"
+                echo -e "已取消更新。稍后可随时输入 '${GREEN}update${RESET}' 启动更新~"
             else
-                echo -e "You did not update. Remember to update, just type '${GREEN}update${RESET}' to start updating!"
+                echo -e "Update skipped. You can type '${GREEN}update${RESET}' anytime to run updates!"
             fi
             return 2
             ;;
@@ -702,7 +672,7 @@ check_update() {
     local RefreshLockDir="$cache_dir/UpdateRefresh.lock"
     local ProcessLockDir="${CHECK_UPDATE_PROCESS_LOCK:-$cache_dir/CheckUpdateProcess.lock}"
     local cache_ttl_seconds
-    cache_ttl_seconds=$(_check_update_int_or_default "${CHECK_UPDATE_CACHE_TTL_SECONDS:-1800}" 1800)
+    cache_ttl_seconds=$(_check_update_int_or_default "${CHECK_UPDATE_CACHE_TTL_SECONDS:-3600}" 3600)
     local lock_stale_seconds
     lock_stale_seconds=$(_check_update_int_or_default "${CHECK_UPDATE_LOCK_STALE_SECONDS:-600}" 600)
     local prompt_policy
