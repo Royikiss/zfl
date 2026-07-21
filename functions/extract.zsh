@@ -1,7 +1,7 @@
 #? name: extract
 #? description: Universal auto-decompressor and compressor with format options, password encryption, fallbacks, and Tab completion
 #? author: Royi
-#? version: 1.7.0
+#? version: 1.8.0
 #? protected: true
 #? deps: tar, zip, unzip, 7z, unrar, gzip, bzip2, xz, zstd
 #? usage: extract archive... | extract --<format> [-p password] [-o output] target...
@@ -133,7 +133,7 @@ extract() {
         return 1
     fi
 
-    # ================= 1. 压缩模式逻辑 (支持密码加密) =================
+    # ================= 1. 压缩模式逻辑 =================
     if [[ "$mode" == "compress" ]]; then
         local first_target="${targets[1]}"
         first_target="${first_target%/}"
@@ -144,6 +144,17 @@ extract() {
             out_archive="$output_name"
         else
             out_archive="$base_name"
+        fi
+
+        # 处理密码加密与格式限制兼容性
+        if [[ -n "$password" && "$target_format" == tar* ]]; then
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${YELLOW}[Notice]${RESET} .${target_format} 格式原生不支持密码加密，已自动切换为强加密的 ${CYAN}.7z${RESET} 格式"
+            else
+                echo -e "${YELLOW}[Notice]${RESET} .${target_format} format does not support native encryption, auto switching to ${CYAN}.7z${RESET}"
+            fi
+            target_format="7z"
+            out_archive="${out_archive%.*}.7z"
         fi
 
         case "$target_format" in
@@ -191,25 +202,27 @@ extract() {
 
         local c_status=0
         case "$target_format" in
-            tar|tar.gz|tar.bz2|tar.xz|tar.zst)
-                if [[ -n "$password" ]]; then
-                    # Tar 不原生支持文件加密，转用 7z 加密打包
-                    if zfl_require 7z; then
-                        7z a -p"$password" "$out_archive" "${targets[@]}" >/dev/null
-                        c_status=$?
-                    else
-                        return 1
-                    fi
-                else
-                    case "$target_format" in
-                        tar)     tar -cf "$out_archive" "${targets[@]}" ;;
-                        tar.gz)  tar -czf "$out_archive" "${targets[@]}" ;;
-                        tar.bz2) tar -cjf "$out_archive" "${targets[@]}" ;;
-                        tar.xz)  zfl_require xz || return 1; tar -cJf "$out_archive" "${targets[@]}" ;;
-                        tar.zst) zfl_require zstd || return 1; tar --zstd -cf "$out_archive" "${targets[@]}" ;;
-                    esac
-                    c_status=$?
-                fi
+            tar)
+                tar -cf "$out_archive" "${targets[@]}"
+                c_status=$?
+                ;;
+            tar.gz)
+                tar -czf "$out_archive" "${targets[@]}"
+                c_status=$?
+                ;;
+            tar.bz2)
+                tar -cjf "$out_archive" "${targets[@]}"
+                c_status=$?
+                ;;
+            tar.xz)
+                zfl_require xz || return 1
+                tar -cJf "$out_archive" "${targets[@]}"
+                c_status=$?
+                ;;
+            tar.zst)
+                zfl_require zstd || return 1
+                tar --zstd -cf "$out_archive" "${targets[@]}"
+                c_status=$?
                 ;;
             zip)
                 if [[ -n "$password" ]]; then
@@ -276,7 +289,7 @@ extract() {
         return $c_status
     fi
 
-    # ================= 2. 解压模式逻辑 (支持密码解段) =================
+    # ================= 2. 解压模式逻辑 =================
     local target_file
     for target_file in "${targets[@]}"; do
         if [[ ! -f "$target_file" ]]; then
