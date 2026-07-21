@@ -1,11 +1,11 @@
 #? name: extract
-#? description: Universal auto-decompressor and compressor with format options, tool fallbacks, and Tab completion
+#? description: Universal auto-decompressor and compressor with format options, password encryption, fallbacks, and Tab completion
 #? author: Royi
-#? version: 1.6.0
+#? version: 1.7.0
 #? protected: true
 #? deps: tar, zip, unzip, 7z, unrar, gzip, bzip2, xz, zstd
-#? usage: extract archive... | extract --<format> [-o output] target...
-#? example: extract archive.zip; extract --zip folder/; extract --tar.gz -o backup file1 dir2/
+#? usage: extract archive... | extract --<format> [-p password] [-o output] target...
+#? example: extract archive.zip; extract --zip -p 123456 folder/; extract --7z -p mypass -o secret files/
 
 extract() {
     zfl_require tar || return 1
@@ -16,17 +16,17 @@ extract() {
         if [[ "$lang" == zh* ]]; then
             echo -e "${GREEN}[extract]${RESET} ${BOLD}万能解压与一键压缩工具 (ZFL Universal Decompressor & Compressor)${RESET}"
             echo -e "用法:"
-            echo -e "  解压 (默认模式): ${CYAN}extract${RESET} <压缩包1> [压缩包2 ...]"
-            echo -e "  压缩 (指定格式): ${CYAN}extract${RESET} --<格式> [-o 输出名] <目标1> [目标2 ...]"
+            echo -e "  解压 (默认模式): ${CYAN}extract${RESET} [-p 密码] <压缩包1> [压缩包2 ...]"
+            echo -e "  压缩 (指定格式): ${CYAN}extract${RESET} --<格式> [-p 密码] [-o 输出名] <目标1> [目标2 ...]"
             echo -e "格式选项: ${YELLOW}--zip, --tar.gz, --tar.bz2, --tar.xz, --tar.zst, --7z, --tar, --rar${RESET}"
-            echo -e "提示: 输入 ${CYAN}extract --${RESET} 并按 ${BOLD}Tab${RESET} 键可浏览所有支持的压缩格式。"
+            echo -e "提示: 支持使用 ${CYAN}-p <密码>${RESET} 加密压缩或解压带密码的压缩包。"
         else
             echo -e "${GREEN}[extract]${RESET} ${BOLD}Universal Decompressor & Compressor (ZFL)${RESET}"
             echo -e "Usage:"
-            echo -e "  Decompress (default): ${CYAN}extract${RESET} <archive1> [archive2 ...]"
-            echo -e "  Compress (option):   ${CYAN}extract${RESET} --<format> [-o output_name] <target1> [target2 ...]"
+            echo -e "  Decompress (default): ${CYAN}extract${RESET} [-p password] <archive1> [archive2 ...]"
+            echo -e "  Compress (option):   ${CYAN}extract${RESET} --<format> [-p password] [-o output_name] <target1> [target2 ...]"
             echo -e "Format Options: ${YELLOW}--zip, --tar.gz, --tar.bz2, --tar.xz, --tar.zst, --7z, --tar, --rar${RESET}"
-            echo -e "Tip: Type ${CYAN}extract --${RESET} and press ${BOLD}Tab${RESET} to list all supported format options."
+            echo -e "Tip: Use ${CYAN}-p <password>${RESET} to encrypt archives or extract password-protected files."
         fi
         return 0
     fi
@@ -34,6 +34,7 @@ extract() {
     local mode="decompress"
     local target_format=""
     local output_name=""
+    local password=""
     local -a targets=()
 
     while [[ $# -gt 0 ]]; do
@@ -47,6 +48,19 @@ extract() {
                         echo -e "${RED}[Error]${RESET} -o/--output 需要指定输出文件名" >&2
                     else
                         echo -e "${RED}[Error]${RESET} -o/--output requires an output filename" >&2
+                    fi
+                    return 1
+                fi
+                ;;
+            -p|--password|--pass)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    password="$2"
+                    shift 2
+                else
+                    if [[ "$lang" == zh* ]]; then
+                        echo -e "${RED}[Error]${RESET} -p/--password 需要指定密码内容" >&2
+                    else
+                        echo -e "${RED}[Error]${RESET} -p/--password requires a password value" >&2
                     fi
                     return 1
                 fi
@@ -119,7 +133,7 @@ extract() {
         return 1
     fi
 
-    # ================= 1. 压缩模式逻辑 (支持 7z/zip 工具后备降级链) =================
+    # ================= 1. 压缩模式逻辑 (支持密码加密) =================
     if [[ "$mode" == "compress" ]]; then
         local first_target="${targets[1]}"
         first_target="${first_target%/}"
@@ -166,61 +180,82 @@ extract() {
             out_archive="$new_archive"
         fi
 
+        local enc_msg=""
+        [[ -n "$password" ]] && enc_msg=" [${YELLOW}🔒 Password Encrypted${RESET}]"
+
         if [[ "$lang" == zh* ]]; then
-            echo -e "${GREEN}[compress]${RESET} 正在打包压缩至: ${CYAN}$out_archive${RESET} (${YELLOW}$target_format${RESET}) ..."
+            echo -e "${GREEN}[compress]${RESET} 正在打包压缩至: ${CYAN}$out_archive${RESET} (${YELLOW}$target_format${RESET})${enc_msg} ..."
         else
-            echo -e "${GREEN}[compress]${RESET} Packing and compressing to: ${CYAN}$out_archive${RESET} (${YELLOW}$target_format${RESET}) ..."
+            echo -e "${GREEN}[compress]${RESET} Packing and compressing to: ${CYAN}$out_archive${RESET} (${YELLOW}$target_format${RESET})${enc_msg} ..."
         fi
 
         local c_status=0
         case "$target_format" in
-            tar)
-                tar -cf "$out_archive" "${targets[@]}"
-                c_status=$?
-                ;;
-            tar.gz)
-                tar -czf "$out_archive" "${targets[@]}"
-                c_status=$?
-                ;;
-            tar.bz2)
-                tar -cjf "$out_archive" "${targets[@]}"
-                c_status=$?
-                ;;
-            tar.xz)
-                zfl_require xz || return 1
-                tar -cJf "$out_archive" "${targets[@]}"
-                c_status=$?
-                ;;
-            tar.zst)
-                zfl_require zstd || return 1
-                tar --zstd -cf "$out_archive" "${targets[@]}"
-                c_status=$?
+            tar|tar.gz|tar.bz2|tar.xz|tar.zst)
+                if [[ -n "$password" ]]; then
+                    # Tar 不原生支持文件加密，转用 7z 加密打包
+                    if zfl_require 7z; then
+                        7z a -p"$password" "$out_archive" "${targets[@]}" >/dev/null
+                        c_status=$?
+                    else
+                        return 1
+                    fi
+                else
+                    case "$target_format" in
+                        tar)     tar -cf "$out_archive" "${targets[@]}" ;;
+                        tar.gz)  tar -czf "$out_archive" "${targets[@]}" ;;
+                        tar.bz2) tar -cjf "$out_archive" "${targets[@]}" ;;
+                        tar.xz)  zfl_require xz || return 1; tar -cJf "$out_archive" "${targets[@]}" ;;
+                        tar.zst) zfl_require zstd || return 1; tar --zstd -cf "$out_archive" "${targets[@]}" ;;
+                    esac
+                    c_status=$?
+                fi
                 ;;
             zip)
-                if command -v zip &>/dev/null; then
-                    zip -r -q "$out_archive" "${targets[@]}"
-                    c_status=$?
-                elif command -v 7z &>/dev/null; then
-                    7z a -tzip "$out_archive" "${targets[@]}" >/dev/null
-                    c_status=$?
+                if [[ -n "$password" ]]; then
+                    if command -v zip &>/dev/null; then
+                        zip -r -q -P "$password" "$out_archive" "${targets[@]}"
+                        c_status=$?
+                    elif zfl_require 7z; then
+                        7z a -tzip -p"$password" "$out_archive" "${targets[@]}" >/dev/null
+                        c_status=$?
+                    fi
                 else
-                    zfl_require zip || return 1
+                    if command -v zip &>/dev/null; then
+                        zip -r -q "$out_archive" "${targets[@]}"
+                        c_status=$?
+                    elif command -v 7z &>/dev/null; then
+                        7z a -tzip "$out_archive" "${targets[@]}" >/dev/null
+                        c_status=$?
+                    else
+                        zfl_require zip || return 1
+                    fi
                 fi
                 ;;
             7z)
                 zfl_require 7z || return 1
-                7z a "$out_archive" "${targets[@]}" >/dev/null
+                if [[ -n "$password" ]]; then
+                    7z a -p"$password" "$out_archive" "${targets[@]}" >/dev/null
+                else
+                    7z a "$out_archive" "${targets[@]}" >/dev/null
+                fi
                 c_status=$?
                 ;;
             rar)
                 if command -v rar &>/dev/null; then
-                    rar a -idq "$out_archive" "${targets[@]}"
+                    if [[ -n "$password" ]]; then
+                        rar a -idq -p"$password" "$out_archive" "${targets[@]}"
+                    else
+                        rar a -idq "$out_archive" "${targets[@]}"
+                    fi
                     c_status=$?
-                elif command -v 7z &>/dev/null; then
-                    7z a "$out_archive" "${targets[@]}" >/dev/null
+                elif zfl_require 7z; then
+                    if [[ -n "$password" ]]; then
+                        7z a -p"$password" "$out_archive" "${targets[@]}" >/dev/null
+                    else
+                        7z a "$out_archive" "${targets[@]}" >/dev/null
+                    fi
                     c_status=$?
-                else
-                    zfl_require rar || return 1
                 fi
                 ;;
         esac
@@ -241,7 +276,7 @@ extract() {
         return $c_status
     fi
 
-    # ================= 2. 解压模式逻辑 =================
+    # ================= 2. 解压模式逻辑 (支持密码解段) =================
     local target_file
     for target_file in "${targets[@]}"; do
         if [[ ! -f "$target_file" ]]; then
@@ -319,17 +354,21 @@ extract() {
                 fi
                 ;;
             *.7z)
-                local -a root_items=($(7z l "$target_file" 2>/dev/null | awk '/^----/{p=!p;next} p {print $6}' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u))
+                local p_flag=""
+                [[ -n "$password" ]] && p_flag="-p${password}"
+                local -a root_items=($(7z l $p_flag "$target_file" 2>/dev/null | awk '/^----/{p=!p;next} p {print $6}' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u))
                 root_item_count=${#root_items[@]}
                 [[ $root_item_count -eq 1 ]] && single_root_item="${root_items[1]}"
                 ;;
             *.rar)
+                local p_flag=""
+                [[ -n "$password" ]] && p_flag="-p${password}"
                 if command -v unrar &>/dev/null; then
-                    local -a root_items=($(unrar l "$target_file" 2>/dev/null | awk '/^----/{p=!p;next} p {print $6}' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u))
+                    local -a root_items=($(unrar l $p_flag "$target_file" 2>/dev/null | awk '/^----/{p=!p;next} p {print $6}' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u))
                     root_item_count=${#root_items[@]}
                     [[ $root_item_count -eq 1 ]] && single_root_item="${root_items[1]}"
                 elif command -v 7z &>/dev/null; then
-                    local -a root_items=($(7z l "$target_file" 2>/dev/null | awk '/^----/{p=!p;next} p {print $6}' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u))
+                    local -a root_items=($(7z l $p_flag "$target_file" 2>/dev/null | awk '/^----/{p=!p;next} p {print $6}' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u))
                     root_item_count=${#root_items[@]}
                     [[ $root_item_count -eq 1 ]] && single_root_item="${root_items[1]}"
                 fi
@@ -417,17 +456,21 @@ extract() {
                 ;;
             *.zip|*.jar|*.war)
                 if command -v unzip &>/dev/null; then
+                    local p_arg=()
+                    [[ -n "$password" ]] && p_arg=(-P "$password")
                     if [[ $created_dest -eq 1 ]]; then
-                        unzip -q "$target_file" -d "$dest_dir"
+                        unzip -q "${p_arg[@]}" "$target_file" -d "$dest_dir"
                     else
-                        unzip -q "$target_file"
+                        unzip -q "${p_arg[@]}" "$target_file"
                     fi
                     d_status=$?
                 elif command -v 7z &>/dev/null; then
+                    local p_flag=""
+                    [[ -n "$password" ]] && p_flag="-p${password}"
                     if [[ $created_dest -eq 1 ]]; then
-                        7z x -o"$dest_dir" "$target_file" >/dev/null
+                        7z x $p_flag -o"$dest_dir" "$target_file" >/dev/null
                     else
-                        7z x "$target_file" >/dev/null
+                        7z x $p_flag "$target_file" >/dev/null
                     fi
                     d_status=$?
                 else
@@ -435,27 +478,31 @@ extract() {
                 fi
                 ;;
             *.rar)
+                local p_flag=""
+                [[ -n "$password" ]] && p_flag="-p${password}"
                 if command -v unrar &>/dev/null; then
                     if [[ $created_dest -eq 1 ]]; then
-                        unrar x -idq "$target_file" "$dest_dir/"
+                        unrar x -idq $p_flag "$target_file" "$dest_dir/"
                     else
-                        unrar x -idq "$target_file"
+                        unrar x -idq $p_flag "$target_file"
                     fi
                     d_status=$?
                 else
                     if [[ $created_dest -eq 1 ]]; then
-                        7z x -o"$dest_dir" "$target_file" >/dev/null
+                        7z x $p_flag -o"$dest_dir" "$target_file" >/dev/null
                     else
-                        7z x "$target_file" >/dev/null
+                        7z x $p_flag "$target_file" >/dev/null
                     fi
                     d_status=$?
                 fi
                 ;;
             *.7z)
+                local p_flag=""
+                [[ -n "$password" ]] && p_flag="-p${password}"
                 if [[ $created_dest -eq 1 ]]; then
-                    7z x -o"$dest_dir" "$target_file" >/dev/null
+                    7z x $p_flag -o"$dest_dir" "$target_file" >/dev/null
                 else
-                    7z x "$target_file" >/dev/null
+                    7z x $p_flag "$target_file" >/dev/null
                 fi
                 d_status=$?
                 ;;
@@ -517,6 +564,7 @@ _extract() {
     if [[ "$lang" == zh* ]]; then
         _arguments -s -S \
             '(-o --output)'{-o,--output}'[指定输出文件名]:filename:_files' \
+            '(-p --password --pass)'{-p,--password,--pass}'[指定压缩/解压密码]:password:' \
             '--zip[一键压缩为 .zip 格式]' \
             '--tar.gz[一键打包压缩为 .tar.gz]' \
             '--tgz[一键打包压缩为 .tgz]' \
@@ -534,6 +582,7 @@ _extract() {
     else
         _arguments -s -S \
             '(-o --output)'{-o,--output}'[Specify output filename]:filename:_files' \
+            '(-p --password --pass)'{-p,--password,--pass}'[Specify encryption/decryption password]:password:' \
             '--zip[Compress into .zip format]' \
             '--tar.gz[Compress into .tar.gz archive]' \
             '--tgz[Compress into .tgz archive]' \
