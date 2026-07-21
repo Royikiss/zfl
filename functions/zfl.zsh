@@ -16,6 +16,7 @@ _zfl_parse_metadata() {
     func_meta_deps=""
     func_meta_usage=""
     func_meta_example=""
+    func_meta_protected=""
 
     [[ -f "$file" ]] || return 1
 
@@ -50,6 +51,7 @@ _zfl_parse_metadata() {
                     "依赖"|"deps"|"dependencies") func_meta_deps="$val" ;;
                     "用法"|"usage") func_meta_usage="$val" ;;
                     "示例"|"example") func_meta_example="$val" ;;
+                    "受保护"|"protected") func_meta_protected="$val" ;;
                 esac
             fi
         fi
@@ -80,9 +82,9 @@ zfl - Zsh Function Library (ZFL) 管理工具
 
 示例:
   zfl list
-  zfl info weather
+  zfl info extract
   zfl check
-  zfl lint weather
+  zfl lint extract
   zfl remove weather
 EOF
     else
@@ -102,9 +104,9 @@ Available subcommands:
 
 Examples:
   zfl list
-  zfl info weather
+  zfl info extract
   zfl check
-  zfl lint weather
+  zfl lint extract
   zfl remove weather
 EOF
     fi
@@ -364,12 +366,13 @@ _zfl_remove() {
         return 1
     fi
 
-    # Protect zfl itself
-    if [[ "$target" == "zfl" ]]; then
+    # Protect system core functions (hardcoded whitelist)
+    local -a core_funcs=('zfl' 'aicp' 'check_update' 'add_task' 'link_skills' 'countText' 'weather' 'extract')
+    if (( ${core_funcs[(Ie)$target]} )); then
         if [[ "$lang" == zh* ]]; then
-            echo -e "${RED}[ERROR]${RESET} 不能删除 zfl 核心管理工具本身！" >&2
+            echo -e "${RED}[ERROR]${RESET} 函数 '${target}' 是 ZFL 的核心/内置系统函数，已被系统写死保护，禁止删除！" >&2
         else
-            echo -e "${RED}[ERROR]${RESET} Cannot delete zfl core management tool itself!" >&2
+            echo -e "${RED}[ERROR]${RESET} Function '${target}' is a ZFL core/system function and is protected from deletion!" >&2
         fi
         return 1
     fi
@@ -381,6 +384,19 @@ _zfl_remove() {
             break
         fi
     done
+
+    # Check metadata protected flag
+    if [[ -n "$path_found" ]]; then
+        _zfl_parse_metadata "$path_found"
+        if [[ "$func_meta_protected" == "true" ]]; then
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${RED}[ERROR]${RESET} 函数 '${target}' 的元数据被标记为受保护 (#? protected: true)，禁止删除！" >&2
+            else
+                echo -e "${RED}[ERROR]${RESET} Function '${target}' is marked as protected in metadata (#? protected: true)!" >&2
+            fi
+            return 1
+        fi
+    fi
 
     if [[ -z "$path_found" ]]; then
         if [[ "$lang" == zh* ]]; then
@@ -564,7 +580,7 @@ _zfl() {
         _describe -t commands "$desc_msg" commands
     elif (( CURRENT == 3 )); then
         case "$words[2]" in
-            info|lint|remove|rm)
+            info|lint)
                 local -a funcs
                 local dir file fname
                 for dir in "$ZFL_HOME/functions" "$ZFL_HOME/custom_functions"; do
@@ -579,6 +595,28 @@ _zfl() {
                     desc_func="可用函数"
                 fi
                 _describe -t funcs "$desc_func" funcs
+                ;;
+            remove|rm)
+                local -a removable_funcs
+                local -a core_funcs=('zfl' 'aicp' 'check_update' 'add_task' 'link_skills' 'countText' 'weather' 'extract')
+                local dir file fname
+                for dir in "$ZFL_HOME/functions" "$ZFL_HOME/custom_functions"; do
+                    [[ -d "$dir" ]] || continue
+                    for file in "$dir"/*.zsh(N); do
+                        fname=$(basename "$file" .zsh)
+                        if (( ! ${core_funcs[(Ie)$fname]} )); then
+                            _zfl_parse_metadata "$file"
+                            if [[ "$func_meta_protected" != "true" ]]; then
+                                removable_funcs+=("$fname")
+                            fi
+                        fi
+                    done
+                done
+                local desc_removable="removable functions"
+                if [[ "$lang" == zh* ]]; then
+                    desc_removable="可安全删除的函数"
+                fi
+                _describe -t removable_funcs "$desc_removable" removable_funcs
                 ;;
         esac
     fi
