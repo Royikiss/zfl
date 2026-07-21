@@ -1,7 +1,7 @@
 #? name: extract
-#? description: Universal auto-decompressor and compressor with format options and Tab completion
+#? description: Universal auto-decompressor and compressor with format options, tool fallbacks, and Tab completion
 #? author: Royi
-#? version: 1.5.0
+#? version: 1.6.0
 #? protected: true
 #? deps: tar, zip, unzip, 7z, unrar, gzip, bzip2, xz, zstd
 #? usage: extract archive... | extract --<format> [-o output] target...
@@ -119,7 +119,7 @@ extract() {
         return 1
     fi
 
-    # ================= 1. 压缩模式逻辑 =================
+    # ================= 1. 压缩模式逻辑 (支持 7z/zip 工具后备降级链) =================
     if [[ "$mode" == "compress" ]]; then
         local first_target="${targets[1]}"
         first_target="${first_target%/}"
@@ -197,9 +197,15 @@ extract() {
                 c_status=$?
                 ;;
             zip)
-                zfl_require zip || return 1
-                zip -r -q "$out_archive" "${targets[@]}"
-                c_status=$?
+                if command -v zip &>/dev/null; then
+                    zip -r -q "$out_archive" "${targets[@]}"
+                    c_status=$?
+                elif command -v 7z &>/dev/null; then
+                    7z a -tzip "$out_archive" "${targets[@]}" >/dev/null
+                    c_status=$?
+                else
+                    zfl_require zip || return 1
+                fi
                 ;;
             7z)
                 zfl_require 7z || return 1
@@ -270,7 +276,11 @@ extract() {
         case "${file_name:l}" in
             *.tar.xz|*.txz)      zfl_require xz || return 1 ;;
             *.tar.zst|*.tzst)     zfl_require zstd || return 1 ;;
-            *.zip|*.jar|*.war)    zfl_require unzip || return 1 ;;
+            *.zip|*.jar|*.war)
+                if ! command -v unzip &>/dev/null && ! command -v 7z &>/dev/null; then
+                    zfl_require unzip || return 1
+                fi
+                ;;
             *.7z)                 zfl_require 7z || return 1 ;;
             *.rar)
                 if ! command -v unrar &>/dev/null && ! command -v 7z &>/dev/null; then
@@ -298,9 +308,15 @@ extract() {
                 [[ $root_item_count -eq 1 ]] && single_root_item="${root_items[1]}"
                 ;;
             *.zip|*.jar|*.war)
-                local -a root_items=($(unzip -l "$target_file" 2>/dev/null | awk 'NR>3 && $4!="" {print $4}' | grep -v '^---' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u))
-                root_item_count=${#root_items[@]}
-                [[ $root_item_count -eq 1 ]] && single_root_item="${root_items[1]}"
+                if command -v unzip &>/dev/null; then
+                    local -a root_items=($(unzip -l "$target_file" 2>/dev/null | awk 'NR>3 && $4!="" {print $4}' | grep -v '^---' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u))
+                    root_item_count=${#root_items[@]}
+                    [[ $root_item_count -eq 1 ]] && single_root_item="${root_items[1]}"
+                elif command -v 7z &>/dev/null; then
+                    local -a root_items=($(7z l "$target_file" 2>/dev/null | awk '/^----/{p=!p;next} p {print $6}' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u))
+                    root_item_count=${#root_items[@]}
+                    [[ $root_item_count -eq 1 ]] && single_root_item="${root_items[1]}"
+                fi
                 ;;
             *.7z)
                 local -a root_items=($(7z l "$target_file" 2>/dev/null | awk '/^----/{p=!p;next} p {print $6}' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u))
@@ -400,12 +416,23 @@ extract() {
                 d_status=$?
                 ;;
             *.zip|*.jar|*.war)
-                if [[ $created_dest -eq 1 ]]; then
-                    unzip -q "$target_file" -d "$dest_dir"
+                if command -v unzip &>/dev/null; then
+                    if [[ $created_dest -eq 1 ]]; then
+                        unzip -q "$target_file" -d "$dest_dir"
+                    else
+                        unzip -q "$target_file"
+                    fi
+                    d_status=$?
+                elif command -v 7z &>/dev/null; then
+                    if [[ $created_dest -eq 1 ]]; then
+                        7z x -o"$dest_dir" "$target_file" >/dev/null
+                    else
+                        7z x "$target_file" >/dev/null
+                    fi
+                    d_status=$?
                 else
-                    unzip -q "$target_file"
+                    zfl_require unzip || return 1
                 fi
-                d_status=$?
                 ;;
             *.rar)
                 if command -v unrar &>/dev/null; then
