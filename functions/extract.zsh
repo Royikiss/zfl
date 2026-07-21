@@ -1,33 +1,56 @@
 #? name: extract
-#? description: Universal auto-decompressor and compressor with format options, password encryption, fallbacks, and Tab completion
+#? description: Universal auto-decompressor and compressor with format options, password encryption, compression stats, content listing, and Tab completion
 #? author: Royi
-#? version: 1.8.0
+#? version: 2.0.0
 #? protected: true
 #? deps: tar, zip, unzip, 7z, unrar, gzip, bzip2, xz, zstd
-#? usage: extract archive... | extract --<format> [-p password] [-o output] target...
-#? example: extract archive.zip; extract --zip -p 123456 folder/; extract --7z -p mypass -o secret files/
+#? usage: extract archive... | extract --<format> [-p password] [-o output] target... | extract -l archive...
+#? example: extract archive.zip; extract -l archive.zip; extract --zip -p 123456 folder/; extract -rm temp.zip
 
 extract() {
     zfl_require tar || return 1
     load_color RED GREEN YELLOW CYAN BLUE BOLD RESET
     local lang=${ZFL_LANG:-${LANG%%.*}}
 
+    # 内置字节易读格式化辅助函数
+    _extract_human_size() {
+        local bytes=$1
+        if [[ -z "$bytes" || "$bytes" -le 0 ]]; then
+            echo "0 B"
+            return
+        fi
+        if [[ $bytes -ge 1073741824 ]]; then
+            printf "%.2f GB" $((bytes / 1073741824.0))
+        elif [[ $bytes -ge 1048576 ]]; then
+            printf "%.2f MB" $((bytes / 1048576.0))
+        elif [[ $bytes -ge 1024 ]]; then
+            printf "%.2f KB" $((bytes / 1024.0))
+        else
+            echo "${bytes} B"
+        fi
+    }
+
     if [[ $# -eq 0 ]]; then
         if [[ "$lang" == zh* ]]; then
-            echo -e "${GREEN}[extract]${RESET} ${BOLD}万能解压与一键压缩工具 (ZFL Universal Decompressor & Compressor)${RESET}"
+            echo -e "${GREEN}[extract]${RESET} ${BOLD}万能解压与一键压缩终极工具 (ZFL Universal Decompressor & Compressor v2.0)${RESET}"
             echo -e "用法:"
-            echo -e "  解压 (默认模式): ${CYAN}extract${RESET} [-p 密码] <压缩包1> [压缩包2 ...]"
-            echo -e "  压缩 (指定格式): ${CYAN}extract${RESET} --<格式> [-p 密码] [-o 输出名] <目标1> [目标2 ...]"
+            echo -e "  解压 (默认模式): ${CYAN}extract${RESET} [-p 密码] [-rm] [-q] <压缩包1> [压缩包2 ...]"
+            echo -e "  压缩 (指定格式): ${CYAN}extract${RESET} --<格式> [-p 密码] [-o 输出名] [-q] <目标1> [目标2 ...]"
+            echo -e "  预览 (仅看内容): ${CYAN}extract${RESET} -l|--list [-p 密码] <压缩包>"
+            echo -e "高级标志: ${YELLOW}-l (列表预览), -rm (解压完删源文件), -q (静默模式), -p (密码密码)${RESET}"
             echo -e "格式选项: ${YELLOW}--zip, --tar.gz, --tar.bz2, --tar.xz, --tar.zst, --7z, --tar, --rar${RESET}"
-            echo -e "提示: 支持使用 ${CYAN}-p <密码>${RESET} 加密压缩或解压带密码的压缩包。"
+            echo -e "提示: 输入 ${CYAN}extract -${RESET} 并按 ${BOLD}Tab${RESET} 键可浏览所有支持的选项与说明。"
         else
-            echo -e "${GREEN}[extract]${RESET} ${BOLD}Universal Decompressor & Compressor (ZFL)${RESET}"
+            echo -e "${GREEN}[extract]${RESET} ${BOLD}Universal Decompressor & Compressor v2.0 (ZFL)${RESET}"
             echo -e "Usage:"
-            echo -e "  Decompress (default): ${CYAN}extract${RESET} [-p password] <archive1> [archive2 ...]"
-            echo -e "  Compress (option):   ${CYAN}extract${RESET} --<format> [-p password] [-o output_name] <target1> [target2 ...]"
+            echo -e "  Decompress (default): ${CYAN}extract${RESET} [-p password] [-rm] [-q] <archive1> [archive2 ...]"
+            echo -e "  Compress (option):   ${CYAN}extract${RESET} --<format> [-p password] [-o output_name] [-q] <target1> [target2 ...]"
+            echo -e "  Preview (list only): ${CYAN}extract${RESET} -l|--list [-p password] <archive>"
+            echo -e "Flags: ${YELLOW}-l (preview contents), -rm (delete archive after extract), -q (quiet mode), -p (password)${RESET}"
             echo -e "Format Options: ${YELLOW}--zip, --tar.gz, --tar.bz2, --tar.xz, --tar.zst, --7z, --tar, --rar${RESET}"
-            echo -e "Tip: Use ${CYAN}-p <password>${RESET} to encrypt archives or extract password-protected files."
+            echo -e "Tip: Type ${CYAN}extract -${RESET} and press ${BOLD}Tab${RESET} to list all supported options."
         fi
+        unfunction _extract_human_size 2>/dev/null
         return 0
     fi
 
@@ -35,6 +58,8 @@ extract() {
     local target_format=""
     local output_name=""
     local password=""
+    local remove_source=0
+    local quiet_mode=0
     local -a targets=()
 
     while [[ $# -gt 0 ]]; do
@@ -44,11 +69,8 @@ extract() {
                     output_name="$2"
                     shift 2
                 else
-                    if [[ "$lang" == zh* ]]; then
-                        echo -e "${RED}[Error]${RESET} -o/--output 需要指定输出文件名" >&2
-                    else
-                        echo -e "${RED}[Error]${RESET} -o/--output requires an output filename" >&2
-                    fi
+                    [[ $quiet_mode -eq 0 ]] && echo -e "${RED}[Error]${RESET} -o/--output 需要指定输出文件名" >&2
+                    unfunction _extract_human_size 2>/dev/null
                     return 1
                 fi
                 ;;
@@ -57,13 +79,22 @@ extract() {
                     password="$2"
                     shift 2
                 else
-                    if [[ "$lang" == zh* ]]; then
-                        echo -e "${RED}[Error]${RESET} -p/--password 需要指定密码内容" >&2
-                    else
-                        echo -e "${RED}[Error]${RESET} -p/--password requires a password value" >&2
-                    fi
+                    [[ $quiet_mode -eq 0 ]] && echo -e "${RED}[Error]${RESET} -p/--password 需要指定密码内容" >&2
+                    unfunction _extract_human_size 2>/dev/null
                     return 1
                 fi
+                ;;
+            -l|--list)
+                mode="list"
+                shift
+                ;;
+            -rm|--remove-source|--delete-source)
+                remove_source=1
+                shift
+                ;;
+            -q|--quiet)
+                quiet_mode=1
+                shift
                 ;;
             --tar)
                 mode="compress"
@@ -107,14 +138,18 @@ extract() {
                 ;;
             -h|--help)
                 extract
+                unfunction _extract_human_size 2>/dev/null
                 return 0
                 ;;
             -*)
-                if [[ "$lang" == zh* ]]; then
-                    echo -e "${RED}[Error]${RESET} 未知选项: ${YELLOW}$1${RESET}" >&2
-                else
-                    echo -e "${RED}[Error]${RESET} Unknown option: ${YELLOW}$1${RESET}" >&2
+                if [[ $quiet_mode -eq 0 ]]; then
+                    if [[ "$lang" == zh* ]]; then
+                        echo -e "${RED}[Error]${RESET} 未知选项: ${YELLOW}$1${RESET}" >&2
+                    else
+                        echo -e "${RED}[Error]${RESET} Unknown option: ${YELLOW}$1${RESET}" >&2
+                    fi
                 fi
+                unfunction _extract_human_size 2>/dev/null
                 return 1
                 ;;
             *)
@@ -125,15 +160,62 @@ extract() {
     done
 
     if [[ ${#targets[@]} -eq 0 ]]; then
-        if [[ "$lang" == zh* ]]; then
-            echo -e "${RED}[Error]${RESET} 请指定需要处理的目标文件或目录" >&2
-        else
-            echo -e "${RED}[Error]${RESET} Please specify target files or directories to process" >&2
+        if [[ $quiet_mode -eq 0 ]]; then
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${RED}[Error]${RESET} 请指定需要处理的目标文件或目录" >&2
+            else
+                echo -e "${RED}[Error]${RESET} Please specify target files or directories to process" >&2
+            fi
         fi
+        unfunction _extract_human_size 2>/dev/null
         return 1
     fi
 
-    # ================= 1. 压缩模式逻辑 =================
+    # ================= 1. 列表预览模式 (-l / --list) =================
+    if [[ "$mode" == "list" ]]; then
+        local archive_file
+        for archive_file in "${targets[@]}"; do
+            if [[ ! -f "$archive_file" ]]; then
+                [[ $quiet_mode -eq 0 ]] && echo -e "${RED}[Error]${RESET} 文件不存在: ${YELLOW}$archive_file${RESET}" >&2
+                continue
+            fi
+            local f_name="${archive_file:t}"
+            if [[ $quiet_mode -eq 0 ]]; then
+                echo -e "${BOLD}${CYAN}=== 压缩包内容预览: $f_name ===${RESET}"
+            fi
+            local p_flag=""
+            [[ -n "$password" ]] && p_flag="-p${password}"
+
+            case "${f_name:l}" in
+                *.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz|*.tar.zst|*.tzst|*.tar)
+                    tar -tvf "$archive_file"
+                    ;;
+                *.zip|*.jar|*.war)
+                    if command -v unzip &>/dev/null; then
+                        local p_arg=()
+                        [[ -n "$password" ]] && p_arg=(-P "$password")
+                        unzip -l "${p_arg[@]}" "$archive_file"
+                    elif command -v 7z &>/dev/null; then
+                        7z l $p_flag "$archive_file"
+                    fi
+                    ;;
+                *.7z|*.rar)
+                    if command -v 7z &>/dev/null; then
+                        7z l $p_flag "$archive_file"
+                    elif command -v unrar &>/dev/null; then
+                        unrar l $p_flag "$archive_file"
+                    fi
+                    ;;
+                *)
+                    [[ $quiet_mode -eq 0 ]] && echo -e "${YELLOW}[Notice]${RESET} 该单文件无法预览列表。"
+                    ;;
+            esac
+        done
+        unfunction _extract_human_size 2>/dev/null
+        return 0
+    fi
+
+    # ================= 2. 压缩模式逻辑 (含统计) =================
     if [[ "$mode" == "compress" ]]; then
         local first_target="${targets[1]}"
         first_target="${first_target%/}"
@@ -148,10 +230,12 @@ extract() {
 
         # 处理密码加密与格式限制兼容性
         if [[ -n "$password" && "$target_format" == tar* ]]; then
-            if [[ "$lang" == zh* ]]; then
-                echo -e "${YELLOW}[Notice]${RESET} .${target_format} 格式原生不支持密码加密，已自动切换为强加密的 ${CYAN}.7z${RESET} 格式"
-            else
-                echo -e "${YELLOW}[Notice]${RESET} .${target_format} format does not support native encryption, auto switching to ${CYAN}.7z${RESET}"
+            if [[ $quiet_mode -eq 0 ]]; then
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${YELLOW}[Notice]${RESET} .${target_format} 格式原生不支持密码加密，已自动切换为强加密的 ${CYAN}.7z${RESET} 格式"
+                else
+                    echo -e "${YELLOW}[Notice]${RESET} .${target_format} format does not support native encryption, auto switching to ${CYAN}.7z${RESET}"
+                fi
             fi
             target_format="7z"
             out_archive="${out_archive%.*}.7z"
@@ -183,21 +267,37 @@ extract() {
                 ((idx++))
                 new_archive="${stem_name}_${idx}.${ext_name}"
             done
-            if [[ "$lang" == zh* ]]; then
-                echo -e "${YELLOW}[Collision Defense]${RESET} 检测到当前目录已存在 ${CYAN}$out_archive${RESET}，为防覆盖自动存为: ${CYAN}$new_archive${RESET}"
-            else
-                echo -e "${YELLOW}[Collision Defense]${RESET} Target ${CYAN}$out_archive${RESET} already exists, auto saving to: ${CYAN}$new_archive${RESET}"
+            if [[ $quiet_mode -eq 0 ]]; then
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${YELLOW}[Collision Defense]${RESET} 检测到当前目录已存在 ${CYAN}$out_archive${RESET}，为防覆盖自动存为: ${CYAN}$new_archive${RESET}"
+                else
+                    echo -e "${YELLOW}[Collision Defense]${RESET} Target ${CYAN}$out_archive${RESET} already exists, auto saving to: ${CYAN}$new_archive${RESET}"
+                fi
             fi
             out_archive="$new_archive"
         fi
 
+        # 计算原始总体积
+        local orig_bytes=0
+        local t_item
+        for t_item in "${targets[@]}"; do
+            if [[ -e "$t_item" ]]; then
+                local item_sz=$(du -sb "$t_item" 2>/dev/null | awk '{print $1}')
+                if [[ -n "$item_sz" && "$item_sz" -gt 0 ]]; then
+                    orig_bytes=$((orig_bytes + item_sz))
+                fi
+            fi
+        done
+
         local enc_msg=""
         [[ -n "$password" ]] && enc_msg=" [${YELLOW}🔒 Password Encrypted${RESET}]"
 
-        if [[ "$lang" == zh* ]]; then
-            echo -e "${GREEN}[compress]${RESET} 正在打包压缩至: ${CYAN}$out_archive${RESET} (${YELLOW}$target_format${RESET})${enc_msg} ..."
-        else
-            echo -e "${GREEN}[compress]${RESET} Packing and compressing to: ${CYAN}$out_archive${RESET} (${YELLOW}$target_format${RESET})${enc_msg} ..."
+        if [[ $quiet_mode -eq 0 ]]; then
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${GREEN}[compress]${RESET} 正在打包压缩至: ${CYAN}$out_archive${RESET} (${YELLOW}$target_format${RESET})${enc_msg} ..."
+            else
+                echo -e "${GREEN}[compress]${RESET} Packing and compressing to: ${CYAN}$out_archive${RESET} (${YELLOW}$target_format${RESET})${enc_msg} ..."
+            fi
         fi
 
         local c_status=0
@@ -215,12 +315,12 @@ extract() {
                 c_status=$?
                 ;;
             tar.xz)
-                zfl_require xz || return 1
+                zfl_require xz || { unfunction _extract_human_size 2>/dev/null; return 1; }
                 tar -cJf "$out_archive" "${targets[@]}"
                 c_status=$?
                 ;;
             tar.zst)
-                zfl_require zstd || return 1
+                zfl_require zstd || { unfunction _extract_human_size 2>/dev/null; return 1; }
                 tar --zstd -cf "$out_archive" "${targets[@]}"
                 c_status=$?
                 ;;
@@ -241,12 +341,12 @@ extract() {
                         7z a -tzip "$out_archive" "${targets[@]}" >/dev/null
                         c_status=$?
                     else
-                        zfl_require zip || return 1
+                        zfl_require zip || { unfunction _extract_human_size 2>/dev/null; return 1; }
                     fi
                 fi
                 ;;
             7z)
-                zfl_require 7z || return 1
+                zfl_require 7z || { unfunction _extract_human_size 2>/dev/null; return 1; }
                 if [[ -n "$password" ]]; then
                     7z a -p"$password" "$out_archive" "${targets[@]}" >/dev/null
                 else
@@ -274,38 +374,62 @@ extract() {
         esac
 
         if [[ $c_status -eq 0 ]]; then
-            if [[ "$lang" == zh* ]]; then
-                echo -e "${GREEN}[Success]${RESET} 压缩成功: ${CYAN}$out_archive${RESET}"
-            else
-                echo -e "${GREEN}[Success]${RESET} Compression completed: ${CYAN}$out_archive${RESET}"
+            # 计算压缩体积与节省率
+            local new_bytes=$(stat -c%s "$out_archive" 2>/dev/null)
+            [[ -z "$new_bytes" ]] && new_bytes=$(wc -c <"$out_archive" 2>/dev/null)
+
+            local stats_str=""
+            if [[ -n "$new_bytes" && "$orig_bytes" -gt 0 ]]; then
+                local orig_fmt=$(_extract_human_size "$orig_bytes")
+                local new_fmt=$(_extract_human_size "$new_bytes")
+                local saved_pct=0
+                if [[ "$orig_bytes" -gt "$new_bytes" ]]; then
+                    saved_pct=$(( (orig_bytes - new_bytes) * 100 / orig_bytes ))
+                fi
+                stats_str=" (原始: ${orig_fmt} -> 压缩后: ${new_fmt}, 节省 ${BOLD}${GREEN}${saved_pct}%${RESET})"
+            fi
+
+            if [[ $quiet_mode -eq 0 ]]; then
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${GREEN}[Success]${RESET} 压缩成功: ${CYAN}$out_archive${RESET}${stats_str}"
+                else
+                    echo -e "${GREEN}[Success]${RESET} Compression completed: ${CYAN}$out_archive${RESET}${stats_str}"
+                fi
             fi
         else
-            if [[ "$lang" == zh* ]]; then
-                echo -e "${RED}[Failure]${RESET} 压缩失败: ${YELLOW}$out_archive${RESET}" >&2
-            else
-                echo -e "${RED}[Failure]${RESET} Compression failed: ${YELLOW}$out_archive${RESET}" >&2
+            if [[ $quiet_mode -eq 0 ]]; then
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${RED}[Failure]${RESET} 压缩失败: ${YELLOW}$out_archive${RESET}" >&2
+                else
+                    echo -e "${RED}[Failure]${RESET} Compression failed: ${YELLOW}$out_archive${RESET}" >&2
+                fi
             fi
         fi
+        unfunction _extract_human_size 2>/dev/null
         return $c_status
     fi
 
-    # ================= 2. 解压模式逻辑 =================
+    # ================= 3. 解压模式逻辑 (含源清理) =================
     local target_file
     for target_file in "${targets[@]}"; do
         if [[ ! -f "$target_file" ]]; then
-            if [[ "$lang" == zh* ]]; then
-                echo -e "${RED}[Error]${RESET} 文件不存在或不是常规文件: ${YELLOW}$target_file${RESET}" >&2
-            else
-                echo -e "${RED}[Error]${RESET} File does not exist or is not a regular file: ${YELLOW}$target_file${RESET}" >&2
+            if [[ $quiet_mode -eq 0 ]]; then
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${RED}[Error]${RESET} 文件不存在或不是常规文件: ${YELLOW}$target_file${RESET}" >&2
+                else
+                    echo -e "${RED}[Error]${RESET} File does not exist or is not a regular file: ${YELLOW}$target_file${RESET}" >&2
+                fi
             fi
             continue
         fi
 
         if [[ ! -r "$target_file" ]]; then
-            if [[ "$lang" == zh* ]]; then
-                echo -e "${RED}[Error]${RESET} 文件无可读权限: ${YELLOW}$target_file${RESET}" >&2
-            else
-                echo -e "${RED}[Error]${RESET} File is not readable: ${YELLOW}$target_file${RESET}" >&2
+            if [[ $quiet_mode -eq 0 ]]; then
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${RED}[Error]${RESET} 文件无可读权限: ${YELLOW}$target_file${RESET}" >&2
+                else
+                    echo -e "${RED}[Error]${RESET} File is not readable: ${YELLOW}$target_file${RESET}" >&2
+                fi
             fi
             continue
         fi
@@ -322,29 +446,31 @@ extract() {
         fi
 
         case "${file_name:l}" in
-            *.tar.xz|*.txz)      zfl_require xz || return 1 ;;
-            *.tar.zst|*.tzst)     zfl_require zstd || return 1 ;;
+            *.tar.xz|*.txz)      zfl_require xz || { unfunction _extract_human_size 2>/dev/null; return 1; } ;;
+            *.tar.zst|*.tzst)     zfl_require zstd || { unfunction _extract_human_size 2>/dev/null; return 1; } ;;
             *.zip|*.jar|*.war)
                 if ! command -v unzip &>/dev/null && ! command -v 7z &>/dev/null; then
-                    zfl_require unzip || return 1
+                    zfl_require unzip || { unfunction _extract_human_size 2>/dev/null; return 1; }
                 fi
                 ;;
-            *.7z)                 zfl_require 7z || return 1 ;;
+            *.7z)                 zfl_require 7z || { unfunction _extract_human_size 2>/dev/null; return 1; } ;;
             *.rar)
                 if ! command -v unrar &>/dev/null && ! command -v 7z &>/dev/null; then
-                    zfl_require unrar || return 1
+                    zfl_require unrar || { unfunction _extract_human_size 2>/dev/null; return 1; }
                 fi
                 ;;
-            *.gz)                 zfl_require gunzip || return 1 ;;
-            *.bz2)                zfl_require bunzip2 || return 1 ;;
-            *.xz)                 zfl_require unxz || return 1 ;;
-            *.zst)                zfl_require zstd || return 1 ;;
+            *.gz)                 zfl_require gunzip || { unfunction _extract_human_size 2>/dev/null; return 1; } ;;
+            *.bz2)                zfl_require bunzip2 || { unfunction _extract_human_size 2>/dev/null; return 1; } ;;
+            *.xz)                 zfl_require unxz || { unfunction _extract_human_size 2>/dev/null; return 1; } ;;
+            *.zst)                zfl_require zstd || { unfunction _extract_human_size 2>/dev/null; return 1; } ;;
         esac
 
-        if [[ "$lang" == zh* ]]; then
-            echo -e "${GREEN}[extract]${RESET} 正在解压: ${CYAN}$file_name${RESET} ..."
-        else
-            echo -e "${GREEN}[extract]${RESET} Decompressing: ${CYAN}$file_name${RESET} ..."
+        if [[ $quiet_mode -eq 0 ]]; then
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${GREEN}[extract]${RESET} 正在解压: ${CYAN}$file_name${RESET} ..."
+            else
+                echo -e "${GREEN}[extract]${RESET} Decompressing: ${CYAN}$file_name${RESET} ..."
+            fi
         fi
 
         local root_item_count=0
@@ -402,10 +528,12 @@ extract() {
             fi
             mkdir -p "$dest_dir"
             created_dest=1
-            if [[ "$lang" == zh* ]]; then
-                echo -e "${YELLOW}[Archive Bomb Defense]${RESET} 包内包含多项文件，已创建专属隔离目录: ${CYAN}$dest_dir/${RESET}"
-            else
-                echo -e "${YELLOW}[Archive Bomb Defense]${RESET} Archive contains multiple items, created dedicated folder: ${CYAN}$dest_dir/${RESET}"
+            if [[ $quiet_mode -eq 0 ]]; then
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${YELLOW}[Archive Bomb Defense]${RESET} 包内包含多项文件，已创建专属隔离目录: ${CYAN}$dest_dir/${RESET}"
+                else
+                    echo -e "${YELLOW}[Archive Bomb Defense]${RESET} Archive contains multiple items, created dedicated folder: ${CYAN}$dest_dir/${RESET}"
+                fi
             fi
         elif [[ $root_item_count -eq 1 && -n "$single_root_item" && -e "$single_root_item" ]]; then
             dest_dir="${stem}"
@@ -418,10 +546,12 @@ extract() {
             fi
             mkdir -p "$dest_dir"
             created_dest=1
-            if [[ "$lang" == zh* ]]; then
-                echo -e "${YELLOW}[Collision Defense]${RESET} 检测到当前目录已存在 ${CYAN}$single_root_item${RESET}，为防覆盖自动解压至专属目录: ${CYAN}$dest_dir/${RESET}"
-            else
-                echo -e "${YELLOW}[Collision Defense]${RESET} Target ${CYAN}$single_root_item${RESET} already exists, auto extracting to: ${CYAN}$dest_dir/${RESET}"
+            if [[ $quiet_mode -eq 0 ]]; then
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${YELLOW}[Collision Defense]${RESET} 检测到当前目录已存在 ${CYAN}$single_root_item${RESET}，为防覆盖自动解压至专属目录: ${CYAN}$dest_dir/${RESET}"
+                else
+                    echo -e "${YELLOW}[Collision Defense]${RESET} Target ${CYAN}$single_root_item${RESET} already exists, auto extracting to: ${CYAN}$dest_dir/${RESET}"
+                fi
             fi
         fi
 
@@ -487,7 +617,7 @@ extract() {
                     fi
                     d_status=$?
                 else
-                    zfl_require unzip || return 1
+                    zfl_require unzip || { unfunction _extract_human_size 2>/dev/null; return 1; }
                 fi
                 ;;
             *.rar)
@@ -540,35 +670,55 @@ extract() {
                 d_status=$?
                 ;;
             *)
-                if [[ "$lang" == zh* ]]; then
-                    echo -e "${RED}[Error]${RESET} 不支持的解压格式: ${YELLOW}$file_name${RESET}" >&2
-                else
-                    echo -e "${RED}[Error]${RESET} Unsupported decompression format: ${YELLOW}$file_name${RESET}" >&2
+                if [[ $quiet_mode -eq 0 ]]; then
+                    if [[ "$lang" == zh* ]]; then
+                        echo -e "${RED}[Error]${RESET} 不支持的解压格式: ${YELLOW}$file_name${RESET}" >&2
+                    else
+                        echo -e "${RED}[Error]${RESET} Unsupported decompression format: ${YELLOW}$file_name${RESET}" >&2
+                    fi
                 fi
                 d_status=1
                 ;;
         esac
 
         if [[ $d_status -eq 0 ]]; then
-            if [[ "$lang" == zh* ]]; then
-                echo -e "${GREEN}[Success]${RESET} 解压完成: ${CYAN}$file_name${RESET}"
-            else
-                echo -e "${GREEN}[Success]${RESET} Decompression completed: ${CYAN}$file_name${RESET}"
+            if [[ $quiet_mode -eq 0 ]]; then
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${GREEN}[Success]${RESET} 解压完成: ${CYAN}$file_name${RESET}"
+                else
+                    echo -e "${GREEN}[Success]${RESET} Decompression completed: ${CYAN}$file_name${RESET}"
+                fi
+            fi
+
+            # 如果设置了 -rm 并且解压成功，自动删除源压缩包
+            if [[ $remove_source -eq 1 ]]; then
+                rm -f "$target_file"
+                if [[ $quiet_mode -eq 0 ]]; then
+                    if [[ "$lang" == zh* ]]; then
+                        echo -e "${YELLOW}[Notice]${RESET} 已自动清理原压缩文件: ${CYAN}$file_name${RESET}"
+                    else
+                        echo -e "${YELLOW}[Notice]${RESET} Source archive auto removed: ${CYAN}$file_name${RESET}"
+                    fi
+                fi
             fi
         else
-            if [[ "$lang" == zh* ]]; then
-                echo -e "${RED}[Failure]${RESET} 解压失败: ${YELLOW}$file_name${RESET}" >&2
-            else
-                echo -e "${RED}[Failure]${RESET} Decompression failed: ${YELLOW}$file_name${RESET}" >&2
+            if [[ $quiet_mode -eq 0 ]]; then
+                if [[ "$lang" == zh* ]]; then
+                    echo -e "${RED}[Failure]${RESET} 解压失败: ${YELLOW}$file_name${RESET}" >&2
+                else
+                    echo -e "${RED}[Failure]${RESET} Decompression failed: ${YELLOW}$file_name${RESET}" >&2
+                fi
             fi
         fi
     done
+
+    unfunction _extract_human_size 2>/dev/null
 }
 
 # 快捷别名
 alias x=extract
 
-# ================= 3. Tab 自动补全代理函数 =================
+# ================= 4. Tab 自动补全代理函数 =================
 _extract() {
     local lang=${ZFL_LANG:-${LANG%%.*}}
     local curcontext="$curcontext" state line
@@ -578,6 +728,9 @@ _extract() {
         _arguments -s -S \
             '(-o --output)'{-o,--output}'[指定输出文件名]:filename:_files' \
             '(-p --password --pass)'{-p,--password,--pass}'[指定压缩/解压密码]:password:' \
+            '(-l --list)'{-l,--list}'[仅预览压缩包内容清单不解压]' \
+            '(-rm --remove-source --delete-source)'{-rm,--remove-source,--delete-source}'[解压成功后自动删除源压缩包]' \
+            '(-q --quiet)'{-q,--quiet}'[静默运行模式，隐藏状态日志]' \
             '--zip[一键压缩为 .zip 格式]' \
             '--tar.gz[一键打包压缩为 .tar.gz]' \
             '--tgz[一键打包压缩为 .tgz]' \
@@ -596,6 +749,9 @@ _extract() {
         _arguments -s -S \
             '(-o --output)'{-o,--output}'[Specify output filename]:filename:_files' \
             '(-p --password --pass)'{-p,--password,--pass}'[Specify encryption/decryption password]:password:' \
+            '(-l --list)'{-l,--list}'[List archive contents without extraction]' \
+            '(-rm --remove-source --delete-source)'{-rm,--remove-source,--delete-source}'[Auto remove source archive after successful decompression]' \
+            '(-q --quiet)'{-q,--quiet}'[Quiet mode, suppress log output]' \
             '--zip[Compress into .zip format]' \
             '--tar.gz[Compress into .tar.gz archive]' \
             '--tgz[Compress into .tgz archive]' \

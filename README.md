@@ -45,7 +45,7 @@ zsh/
 │   ├── aicp.zsh                   # Generate project context suitable for AI consumption (directory tree + file index + code snippet budget trimming)
 │   ├── check_update.zsh           # Asynchronously check system updates in read-only mode and prompt in terminal, supporting pacman/yay and flatpak
 │   ├── countText.zsh              # Count words or Chinese characters in a text file based on the specified mode
-│   ├── extract.zsh                # Universal auto-decompressor and compressor with format options, password encryption, fallbacks, and Tab completion
+│   ├── extract.zsh                # Universal auto-decompressor and compressor with format options, password encryption, compression stats, content listing, and Tab completion
 │   ├── link_skills.zsh            # Selectively symlink skills from ~/.agents/skills/ into .agents/skills/ of the current project
 │   ├── weather.zsh                # Query real-time weather and weather forecast in terminal
 │   └── zfl.zsh                    # ZFL framework built-in command line management and self-discovery tool
