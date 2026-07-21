@@ -1,7 +1,7 @@
 #? name: extract
 #? description: Universal auto-decompressor and compressor with format options and Tab completion
 #? author: Royi
-#? version: 1.3.0
+#? version: 1.4.0
 #? protected: true
 #? deps: tar, zip, unzip, 7z, unrar, gzip, bzip2, xz, zstd
 #? usage: extract archive... | extract --<format> [-o output] target...
@@ -97,7 +97,7 @@ extract() {
         return 1
     fi
 
-    # ================= 1. 压缩模式逻辑 (有格式参数即触发) =================
+    # ================= 1. 压缩模式逻辑 (带重名防覆盖碰撞保护) =================
     if [[ "$mode" == "compress" ]]; then
         local first_target="${targets[1]}"
         first_target="${first_target%/}"
@@ -121,6 +121,25 @@ extract() {
             7z)       [[ "$out_archive" != *.7z ]] && out_archive="${out_archive}.7z" ;;
             rar)      [[ "$out_archive" != *.rar ]] && out_archive="${out_archive}.rar" ;;
         esac
+
+        # 压缩目标重名碰撞防护：如果当前已存在同名压缩包，自动递增重命名防止覆盖
+        if [[ -e "$out_archive" ]]; then
+            local stem_name="${out_archive%.*}"
+            local ext_name="${out_archive#*.}"
+            if [[ "$out_archive" == *.tar.gz || "$out_archive" == *.tar.bz2 || "$out_archive" == *.tar.xz || "$out_archive" == *.tar.zst ]]; then
+                stem_name="${out_archive%%.tar.*}"
+                ext_name="tar.${out_archive#*.tar.}"
+            fi
+
+            local idx=1
+            local new_archive="${stem_name}_${idx}.${ext_name}"
+            while [[ -e "$new_archive" ]]; do
+                ((idx++))
+                new_archive="${stem_name}_${idx}.${ext_name}"
+            done
+            echo -e "${YELLOW}[Collision Defense]${RESET} 检测到当前目录已存在 ${CYAN}$out_archive${RESET}，为防覆盖自动存为: ${CYAN}$new_archive${RESET}"
+            out_archive="$new_archive"
+        fi
 
         echo -e "${GREEN}[compress]${RESET} 正在打包压缩至: ${CYAN}$out_archive${RESET} (${YELLOW}$target_format${RESET}) ..."
 
@@ -179,7 +198,7 @@ extract() {
         return $c_status
     fi
 
-    # ================= 2. 解压模式逻辑 (无格式参数则默认) =================
+    # ================= 2. 解压模式逻辑 (带重名与防炸弹碰撞保护) =================
     local target_file
     for target_file in "${targets[@]}"; do
         if [[ ! -f "$target_file" ]]; then
@@ -222,41 +241,68 @@ extract() {
 
         echo -e "${GREEN}[extract]${RESET} 正在解压: ${CYAN}$file_name${RESET} ..."
 
-        # 防“解压炸弹”判断逻辑
+        # 防“解压炸弹”及根项目获取
         local root_item_count=0
+        local single_root_item=""
         case "${file_name:l}" in
             *.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz|*.tar.zst|*.tzst|*.tar)
-                root_item_count=$(tar -tf "$target_file" 2>/dev/null | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u | wc -l)
+                local -a root_items=($(tar -tf "$target_file" 2>/dev/null | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u))
+                root_item_count=${#root_items[@]}
+                [[ $root_item_count -eq 1 ]] && single_root_item="${root_items[1]}"
                 ;;
             *.zip|*.jar|*.war)
-                root_item_count=$(unzip -l "$target_file" 2>/dev/null | awk 'NR>3 && $4!="" {print $4}' | grep -v '^---' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u | wc -l)
+                local -a root_items=($(unzip -l "$target_file" 2>/dev/null | awk 'NR>3 && $4!="" {print $4}' | grep -v '^---' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u))
+                root_item_count=${#root_items[@]}
+                [[ $root_item_count -eq 1 ]] && single_root_item="${root_items[1]}"
                 ;;
             *.7z)
-                root_item_count=$(7z l "$target_file" 2>/dev/null | awk '/^----/{p=!p;next} p {print $6}' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u | wc -l)
+                local -a root_items=($(7z l "$target_file" 2>/dev/null | awk '/^----/{p=!p;next} p {print $6}' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u))
+                root_item_count=${#root_items[@]}
+                [[ $root_item_count -eq 1 ]] && single_root_item="${root_items[1]}"
                 ;;
             *.rar)
                 if command -v unrar &>/dev/null; then
-                    root_item_count=$(unrar l "$target_file" 2>/dev/null | awk '/^----/{p=!p;next} p {print $6}' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u | wc -l)
+                    local -a root_items=($(unrar l "$target_file" 2>/dev/null | awk '/^----/{p=!p;next} p {print $6}' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u))
+                    root_item_count=${#root_items[@]}
+                    [[ $root_item_count -eq 1 ]] && single_root_item="${root_items[1]}"
                 elif command -v 7z &>/dev/null; then
-                    root_item_count=$(7z l "$target_file" 2>/dev/null | awk '/^----/{p=!p;next} p {print $6}' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u | wc -l)
+                    local -a root_items=($(7z l "$target_file" 2>/dev/null | awk '/^----/{p=!p;next} p {print $6}' | sed -e 's@/.*@@' | grep -v '^\s*$' | sort -u))
+                    root_item_count=${#root_items[@]}
+                    [[ $root_item_count -eq 1 ]] && single_root_item="${root_items[1]}"
                 fi
                 ;;
         esac
 
         local dest_dir=""
         local created_dest=0
+
+        # 防碰撞与专属目录建仓逻辑
         if [[ $root_item_count -gt 1 ]]; then
+            # 多文件平铺防炸弹：建立专属目录
             dest_dir="$stem"
-            if [[ -d "$dest_dir" ]]; then
+            if [[ -e "$dest_dir" ]]; then
                 local index=1
-                while [[ -d "${stem}_${index}" ]]; do
+                while [[ -e "${stem}_${index}" ]]; do
                     ((index++))
                 done
                 dest_dir="${stem}_${index}"
             fi
             mkdir -p "$dest_dir"
             created_dest=1
-            echo -e "${YELLOW}[Archive Bomb Defense]${RESET} 检测到包内包含多项文件，已创建专属目录: ${CYAN}$dest_dir/${RESET}"
+            echo -e "${YELLOW}[Archive Bomb Defense]${RESET} 包内包含多项文件，已创建专属隔离目录: ${CYAN}$dest_dir/${RESET}"
+        elif [[ $root_item_count -eq 1 && -n "$single_root_item" && -e "$single_root_item" ]]; then
+            # 单文件/单文件夹解压碰撞防护：如果当前目录已有同名文件/目录，自动解压到防冲子目录
+            dest_dir="${stem}"
+            if [[ -e "$dest_dir" ]]; then
+                local index=1
+                while [[ -e "${stem}_${index}" ]]; do
+                    ((index++))
+                done
+                dest_dir="${stem}_${index}"
+            fi
+            mkdir -p "$dest_dir"
+            created_dest=1
+            echo -e "${YELLOW}[Collision Defense]${RESET} 检测到当前目录已存在 ${CYAN}$single_root_item${RESET}，为防覆盖自动解压至专属目录: ${CYAN}$dest_dir/${RESET}"
         fi
 
         local d_status=0
