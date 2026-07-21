@@ -1,23 +1,23 @@
 #? name: extract
 #? description: Universal auto-decompressor and compressor with format options and Tab completion
 #? author: Royi
-#? version: 1.2.0
+#? version: 1.3.0
 #? protected: true
 #? deps: tar, zip, unzip, 7z, unrar, gzip, bzip2, xz, zstd
-#? usage: extract [-d|--decompress] archive... | extract -c|--compress [--zip|--tar.gz|...] [-o output] target...
-#? example: extract archive.zip; extract -c --zip folder/; extract -c --tar.gz -o backup file1 dir2/
+#? usage: extract archive... | extract --<format> [-o output] target...
+#? example: extract archive.zip; extract --zip folder/; extract --tar.gz -o backup file1 dir2/
 
 extract() {
     zfl_require tar || return 1
     load_color RED GREEN YELLOW CYAN BLUE BOLD RESET
 
     if [[ $# -eq 0 ]]; then
-        echo -e "${GREEN}[extract]${RESET} ${BOLD}万能解压与压缩工具 (ZFL Universal Decompressor & Compressor)${RESET}"
+        echo -e "${GREEN}[extract]${RESET} ${BOLD}万能解压与一键压缩工具 (ZFL Universal Decompressor & Compressor)${RESET}"
         echo -e "用法:"
-        echo -e "  解压 (默认): ${CYAN}extract${RESET} [-d|--decompress] <压缩包1> [压缩包2 ...]"
-        echo -e "  压缩:        ${CYAN}extract${RESET} -c|--compress [--格式] [-o 输出名] <目标1> [目标2 ...]"
-        echo -e "常用格式参数: ${YELLOW}--zip, --tar.gz, --tar.bz2, --tar.xz, --tar.zst, --7z, --tar${RESET}"
-        echo -e "提示: 输入 ${CYAN}extract -${RESET} 并按 ${BOLD}Tab${RESET} 键可列出所有格式及中文说明。"
+        echo -e "  解压 (默认模式): ${CYAN}extract${RESET} <压缩包1> [压缩包2 ...]"
+        echo -e "  压缩 (指定格式): ${CYAN}extract${RESET} --<格式> [-o 输出名] <目标1> [目标2 ...]"
+        echo -e "格式选项: ${YELLOW}--zip, --tar.gz, --tar.bz2, --tar.xz, --tar.zst, --7z, --tar, --rar${RESET}"
+        echo -e "提示: 输入 ${CYAN}extract --${RESET} 并按 ${BOLD}Tab${RESET} 键可浏览所有支持的压缩格式。"
         return 0
     fi
 
@@ -28,14 +28,6 @@ extract() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -c|--compress)
-                mode="compress"
-                shift
-                ;;
-            -d|--decompress)
-                mode="decompress"
-                shift
-                ;;
             -o|--output)
                 if [[ -n "$2" && "$2" != -* ]]; then
                     output_name="$2"
@@ -46,34 +38,42 @@ extract() {
                 fi
                 ;;
             --tar)
+                mode="compress"
                 target_format="tar"
                 shift
                 ;;
             --tar.gz|--tgz|-gz|--gz)
+                mode="compress"
                 target_format="tar.gz"
                 shift
                 ;;
             --tar.bz2|--tbz2|-bz2|--bz2)
+                mode="compress"
                 target_format="tar.bz2"
                 shift
                 ;;
             --tar.xz|--txz|-xz|--xz)
+                mode="compress"
                 target_format="tar.xz"
                 shift
                 ;;
             --tar.zst|--tzst|-zst|--zst)
+                mode="compress"
                 target_format="tar.zst"
                 shift
                 ;;
             --zip|-zip)
+                mode="compress"
                 target_format="zip"
                 shift
                 ;;
             --7z|-7z)
+                mode="compress"
                 target_format="7z"
                 shift
                 ;;
             --rar|-rar)
+                mode="compress"
                 target_format="rar"
                 shift
                 ;;
@@ -97,13 +97,8 @@ extract() {
         return 1
     fi
 
-    # ================= 1. 压缩模式逻辑 =================
+    # ================= 1. 压缩模式逻辑 (有格式参数即触发) =================
     if [[ "$mode" == "compress" ]]; then
-        if [[ -z "$target_format" ]]; then
-            target_format="zip"
-            echo -e "${YELLOW}[Notice]${RESET} 未指定压缩格式，默认使用 ${CYAN}--zip${RESET}"
-        fi
-
         local first_target="${targets[1]}"
         first_target="${first_target%/}"
         local base_name="${first_target:t}"
@@ -115,7 +110,7 @@ extract() {
             out_archive="$base_name"
         fi
 
-        # 补全文件后缀
+        # 自动补全文件后缀
         case "$target_format" in
             tar)      [[ "$out_archive" != *.tar ]] && out_archive="${out_archive}.tar" ;;
             tar.gz)   [[ "$out_archive" != *.tar.gz && "$out_archive" != *.tgz ]] && out_archive="${out_archive}.tar.gz" ;;
@@ -125,10 +120,6 @@ extract() {
             zip)      [[ "$out_archive" != *.zip ]] && out_archive="${out_archive}.zip" ;;
             7z)       [[ "$out_archive" != *.7z ]] && out_archive="${out_archive}.7z" ;;
             rar)      [[ "$out_archive" != *.rar ]] && out_archive="${out_archive}.rar" ;;
-            gz)       [[ "$out_archive" != *.gz ]] && out_archive="${out_archive}.gz" ;;
-            bz2)      [[ "$out_archive" != *.bz2 ]] && out_archive="${out_archive}.bz2" ;;
-            xz)       [[ "$out_archive" != *.xz ]] && out_archive="${out_archive}.xz" ;;
-            zst)      [[ "$out_archive" != *.zst ]] && out_archive="${out_archive}.zst" ;;
         esac
 
         echo -e "${GREEN}[compress]${RESET} 正在打包压缩至: ${CYAN}$out_archive${RESET} (${YELLOW}$target_format${RESET}) ..."
@@ -178,10 +169,6 @@ extract() {
                     zfl_require rar || return 1
                 fi
                 ;;
-            gz|bz2|xz|zst)
-                echo -e "${RED}[Error]${RESET} 单文件压缩格式 ($target_format) 请直接使用工具或改用 --tar.$target_format" >&2
-                return 1
-                ;;
         esac
 
         if [[ $c_status -eq 0 ]]; then
@@ -192,7 +179,7 @@ extract() {
         return $c_status
     fi
 
-    # ================= 2. 解压模式逻辑 =================
+    # ================= 2. 解压模式逻辑 (无格式参数则默认) =================
     local target_file
     for target_file in "${targets[@]}"; do
         if [[ ! -f "$target_file" ]]; then
@@ -386,76 +373,23 @@ alias x=extract
 
 # ================= 3. Tab 自动补全代理函数 =================
 _extract() {
-    local lang=${ZFL_LANG:-${LANG%%.*}}
-    local -a options
-
-    if [[ "$lang" == zh* ]]; then
-        options=(
-            '-c:切换为一键压缩模式'
-            '--compress:切换为一键压缩模式'
-            '-d:切换为解压模式 (默认行为)'
-            '--decompress:切换为解压模式 (默认行为)'
-            '-o:指定输出压缩包名称 (如 -o backup)'
-            '--output:指定输出压缩包名称 (如 --output backup)'
-            '--tar:打包为未压缩的 .tar 归档'
-            '--tar.gz:使用 gzip 压缩打包 (.tar.gz / .tgz)'
-            '--tgz:使用 gzip 压缩打包 (.tar.gz / .tgz)'
-            '--tar.bz2:使用 bzip2 压缩打包 (.tar.bz2 / .tbz2)'
-            '--tbz2:使用 bzip2 压缩打包 (.tar.bz2 / .tbz2)'
-            '--tar.xz:使用 xz 极高压缩率打包 (.tar.xz / .txz)'
-            '--txz:使用 xz 极高压缩率打包 (.tar.xz / .txz)'
-            '--tar.zst:使用 zstd 极速高压缩率打包 (.tar.zst)'
-            '--tzst:使用 zstd 极速高压缩率打包 (.tar.zst)'
-            '--zip:压缩为通用 .zip 格式文件'
-            '--7z:使用 7-Zip 高压缩率格式打包 (.7z)'
-            '--rar:压缩为 RAR 归档文件 (.rar)'
-            '-h:显示帮助信息'
-            '--help:显示帮助信息'
-        )
-    else
-        options=(
-            '-c:Switch to compression mode'
-            '--compress:Switch to compression mode'
-            '-d:Switch to decompression mode (default)'
-            '--decompress:Switch to decompression mode (default)'
-            '-o:Specify output archive filename'
-            '--output:Specify output archive filename'
-            '--tar:Pack into uncompressed .tar archive'
-            '--tar.gz:Compress with gzip (.tar.gz / .tgz)'
-            '--tgz:Compress with gzip (.tar.gz / .tgz)'
-            '--tar.bz2:Compress with bzip2 (.tar.bz2 / .tbz2)'
-            '--tbz2:Compress with bzip2 (.tar.bz2 / .tbz2)'
-            '--tar.xz:Compress with xz (.tar.xz / .txz)'
-            '--txz:Compress with xz (.tar.xz / .txz)'
-            '--tar.zst:Compress with zstd (.tar.zst)'
-            '--tzst:Compress with zstd (.tar.zst)'
-            '--zip:Compress into universal .zip archive'
-            '--7z:Compress with 7-Zip (.7z)'
-            '--rar:Compress into RAR archive (.rar)'
-            '-h:Show help menu'
-            '--help:Show help menu'
-        )
-    fi
-
     local curcontext="$curcontext" state line
     typeset -A opt_args
 
     _arguments -s -S \
-        '(-c --compress -d --decompress)'{-c,--compress}'[切换为一键压缩模式]' \
-        '(-c --compress -d --decompress)'{-d,--decompress}'[切换为解压模式 (默认)]' \
         '(-o --output)'{-o,--output}'[指定输出文件名]:filename:_files' \
-        '--tar[打包为 .tar 归档]' \
-        '--tar.gz[压缩为 .tar.gz]' \
-        '--tgz[压缩为 .tgz]' \
-        '--tar.bz2[压缩为 .tar.bz2]' \
-        '--tbz2[压缩为 .tbz2]' \
-        '--tar.xz[压缩为 .tar.xz]' \
-        '--txz[压缩为 .txz]' \
-        '--tar.zst[压缩为 .tar.zst]' \
-        '--tzst[压缩为 .tzst]' \
-        '--zip[压缩为 .zip]' \
-        '--7z[压缩为 .7z]' \
-        '--rar[压缩为 .rar]' \
+        '--zip[一键压缩为 .zip 格式]' \
+        '--tar.gz[一键打包压缩为 .tar.gz]' \
+        '--tgz[一键打包压缩为 .tgz]' \
+        '--tar.bz2[一键打包压缩为 .tar.bz2]' \
+        '--tbz2[一键打包压缩为 .tbz2]' \
+        '--tar.xz[一键打包压缩为 .tar.xz (高压缩率)]' \
+        '--txz[一键打包压缩为 .txz]' \
+        '--tar.zst[一键打包压缩为 .tar.zst (极速高压缩率)]' \
+        '--tzst[一键打包压缩为 .tzst]' \
+        '--7z[一键压缩为 7-Zip (.7z)]' \
+        '--rar[一键打包压缩为 .rar]' \
+        '--tar[一键打包为未压缩的 .tar 归档]' \
         '(-h --help)'{-h,--help}'[显示帮助信息]' \
         '*:files:_files'
 }
