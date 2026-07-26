@@ -90,7 +90,7 @@ To facilitate local translation and off-line usages, ZFL implements bilingual pr
 When you delete a Skill folder manually from the workspace, `link_skills` automatically removes it from the index list on next run.
 
 ### 2. Bilingual Previews
-- **Selection List**: In `fzf`, Skills show their names and brief descriptions in both English and Chinese.
+- **Selection List**: In `fzf`, Skills and Groups are cleanly formatted in perfectly aligned columns (ID, Name, Brief Description) without noisy separator bars.
 - **Preview Pane**: The preview panel lists Chinese and English names, descriptions, and **"💡 Usage Scenarios & Guide"** tips.
 
 ### 3. Automatic Translation & Cache
