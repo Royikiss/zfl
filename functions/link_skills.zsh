@@ -242,13 +242,16 @@ link_skills() {
     # Interactive selection (using fzf) if no arguments provided
     if (( ${#skills_to_link[@]} == 0 )); then
         if (( $+commands[fzf] )); then
-            local prompt_msg
+            local prompt_msg header_msg
             if [[ "$lang" == zh* ]]; then
-                prompt_msg="选择要链接的 Skill/分组 (空格多选，ctrl-g:创建/更新组，ctrl-d:删除组，ctrl-t:重新翻译，ctrl-v:展开/收起预览，Enter确认): "
+                header_msg="💡 快捷键: 空格:多选 | Ctrl-G:创建/修改组 | Ctrl-D:删除组 | Ctrl-T:重译 | Ctrl-V:缩放预览 | Enter:确认"
+                prompt_msg="Skill Search > "
             else
-                prompt_msg="Select skills/groups to link (Space to multi-select, ctrl-g:create/update group, ctrl-d:delete group, ctrl-t:re-translate, ctrl-v:toggle-expand, Enter to confirm): "
+                header_msg="💡 Shortcuts: Space:Multi-select | Ctrl-G:Create/Modify | Ctrl-D:Delete | Ctrl-T:Translate | Ctrl-V:Toggle Preview | Enter:Confirm"
+                prompt_msg="Skill Search > "
             fi
             selected=$(python3 "$ZFL_HOME/python/list_skills_fzf.py" | fzf -m \
+                --header="$header_msg" \
                 --bind "space:toggle" \
                 --bind 'ctrl-g:execute(python3 "'"$ZFL_HOME"'/python/resolve_skills.py" --interactive-set {+1})+reload(python3 "'"$ZFL_HOME"'/python/list_skills_fzf.py")' \
                 --bind 'ctrl-d:execute(python3 "'"$ZFL_HOME"'/python/resolve_skills.py" --interactive-rm {1})+reload(python3 "'"$ZFL_HOME"'/python/list_skills_fzf.py")' \

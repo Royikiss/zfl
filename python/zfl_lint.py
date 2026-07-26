@@ -16,7 +16,8 @@ GLOBAL_WHITELIST = {
     # check_update.zsh 相关的全局配置/状态变量
     "CHECK_UPDATE_CACHE_TTL_SECONDS", "CHECK_UPDATE_PROMPT_POLICY",
     "CHECK_UPDATE_APT_CMD", "CHECK_UPDATE_PACMAN_CMD", "CHECK_UPDATE_YAY_CMD",
-    "CHECK_UPDATE_FLATPAK_CMD", "CHECK_UPDATE_AUR_CMD",
+    # zfl.zsh 相关的全局诊断变量
+    "diag_errors", "diag_warnings",
 }
 
 def strip_heredocs(code):
@@ -262,6 +263,13 @@ def lint_file(file_path):
             errors.append(f"Cannot read file {file_path}: {e}")
         return errors, warnings
 
+    # 0. Check file extension
+    if not file_name.endswith('.zsh') and not is_core_file:
+        if is_zh:
+            errors.append(f"【后缀错误】文件名 '{file_name}' 必须以 '.zsh' 结尾，否则 ZFL 框架无法识别与懒加载。")
+        else:
+            errors.append(f"[Extension Error] File name '{file_name}' must end with '.zsh', otherwise ZFL framework cannot discover and lazy load it.")
+
     # 1. Check documentation completeness
     if not is_core_file:
         zfl_home = os.path.dirname(os.path.dirname(os.path.abspath(file_path)))
@@ -283,6 +291,35 @@ def lint_file(file_path):
 
     # Preprocess code
     preprocessed_code, metadata = preprocess_code(raw_content)
+
+    # 2.5 Check header metadata lines (#?)
+    if not is_core_file:
+        if not metadata:
+            if is_zh:
+                warnings.append(f"【元数据缺失】文件头部缺失 #? 规范注释（如 #? name:, #? description:, #? author: 等）。")
+            else:
+                warnings.append(f"[Missing Metadata] File header lacks #? specification comments (e.g. #? name:, #? description:, #? author:).")
+        else:
+            meta_keys = set()
+            for meta_line in metadata:
+                content = meta_line[2:].strip()
+                if ":" in content:
+                    k = content.split(":", 1)[0].strip()
+                    meta_keys.add(k)
+            
+            missing_meta = []
+            has_desc = any(k in meta_keys for k in ("name", "名称", "desc", "description", "描述"))
+            if not has_desc:
+                missing_meta.append("description/描述")
+            has_usage = any(k in meta_keys for k in ("usage", "用法"))
+            if not has_usage:
+                missing_meta.append("usage/用法")
+                
+            if missing_meta:
+                if is_zh:
+                    warnings.append(f"【元数据不完整】文件头部 #? 元数据缺少推荐字段: {', '.join(missing_meta)}")
+                else:
+                    warnings.append(f"[Incomplete Metadata] File header #? metadata missing recommended fields: {', '.join(missing_meta)}")
 
     # 3. Extract and validate function definitions
     funcs = extract_functions(preprocessed_code)

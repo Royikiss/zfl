@@ -77,6 +77,7 @@ zfl - Zsh Function Library (ZFL) 管理工具
   info <函数名>    查看特定函数的详细元数据与用法
   check            检查所有函数的外部依赖项是否已安装
   lint [函数名...] 对指定的函数或全部函数进行静态质量校验
+  addfunc [名称]   交互式在 custom_functions 中创建标准的函数模板
   remove, rm <名>  安全删除指定的函数文件并清理占位符与补全
   help, -h         显示此帮助信息
 
@@ -85,6 +86,7 @@ zfl - Zsh Function Library (ZFL) 管理工具
   zfl info extract
   zfl check
   zfl lint extract
+  zfl addfunc my_tool
   zfl remove weather
 EOF
     else
@@ -99,6 +101,7 @@ Available subcommands:
   info <name>      View detailed metadata and usage for a specific function
   check            Check if external dependencies for all functions are installed
   lint [name...]   Run static quality verification on specific or all functions
+  addfunc [name]   Interactively create a standard function template in custom_functions
   remove, rm <name> Safely delete function file and clean up placeholders/completions
   help, -h         Show this help message
 
@@ -107,8 +110,57 @@ Examples:
   zfl info extract
   zfl check
   zfl lint extract
+  zfl addfunc my_tool
   zfl remove weather
 EOF
+    fi
+}
+
+_zfl_diagnose_file() {
+    local file=$1
+    diag_errors=()
+    diag_warnings=()
+
+    local filename=$(basename "$file")
+    local expected_name="${filename%.zsh}"
+    local lang=${ZFL_LANG:-${LANG%%.*}}
+
+    # Check 1: File Extension
+    if [[ "$filename" != *.zsh ]]; then
+        if [[ "$lang" == zh* ]]; then
+            diag_errors+=("【后缀错误】文件名 '$filename' 扩展名必须为 '.zsh'，否则框架无法自动发现与懒加载。")
+        else
+            diag_errors+=("[Extension Error] File '$filename' must end with '.zsh' to be discovered by ZFL.")
+        fi
+    fi
+
+    # Check 2: Header Metadata (#?)
+    _zfl_parse_metadata "$file"
+    if [[ -z "$func_meta_desc" ]]; then
+        if [[ "$lang" == zh* ]]; then
+            diag_warnings+=("【元数据缺失】缺少描述信息 (#? description: ...)。")
+        else
+            diag_warnings+=("[Missing Metadata] Missing description (#? description: ...).")
+        fi
+    fi
+
+    if [[ -z "$func_meta_usage" ]]; then
+        if [[ "$lang" == zh* ]]; then
+            diag_warnings+=("【元数据缺失】缺少用法说明 (#? usage: ...)。")
+        else
+            diag_warnings+=("[Missing Metadata] Missing usage instruction (#? usage: ...).")
+        fi
+    fi
+
+    # Check 3: Main Entry Function Mapping
+    if [[ "$filename" == *.zsh ]]; then
+        if ! grep -qE "(function[[:space:]]+)?${expected_name}[[:space:]]*\([[:space:]]*\)" "$file"; then
+            if [[ "$lang" == zh* ]]; then
+                diag_errors+=("【映射失败】文件内未声明同名主入口函数 '${expected_name}()'。")
+            else
+                diag_errors+=("[Mapping Failed] Main entry function '${expected_name}()' not found in file.")
+            fi
+        fi
     fi
 }
 
@@ -117,19 +169,21 @@ _zfl_list() {
     local lang=${ZFL_LANG:-${LANG%%.*}}
 
     if [[ "$lang" == zh* ]]; then
-        echo -e "${BOLD}${CYAN}ZFL (Zsh Function Library) 函数列表:${RESET}"
-        echo -e "--------------------------------------------------------"
-        printf "%-18s | %-4s | %s\n" "函数名称" "来源" "简短描述"
-        echo -e "--------------------------------------------------------"
+        echo -e "${BOLD}${CYAN}ZFL (Zsh Function Library) 函数与物理文件列表:${RESET}"
+        echo -e "--------------------------------------------------------------------------------"
+        printf "%-22s | %-4s | %s\n" "文件/函数名称" "来源" "状态与描述信息"
+        echo -e "--------------------------------------------------------------------------------"
     else
-        echo -e "${BOLD}${CYAN}ZFL (Zsh Function Library) Function List:${RESET}"
-        echo -e "--------------------------------------------------------"
-        printf "%-18s | %-6s | %s\n" "Function Name" "Source" "Short Description"
-        echo -e "--------------------------------------------------------"
+        echo -e "${BOLD}${CYAN}ZFL (Zsh Function Library) Function & File List:${RESET}"
+        echo -e "--------------------------------------------------------------------------------"
+        printf "%-22s | %-6s | %s\n" "File/Function Name" "Source" "Status & Description"
+        echo -e "--------------------------------------------------------------------------------"
     fi
 
     local dir file fname source_type color_source
-    local func_meta_name func_meta_desc func_meta_author func_meta_version func_meta_deps func_meta_usage func_meta_example
+    local func_meta_name func_meta_desc func_meta_author func_meta_version func_meta_deps func_meta_usage func_meta_example func_meta_protected
+    local -a diag_errors diag_warnings
+    local -a problem_details
 
     for dir in "$ZFL_HOME/functions" "$ZFL_HOME/custom_functions"; do
         [[ -d "$dir" ]] || continue
@@ -153,28 +207,72 @@ _zfl_list() {
             color_source="${GREEN}"
         fi
 
-        for file in "$dir"/*.zsh(N); do
-            fname=$(basename "$file" .zsh)
-            _zfl_parse_metadata "$file"
-            
-            local padded_name="${(r:18:)fname}"
-            local colored_name="${BOLD}${CYAN}${padded_name}${RESET}"
-            
-            local colored_source="${color_source}${padded_source}${RESET}"
+        for file in "$dir"/*(N); do
+            [[ -f "$file" ]] || continue
+            fname=$(basename "$file")
 
-            local no_desc="No description"
-            if [[ "$lang" == zh* ]]; then
-                no_desc="暂无描述"
+            _zfl_diagnose_file "$file"
+
+            local padded_name="${(r:22:)fname}"
+            local colored_source="${color_source}${padded_source}${RESET}"
+            local status_desc=""
+
+            if (( ${#diag_errors[@]} > 0 )); then
+                local colored_name="${BOLD}${RED}${padded_name}${RESET}"
+                status_desc="${RED}[错误/无法加载] ${diag_errors[1]}${RESET}"
+                local detail_msg="${BOLD}${RED}${fname}${RESET} (${file}):"
+                local err warn
+                for err in "${diag_errors[@]}"; do
+                    detail_msg+=$'\n'"  └─ ${RED}✗ ${err}${RESET}"
+                done
+                for warn in "${diag_warnings[@]}"; do
+                    detail_msg+=$'\n'"  └─ ${YELLOW}! ${warn}${RESET}"
+                done
+                problem_details+=("$detail_msg")
+            elif (( ${#diag_warnings[@]} > 0 )); then
+                local colored_name="${BOLD}${YELLOW}${padded_name}${RESET}"
+                local desc_txt="${func_meta_desc:-暂无描述}"
+                status_desc="${YELLOW}[警告: 格式欠佳] ${desc_txt}${RESET}"
+                local detail_msg="${BOLD}${YELLOW}${fname}${RESET} (${file}):"
+                local warn
+                for warn in "${diag_warnings[@]}"; do
+                    detail_msg+=$'\n'"  └─ ${YELLOW}! ${warn}${RESET}"
+                done
+                problem_details+=("$detail_msg")
+            else
+                local colored_name="${BOLD}${CYAN}${padded_name}${RESET}"
+                local no_desc="No description"
+                if [[ "$lang" == zh* ]]; then
+                    no_desc="暂无描述"
+                fi
+                status_desc="${func_meta_desc:-$no_desc}"
             fi
 
-            printf "%b | %b | %s\n" "$colored_name" "$colored_source" "${func_meta_desc:-$no_desc}"
+            printf "%b | %b | %b\n" "$colored_name" "$colored_source" "$status_desc"
         done
     done
-    echo -e "--------------------------------------------------------"
+    echo -e "--------------------------------------------------------------------------------"
+
+    if (( ${#problem_details[@]} > 0 )); then
+        echo ""
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${BOLD}${RED}⚠️  检测到不合规文件格式诊断报告 (${#problem_details[@]} 个文件需要处理):${RESET}"
+            echo -e "--------------------------------------------------------------------------------"
+        else
+            echo -e "${BOLD}${RED}⚠️  Format Diagnostics Report (${#problem_details[@]} files need attention):${RESET}"
+            echo -e "--------------------------------------------------------------------------------"
+        fi
+        local item
+        for item in "${problem_details[@]}"; do
+            echo -e "$item"
+        done
+        echo -e "--------------------------------------------------------------------------------"
+    fi
+
     if [[ "$lang" == zh* ]]; then
-        echo -e "提示: 使用 ${GREEN}zfl info <函数名>${RESET} 查看详细用法与依赖。"
+        echo -e "提示: 使用 ${GREEN}zfl info <函数名>${RESET} 查看详细用法，使用 ${GREEN}zfl lint <函数名>${RESET} 进行深度静态检查。"
     else
-        echo -e "Tip: Use ${GREEN}zfl info <func_name>${RESET} to view detailed usage and dependencies."
+        echo -e "Tip: Use ${GREEN}zfl info <func_name>${RESET} for usage, and ${GREEN}zfl lint <func_name>${RESET} for deep linting."
     fi
 }
 
@@ -353,6 +451,139 @@ _zfl_lint() {
     python3 "$ZFL_HOME/python/zfl_lint.py" "${files_to_lint[@]}"
 }
 
+_zfl_read_input() {
+    local prompt_msg=$1
+    local var_name=$2
+
+    [[ -n "$prompt_msg" ]] && echo -e "$prompt_msg"
+    if [[ -t 0 && -t 1 ]]; then
+        eval "${var_name}=''"
+        vared -p "> " "$var_name"
+    else
+        local input_val
+        read -r input_val
+        eval "${var_name}=\$input_val"
+    fi
+}
+
+_zfl_addfunc() {
+    load_color RED GREEN YELLOW CYAN RESET BOLD
+    local lang=${ZFL_LANG:-${LANG%%.*}}
+    local target_name=$1
+
+    if [[ -z "$target_name" ]]; then
+        if [[ "$lang" == zh* ]]; then
+            _zfl_read_input "${CYAN}► 请输入要新建的自定义函数名称${RESET}:" target_name
+        else
+            _zfl_read_input "${CYAN}► Please enter the name of the new custom function${RESET}:" target_name
+        fi
+    fi
+
+    target_name="${target_name##[[:space:]]}"
+    target_name="${target_name%%[[:space:]]}"
+    target_name="${target_name%.zsh}"
+
+    if [[ -z "$target_name" ]]; then
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[ERROR]${RESET} 函数名称不能为空！" >&2
+        else
+            echo -e "${RED}[ERROR]${RESET} Function name cannot be empty!" >&2
+        fi
+        return 1
+    fi
+
+    if [[ ! "$target_name" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]; then
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[ERROR]${RESET} 函数名称包含非法字符 '$target_name'。必须以字母或下划线开头，仅包含字母、数字、下划线或短横线。" >&2
+        else
+            echo -e "${RED}[ERROR]${RESET} Invalid function name '$target_name'. Must start with a letter/underscore and contain alphanumeric characters, underscores, or hyphens." >&2
+        fi
+        return 1
+    fi
+
+    local -a core_funcs=('zfl' 'aicp' 'check_update' 'add_task' 'link_skills' 'countText' 'weather' 'extract')
+    if (( ${core_funcs[(Ie)$target_name]} )); then
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[ERROR]${RESET} 名称 '${target_name}' 与 ZFL 系统保留核心函数重名，禁止创建！" >&2
+        else
+            echo -e "${RED}[ERROR]${RESET} Function name '${target_name}' conflicts with a ZFL core function and is prohibited!" >&2
+        fi
+        return 1
+    fi
+
+    local target_file="$ZFL_HOME/custom_functions/${target_name}.zsh"
+    local sys_file="$ZFL_HOME/functions/${target_name}.zsh"
+    if [[ -f "$target_file" || -f "$sys_file" ]]; then
+        if [[ "$lang" == zh* ]]; then
+            echo -e "${RED}[ERROR]${RESET} 函数 '${target_name}' 已存在！" >&2
+            [[ -f "$target_file" ]] && echo -e "  └─ 冲突文件: ${target_file}" >&2
+            [[ -f "$sys_file" ]] && echo -e "  └─ 冲突文件: ${sys_file}" >&2
+        else
+            echo -e "${RED}[ERROR]${RESET} Function '${target_name}' already exists!" >&2
+            [[ -f "$target_file" ]] && echo -e "  └─ Conflicting file: ${target_file}" >&2
+            [[ -f "$sys_file" ]] && echo -e "  └─ Conflicting file: ${sys_file}" >&2
+        fi
+        return 1
+    fi
+
+    mkdir -p "$ZFL_HOME/custom_functions" || return 1
+
+    local func_desc func_author
+    if [[ "$lang" == zh* ]]; then
+        _zfl_read_input "${CYAN}► 请输入简短描述${RESET} (留空使用默认):" func_desc
+        _zfl_read_input "${CYAN}► 请输入作者名称${RESET} (留空默认为当前用户):" func_author
+    else
+        _zfl_read_input "${CYAN}► Enter short description${RESET} (press Enter for default):" func_desc
+        _zfl_read_input "${CYAN}► Enter author name${RESET} (press Enter for $USER):" func_author
+    fi
+
+    [[ -z "$func_desc" ]] && func_desc="用户自定义函数 ${target_name}"
+    [[ -z "$func_author" ]] && func_author="${USER:-custom}"
+
+    cat <<EOF > "$target_file"
+#? name: ${target_name}
+#? description: ${func_desc}
+#? author: ${func_author}
+#? version: 1.0.0
+#? deps: 
+#? usage: ${target_name} [args]
+#? example: ${target_name}
+
+${target_name}() {
+    load_color GREEN RED YELLOW RESET BOLD
+    local lang=\${ZFL_LANG:-\${LANG%%.*}}
+
+    if [[ "\$lang" == zh* ]]; then
+        echo -e "\${GREEN}[${target_name}]\${RESET} 自定义函数运行成功！"
+    else
+        echo -e "\${GREEN}[${target_name}]\${RESET} Custom function executed successfully!"
+    fi
+}
+
+_${target_name}() {
+    _default "\$@"
+}
+EOF
+
+    if [[ "$lang" == zh* ]]; then
+        echo -e "${GREEN}[SUCCESS]${RESET} 已成功创建标准函数模板: ${BOLD}${target_file}${RESET}"
+        echo -e "提示: 已在当前会话中即时注册桩函数。可以使用 ${GREEN}zfl lint ${target_name}${RESET} 检测代码规范。"
+    else
+        echo -e "${GREEN}[SUCCESS]${RESET} Standard function template created: ${BOLD}${target_file}${RESET}"
+        echo -e "Tip: Lazy loading stub registered for active session. Use ${GREEN}zfl lint ${target_name}${RESET} to check code quality."
+    fi
+
+    eval "${target_name}() { lazy_load_functions ${target_name} \"${target_file}\" \"\$@\"; }"
+    eval "_${target_name}() { unfunction _${target_name} 2>/dev/null; source \"${target_file}\"; if whence -f _${target_name} >/dev/null; then _${target_name} \"\$@\"; else _default \"\$@\"; fi }"
+    if whence compdef >/dev/null; then
+        compdef "_${target_name}" "${target_name}"
+    fi
+
+    if [[ -f "$ZFL_HOME/automation/sync_readme.py" ]]; then
+        python3 "$ZFL_HOME/automation/sync_readme.py" >/dev/null 2>&1
+    fi
+}
+
 _zfl_remove() {
     load_color RED GREEN YELLOW RESET BOLD
     local target=$1
@@ -525,6 +756,9 @@ zfl() {
         lint)
             _zfl_lint "$@"
             ;;
+        addfunc)
+            _zfl_addfunc "$@"
+            ;;
         remove|rm)
             _zfl_remove "$@"
             ;;
@@ -556,6 +790,7 @@ _zfl() {
             'info:查看特定函数的详细元数据'
             'check:检查所有函数的外部依赖项'
             'lint:对指定的函数或全部函数进行静态质量校验'
+            'addfunc:交互式在 custom_functions 中创建标准的函数模板'
             'remove:安全删除指定的函数文件并清理桩函数'
             'rm:安全删除指定的函数文件并清理桩函数'
             'help:显示帮助信息'
@@ -567,6 +802,7 @@ _zfl() {
             'info:View detailed metadata for a specific function'
             'check:Check external dependencies for all functions'
             'lint:Run static quality verification on specific or all functions'
+            'addfunc:Interactively create a standard function template in custom_functions'
             'remove:Safely delete function file and clean up placeholders'
             'rm:Safely delete function file and clean up placeholders'
             'help:Show help information'

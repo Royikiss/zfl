@@ -98,9 +98,16 @@ def save_groups(groups):
         with open(GROUPS_FILE, "w", encoding="utf-8") as f:
             json.dump(groups, f, indent=2, ensure_ascii=False)
         return True
-    except Exception as e:
-        print(f"Error saving groups file: {e}", file=sys.stderr)
+    except Exception:
         return False
+def safe_input(prompt_msg=""):
+    """
+    Safely print prompt and read input using a clean ASCII '> ' prompt.
+    Prevents CJK character backspace alignment bugs in terminal readline.
+    """
+    if prompt_msg:
+        print(prompt_msg)
+    return input("> ").strip()
 
 def interactive_set(selected_args):
     # Filter out empty arguments or option arguments
@@ -133,10 +140,10 @@ def interactive_set(selected_args):
     if not unique_skills:
         if IS_ZH:
             print("\033[1;31m错误：未选中任何技能，请先使用空格键在列表中选择技能！\033[0m")
-            input("\n按回车键返回 FZF...")
+            safe_input("\n按回车键返回 FZF...")
         else:
             print("\033[1;31mError: No skills selected. Please select skills using Space first!\033[0m")
-            input("\nPress Enter to return to FZF...")
+            safe_input("\nPress Enter to return to FZF...")
         return
     
     # --- Step 1: Show selected skills and allow reordering by index ---
@@ -151,9 +158,9 @@ def interactive_set(selected_args):
 
     try:
         if IS_ZH:
-            reorder_input = input('请输入新的排列顺序（如 "3 1 2"，直接回车保持现有顺序）: ').strip()
+            reorder_input = safe_input('请输入新的排列顺序（如 "3 1 2"，直接回车保持现有顺序）:')
         else:
-            reorder_input = input('Enter new order (e.g. "3 1 2", or press Enter to keep current): ').strip()
+            reorder_input = safe_input('Enter new order (e.g. "3 1 2", or press Enter to keep current):')
         if reorder_input:
             try:
                 indices = [int(x) - 1 for x in reorder_input.split()]
@@ -178,23 +185,23 @@ def interactive_set(selected_args):
 
         # --- Step 2: Ask if this group is ordered ---
         if IS_ZH:
-            ordered_ans = input("是否设为有序分组（即上方顺序为推荐调用顺序）？(y/N): ").strip().lower()
+            ordered_ans = safe_input("是否设为有序分组（即上方顺序为推荐调用顺序）？(y/N):").lower()
         else:
-            ordered_ans = input("Mark as ordered group (above order = recommended call order)? (y/N): ").strip().lower()
+            ordered_ans = safe_input("Mark as ordered group (above order = recommended call order)? (y/N):").lower()
         is_ordered = ordered_ans in ('y', 'yes')
 
         # --- Step 3: Ask for group name ---
         if IS_ZH:
-            gname = input("请输入要创建/修改的分组名称 (或按回车键取消): ").strip()
+            gname = safe_input("请输入要创建/修改的分组名称 (或按回车键取消):")
         else:
-            gname = input("Please enter group name to create/modify (or press Enter to cancel): ").strip()
+            gname = safe_input("Please enter group name to create/modify (or press Enter to cancel):")
         if not gname:
             if IS_ZH:
                 print("\033[1;33m操作已取消。\033[0m")
-                input("\n按回车键返回 FZF...")
+                safe_input("\n按回车键返回 FZF...")
             else:
                 print("\033[1;33mOperation cancelled.\033[0m")
-                input("\nPress Enter to return to FZF...")
+                safe_input("\nPress Enter to return to FZF...")
             return
             
         disp_name = gname
@@ -224,20 +231,20 @@ def interactive_set(selected_args):
             print("\n\033[1;33mOperation cancelled.\033[0m")
         
     if IS_ZH:
-        input("\n按回车键返回 FZF...")
+        safe_input("\n按回车键返回 FZF...")
     else:
-        input("\nPress Enter to return to FZF...")
+        safe_input("\nPress Enter to return to FZF...")
 
 def interactive_rm(focused_item):
     if not focused_item.startswith("group:"):
         if IS_ZH:
             print("\033[1;31m错误：当前所选项不是一个技能分组，无法删除！\033[0m")
             print(f"所选项: {focused_item}")
-            input("\n按回车键返回 FZF...")
+            safe_input("\n按回车键返回 FZF...")
         else:
             print("\033[1;31mError: Current item is not a skill group, cannot delete!\033[0m")
             print(f"Selected item: {focused_item}")
-            input("\nPress Enter to return to FZF...")
+            safe_input("\nPress Enter to return to FZF...")
         return
         
     gkey = focused_item[6:]
@@ -245,10 +252,10 @@ def interactive_rm(focused_item):
     if gkey not in groups:
         if IS_ZH:
             print(f"\033[1;31m错误：分组 '{gkey}' 不存在。\033[0m")
-            input("\n按回车键返回 FZF...")
+            safe_input("\n按回车键返回 FZF...")
         else:
             print(f"\033[1;31mError: Group '{gkey}' does not exist.\033[0m")
-            input("\nPress Enter to return to FZF...")
+            safe_input("\nPress Enter to return to FZF...")
         return
         
     print("\033[1;36m" + "=" * 55 + "\033[0m")
@@ -260,9 +267,9 @@ def interactive_rm(focused_item):
     
     try:
         if IS_ZH:
-            confirm = input("请输入 y 确认删除 (或按回车键取消): ").strip().lower()
+            confirm = safe_input("请输入 y 确认删除 (或按回车键取消):").lower()
         else:
-            confirm = input("Please enter y to confirm deletion (or press Enter to cancel): ").strip().lower()
+            confirm = safe_input("Please enter y to confirm deletion (or press Enter to cancel):").lower()
         if confirm in ('y', 'yes'):
             del groups[gkey]
             if save_groups(groups):
@@ -285,11 +292,10 @@ def interactive_rm(focused_item):
             print("\n\033[1;33m操作已取消。\033[0m")
         else:
             print("\n\033[1;33mOperation cancelled.\033[0m")
-        
     if IS_ZH:
-        input("\n按回车键返回 FZF...")
+        safe_input("\n按回车键返回 FZF...")
     else:
-        input("\nPress Enter to return to FZF...")
+        safe_input("\nPress Enter to return to FZF...")
 
 def view_connected():
     """

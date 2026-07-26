@@ -25,13 +25,15 @@ zfl <subcommand> [arguments]
 ### Available Subcommands
 
 *   **`list` or `ls`**
-    Scan `functions/` and `custom_functions/` directories, listing all functions with their sources (community/user) and short descriptions extracted from metadata headers.
+    Scan `functions/` and `custom_functions/` directories for all physical files (including `.zsh`, `.sh`, and unextensioned scripts), displaying function names, sources (community/user), and status descriptions. Highlights non-`.zsh` extensions, missing `#?` metadata, or missing entry functions in red/yellow, and appends a "Format Diagnostics Report" at the end.
 *   **`info <function_name>`**
     View detailed metadata (author, version, external dependencies, usage, examples, etc.) of a specific function.
 *   **`check`**
     Check all external CLI dependencies declared in functions metadata, reporting whether they are installed in the current system.
 *   **`lint [function_name...]`**
-    Perform static code analysis on specified functions (or all functions if omitted) to check style compliance and variable leaks.
+    Perform static code analysis on specified functions (or all functions if omitted) to check `.zsh` extension rules, `#?` metadata completeness, style compliance, variable leaks, and FD 3 safety.
+*   **`addfunc [function_name]`**
+    Interactively generate a standard `.zsh` function template under `custom_functions/` with complete `#?` metadata comments and multi-language skeleton code, instantly registering lazy loading stubs in active session.
 *   **`remove <function_name>` or `rm <function_name>`**
     Safely delete a function file (prompts with `[y/N]`), uninstall it and its completion proxies from the current session (`unfunction`), and automatically synchronize the project structure tree.
 *   **`help` or `-h`**
@@ -42,7 +44,8 @@ zfl <subcommand> [arguments]
 ## 💡 Examples
 
 ```bash
-zfl list            # List all available functions
+zfl list            # List all available functions and format diagnostics
+zfl addfunc my_tool # Interactively create a new custom function template
 zfl info weather    # View metadata of the weather tool
 zfl check           # Check external dependency status of all functions
 zfl lint weather    # Check weather function code quality and leak risks
@@ -56,11 +59,28 @@ zfl remove weather  # Safely delete weather and unload its hooks from current se
 
 `zfl lint` integrates a Python static analysis tool to inspect script quality in local environments or CI workflows. Key check items include:
 
-1.  **File-to-Function 1:1 Mapping**: File `foo.zsh` must contain and only define a main entry function `foo()`.
-2.  **Global Variable Leaks**: Scans variables assigned in functions. Any variable that is not explicitly declared using `local` or `typeset`, and is not in the system whitelist, will trigger a leak warning.
-3.  **FD 3 Leak Risks**: Checks if background tasks (like `&`, `coproc`) have file descriptor 3 safely closed (`3<&-`), preventing sub-processes from locking the parent terminal.
-4.  **Hardcoded Colors**: Flags any hardcoded ANSI escape color codes, encouraging developers to use the library's `load_color` instead.
-5.  **Companion Documentation**: Warns if a matching `.md` documentation file is missing from the `docs/` folder.
+1.  **File Extension & Mapping**: File extension must be `.zsh`. File `foo.zsh` must contain and only define a main entry function `foo()`.
+2.  **Header Metadata Standard (#?)**: Verifies file header for valid `#?` comment block and required fields like `description` and `usage`.
+3.  **Global Variable Leaks**: Scans variables assigned in functions. Any variable that is not explicitly declared using `local` or `typeset`, and is not in the system whitelist, will trigger a leak warning.
+4.  **FD 3 Leak Risks**: Checks if background tasks (like `&`, `coproc`) have file descriptor 3 safely closed (`3<&-`), preventing sub-processes from locking the parent terminal.
+5.  **Hardcoded Colors**: Flags any hardcoded ANSI escape color codes, encouraging developers to use the library's `load_color` instead.
+6.  **Companion Documentation**: Warns if a matching `.md` documentation file is missing from the `docs/` folder.
+
+---
+
+## 💡 ZLE (vared) Interactive Input Best Practice
+
+When writing scripts involving interactive Shell input, standard `read` commands bypass Zsh Line Editor (ZLE), causing CJK character backspace cursor miscalculations and visual artifacts in terminals. The framework recommends `vared` (Zsh Variable Editor) for interactive inputs:
+
+```zsh
+# Use ZLE official line editor for variable input, 100% avoiding CJK backspace artifacts
+if [[ -t 0 && -t 1 ]]; then
+    my_var=""
+    vared -p "> " my_var
+else
+    read -r my_var
+fi
+```
 
 ---
 

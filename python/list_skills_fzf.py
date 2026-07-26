@@ -3,6 +3,7 @@ import os
 import sys
 import json
 import re
+import unicodedata
 
 DEFAULT_TRANSLATIONS = {
   "find-community": {
@@ -153,6 +154,22 @@ def load_user_translations():
     except Exception:
         return DEFAULT_TRANSLATIONS
 
+def get_display_width(s):
+    w = 0
+    for ch in s:
+        status = unicodedata.east_asian_width(ch)
+        if status in ('F', 'W'):
+            w += 2
+        else:
+            w += 1
+    return w
+
+def pad_display(s, target_width):
+    curr_w = get_display_width(s)
+    if curr_w >= target_width:
+        return s
+    return s + " " * (target_width - curr_w)
+
 def main():
     skills_dir = os.path.expanduser("~/.agents/skills")
     if not os.path.exists(skills_dir):
@@ -165,7 +182,9 @@ def main():
     # Load translations from ~/.cache/zsh/skills_zh.json (initialize if needed)
     user_translations = load_user_translations()
 
-    # Load groups and print them first
+    items = []
+
+    # Load groups and add them to items
     groups = {}
     try:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -184,20 +203,23 @@ def main():
             gskills = info
             is_ordered = False
 
+        item_id = f"group:{gid}"
+        name_bracket = f"[分组: {name}]" if is_zh else f"[Group: {name}]"
+
         if is_ordered:
             def _cn(n):
                 return chr(0x245F + n) if 1 <= n <= 20 else f"({n})"
             numbered = " ".join(f"{_cn(i+1)}{s}" for i, s in enumerate(gskills))
-            if is_zh:
-                print(f"group:{gid} | [分组: {name}] \u2691 有序 · {numbered}")
-            else:
-                print(f"group:{gid} | [Group: {name}] \u2691 Ordered · {numbered}")
+            desc_single = f"⚑ 有序 · {numbered}" if is_zh else f"⚑ Ordered · {numbered}"
         else:
             gskills_str = ", ".join(gskills)
-            if is_zh:
-                print(f"group:{gid} | [分组: {name}] 包含: {gskills_str}")
-            else:
-                print(f"group:{gid} | [Group: {name}] Contains: {gskills_str}")
+            desc_single = f"包含: {gskills_str}" if is_zh else f"Contains: {gskills_str}"
+
+        items.append({
+            "id": item_id,
+            "name_bracket": name_bracket,
+            "desc": desc_single
+        })
 
     # Scan available skills
     skills = []
@@ -247,12 +269,32 @@ def main():
                 name_display = en_data.get("name") or skill
                 desc_display = en_data.get("description") or ""
 
-        # Make description single line and truncate if necessary
-        desc_single = " ".join([l.strip() for l in desc_display.split("\n") if l.strip()])
-        if len(desc_single) > 80:
-            desc_single = desc_single[:77] + "..."
+        # Make description single line and trim leading/trailing quotes
+        desc_single = " ".join([l.strip() for l in desc_display.split("\n") if l.strip()]).strip('“"”')
+        if len(desc_single) > 60:
+            desc_single = desc_single[:57] + "..."
 
-        print(f"{skill} | [{name_display}] {desc_single}")
+        items.append({
+            "id": skill,
+            "name_bracket": f"[{name_display}]",
+            "desc": desc_single
+        })
+
+    if not items:
+        return
+
+    # Calculate padding widths
+    max_id_len = max([len(x["id"]) for x in items] + [30])
+    id_col_width = max_id_len + 3
+
+    max_name_len = max([get_display_width(x["name_bracket"]) for x in items] + [20])
+    name_col_width = max_name_len + 3
+
+    for item in items:
+        col1 = pad_display(item["id"], id_col_width)
+        col2 = pad_display(item["name_bracket"], name_col_width)
+        col3 = item["desc"]
+        print(f"{col1}{col2}{col3}")
 
 if __name__ == "__main__":
     main()
