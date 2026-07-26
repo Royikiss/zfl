@@ -256,7 +256,8 @@ _zfl_check() {
         echo -e "--------------------------------------------------------"
     fi
 
-    local dir file fname
+    local dir file fname dep
+    local -a deps_list
     local func_meta_name func_meta_desc func_meta_author func_meta_version func_meta_deps func_meta_usage func_meta_example
 
     for dir in "$ZFL_HOME/functions" "$ZFL_HOME/custom_functions"; do
@@ -275,7 +276,7 @@ _zfl_check() {
                 continue
             fi
 
-            local dep deps_list=(${(s:,:)func_meta_deps})
+            deps_list=(${(s:,:)func_meta_deps})
             local missing=()
             for dep in "${deps_list[@]}"; do
                 dep="${dep##[[:space:]]}"
