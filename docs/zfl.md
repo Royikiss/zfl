@@ -100,7 +100,7 @@ To enable `zfl` to parse and display function information, it is recommended to 
 ```
 
 > **🛡️ Core Function Protection Mechanism**:
-> 1. **Hardcoded Protection Whitelist**: Built-in core functions (`zfl`, `aicp`, `check_update`, `add_task`, `link_skills`, `countText`, `weather`, `extract`) are hardcoded and cannot be deleted via `zfl remove`.
+> 1. **Hardcoded Protection Whitelist**: Built-in core functions (`zfl`, `aicp`, `check_update`, `add_task`, `mskill`, `countText`, `weather`, `extract`) are hardcoded and cannot be deleted via `zfl remove`.
 > 2. **Metadata Protection Tag**: Adding `#? protected: true` in any script header prevents `zfl remove` from deleting it.
 > 3. **Tab Completion Filtering**: `zfl remove <Tab>` automatically excludes protected core functions, allowing completion only for removable custom scripts.
 

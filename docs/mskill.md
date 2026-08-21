@@ -82,5 +82,3 @@ mskill startup
 mskill
 ```
 
-### 5. Backward Compatibility
-The command `link_skills` is preserved as an alias for `mskill` with full parameter compatibility.

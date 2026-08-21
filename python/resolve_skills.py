@@ -323,9 +323,9 @@ def view_connected():
     connected_dir = "./.agents/skills"
     if not os.path.exists(connected_dir) or not os.path.isdir(connected_dir):
         if IS_ZH:
-            print(f"\033[1;33m[link_skills] 当前项目下未检测到已连接的技能目录 (.agents/skills)。\033[0m")
+            print(f"\033[1;33m[mskill] 当前项目下未检测到已连接的技能目录 (.agents/skills)。\033[0m")
         else:
-            print(f"\033[1;33m[link_skills] No connected skills directory found for the current project (.agents/skills).\033[0m")
+            print(f"\033[1;33m[mskill] No connected skills directory found for the current project (.agents/skills).\033[0m")
         return
 
     # List all subdirectories or symlinks under connected_dir
@@ -338,16 +338,16 @@ def view_connected():
                 skills.append(item)
     except Exception as e:
         if IS_ZH:
-            print(f"\033[1;31m[link_skills] 读取已连接技能时出错: {e}\033[0m")
+            print(f"\033[1;31m[mskill] 读取已连接技能时出错: {e}\033[0m")
         else:
-            print(f"\033[1;31m[link_skills] Error reading connected skills: {e}\033[0m")
+            print(f"\033[1;31m[mskill] Error reading connected skills: {e}\033[0m")
         return
 
     if not skills:
         if IS_ZH:
-            print(f"\033[1;33m[link_skills] 当前项目未连接任何技能。\033[0m")
+            print(f"\033[1;33m[mskill] 当前项目未连接任何技能。\033[0m")
         else:
-            print(f"\033[1;33m[link_skills] No skills connected to the current project.\033[0m")
+            print(f"\033[1;33m[mskill] No skills connected to the current project.\033[0m")
         return
 
     # Load translations from cache

@@ -83,5 +83,3 @@ mskill startup
 mskill
 ```
 
-### 5. 向后兼容性说明
-旧版命令 `link_skills` 保持完全兼容，自动无缝转发至 `mskill` 执行。
