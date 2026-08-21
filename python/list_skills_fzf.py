@@ -124,12 +124,29 @@ def parse_md_frontmatter(path):
         return {"name": name, "description": desc}
     return None
 
+def get_zfl_data_dir():
+    xdg_data = os.environ.get("XDG_DATA_HOME")
+    if xdg_data:
+        base = os.path.join(xdg_data, "zfl")
+    else:
+        base = os.path.expanduser("~/.local/share/zfl")
+    os.makedirs(base, exist_ok=True)
+    legacy_zh = os.path.expanduser("~/.cache/zsh/skills_zh.json")
+    new_zh = os.path.join(base, "skills_zh.json")
+    if os.path.exists(legacy_zh) and not os.path.exists(new_zh):
+        try:
+            import shutil
+            shutil.copy2(legacy_zh, new_zh)
+        except Exception:
+            pass
+    return base
+
+DATA_DIR = get_zfl_data_dir()
+
 def load_user_translations():
-    cache_dir = os.path.expanduser("~/.cache/zsh")
-    cache_path = os.path.join(cache_dir, "skills_zh.json")
+    cache_path = os.path.join(DATA_DIR, "skills_zh.json")
     if not os.path.exists(cache_path):
         try:
-            os.makedirs(cache_dir, exist_ok=True)
             with open(cache_path, "w", encoding="utf-8") as f:
                 json.dump(DEFAULT_TRANSLATIONS, f, indent=2, ensure_ascii=False)
             return DEFAULT_TRANSLATIONS

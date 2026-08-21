@@ -143,12 +143,29 @@ def parse_md_content(path):
         return {"name": name, "description": desc}, body
     return None, content
 
+def get_zfl_data_dir():
+    xdg_data = os.environ.get("XDG_DATA_HOME")
+    if xdg_data:
+        base = os.path.join(xdg_data, "zfl")
+    else:
+        base = os.path.expanduser("~/.local/share/zfl")
+    os.makedirs(base, exist_ok=True)
+    legacy_zh = os.path.expanduser("~/.cache/zsh/skills_zh.json")
+    new_zh = os.path.join(base, "skills_zh.json")
+    if os.path.exists(legacy_zh) and not os.path.exists(new_zh):
+        try:
+            import shutil
+            shutil.copy2(legacy_zh, new_zh)
+        except Exception:
+            pass
+    return base
+
+DATA_DIR = get_zfl_data_dir()
+
 def load_user_translations():
-    cache_dir = os.path.expanduser("~/.cache/zsh")
-    cache_path = os.path.join(cache_dir, "skills_zh.json")
+    cache_path = os.path.join(DATA_DIR, "skills_zh.json")
     if not os.path.exists(cache_path):
         try:
-            os.makedirs(cache_dir, exist_ok=True)
             with open(cache_path, "w", encoding="utf-8") as f:
                 json.dump(DEFAULT_TRANSLATIONS, f, indent=2, ensure_ascii=False)
             return DEFAULT_TRANSLATIONS
@@ -320,8 +337,7 @@ def main():
         sys.exit(0)
 
     # 1. Load user cache translation DB
-    cache_dir = os.path.expanduser("~/.cache/zsh")
-    cache_path = os.path.join(cache_dir, "skills_zh.json")
+    cache_path = os.path.join(DATA_DIR, "skills_zh.json")
     user_translations = load_user_translations()
 
     # 2. Check if a local Chinese translation file exists
@@ -355,7 +371,6 @@ def main():
             user_translations[skill]["name_zh"] = zh_name_trans or en_name
             user_translations[skill]["desc_zh"] = zh_desc_trans or en_desc
             try:
-                os.makedirs(cache_dir, exist_ok=True)
                 with open(cache_path, "w", encoding="utf-8") as f:
                     json.dump(user_translations, f, indent=2, ensure_ascii=False)
                 cached_to_file = True
@@ -393,7 +408,26 @@ def main():
     else:
         print(f"\033[1;32m Skill: \033[1;37m{name_en}\033[0m")
     print("\033[1;36m" + "=" * 55 + "\033[0m")
-    
+
+    # Manifest Source Metadata
+    manifest_path = os.path.join(DATA_DIR, "skills_manifest.json")
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest_data = json.load(f)
+                if skill in manifest_data:
+                    smeta = manifest_data[skill]
+                    srepo = smeta.get("repo_url", "")
+                    scommit = smeta.get("commit_hash", "")[:7]
+                    sdate = smeta.get("installed_at", "")[:10]
+                    if is_zh:
+                        print(f"\033[0;36m📦 来源: {srepo} | 版本: {scommit} | 安装: {sdate}\033[0m")
+                    else:
+                        print(f"\033[0;36m📦 Source: {srepo} | Commit: {scommit} | Installed: {sdate}\033[0m")
+                    print("\033[1;36m" + "-" * 55 + "\033[0m")
+        except Exception:
+            pass
+
     # Chinese Description
     if is_zh and desc_zh_lines:
         print("\033[1;33m功能描述 (中文):\033[0m")
@@ -436,7 +470,7 @@ def main():
             print("\033[1;30m  ... (more content below) ...\033[0m")
             
     if is_zh and cached_to_file:
-        print("\033[1;30m  *已自动翻译元数据并缓存至 ~/.cache/zsh/skills_zh.json*\033[0m")
+        print(f"\033[1;30m  *已自动翻译元数据并持久化至 {DATA_DIR}/skills_zh.json*\033[0m")
 
 
 if __name__ == "__main__":

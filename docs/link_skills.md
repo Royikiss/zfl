@@ -29,7 +29,7 @@ link_skills [options] [skill_name/group_name...]
 
 To simplify management and enable batch-linking, `link_skills` supports **skill groups**. You can combine multiple commonly used or related skills into a group and soft-link all of them with a single command.
 
-Skill groups are stored in JSON format at `~/.cache/zsh/skills_groups.json`. The framework automatically generates two default groups when run for the first time:
+Skill groups are stored in JSON format at `~/.local/share/zfl/skills_groups.json`. The framework automatically generates two default groups when run for the first time:
 - **`startup` (Minimalist Entrepreneur)**: Contains `validate-idea`, `find-community`, `first-customers`, `marketing-plan`, `pricing`, `processize`, `grow-sustainably`, `minimalist-review`.
 - **`dev` (Daily Development Collaboration)**: Contains `prototype`, `improve-codebase-architecture`, `gemini-prompt-optimizer`, `grill-me`, `grill-with-docs`, `handoff`, `nuwa-skill`.
 

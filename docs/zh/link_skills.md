@@ -29,7 +29,7 @@ link_skills [选项] [技能名称/分组名称...]
 
 为了方便管理和批量链接，`link_skills` 支持**技能分组**。您可以将常用的或者有延续性的技能归结为一个分组，通过该分组一键批量软链接。
 
-技能分组信息完全由脚本维护，存储在缓存路径 `~/.cache/zsh/skills_groups.json` 中。系统首次运行时会自动生成两个预设分组：
+技能分组信息完全由脚本维护，存储在持久化数据路径 `~/.local/share/zfl/skills_groups.json` 中。系统首次运行时会自动生成两个预设分组：
 - **`startup` (极简创业者)**：包含 `validate-idea`, `find-community`, `first-customers`, `marketing-plan`, `pricing`, `processize`, `grow-sustainably`, `minimalist-review`。
 - **`dev` (日常开发协作)**：包含 `prototype`, `improve-codebase-architecture`, `gemini-prompt-optimizer`, `grill-me`, `grill-with-docs`, `handoff`, `nuwa-skill`。
 

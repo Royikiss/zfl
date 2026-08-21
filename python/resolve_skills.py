@@ -10,7 +10,25 @@ import json
 LANG = os.environ.get("ZFL_LANG") or os.environ.get("LANG", "en")
 IS_ZH = LANG.startswith("zh")
 
-GROUPS_FILE = os.path.expanduser("~/.cache/zsh/skills_groups.json")
+def get_zfl_data_dir():
+    xdg_data = os.environ.get("XDG_DATA_HOME")
+    if xdg_data:
+        base = os.path.join(xdg_data, "zfl")
+    else:
+        base = os.path.expanduser("~/.local/share/zfl")
+    os.makedirs(base, exist_ok=True)
+    legacy_groups = os.path.expanduser("~/.cache/zsh/skills_groups.json")
+    new_groups = os.path.join(base, "skills_groups.json")
+    if os.path.exists(legacy_groups) and not os.path.exists(new_groups):
+        try:
+            import shutil
+            shutil.copy2(legacy_groups, new_groups)
+        except Exception:
+            pass
+    return base
+
+DATA_DIR = get_zfl_data_dir()
+GROUPS_FILE = os.path.join(DATA_DIR, "skills_groups.json")
 
 DEFAULT_GROUPS = {
     "startup": {

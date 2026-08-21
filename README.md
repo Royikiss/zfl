@@ -46,13 +46,15 @@ zsh/
 │   ├── check_update.zsh           # Asynchronously check system updates in read-only mode and prompt in terminal, supporting pacman/yay and flatpak
 │   ├── countText.zsh              # Count words or Chinese characters in a text file based on the specified mode
 │   ├── extract.zsh                # Universal auto-decompressor and compressor with format options, password encryption, compression stats, content listing, and Tab completion
-│   ├── link_skills.zsh            # Selectively symlink skills from ~/.agents/skills/ into .agents/skills/ of the current project
+│   ├── link_skills.zsh            # Selectively symlink skills from ~/.agents/skills/ into .agents/skills/ of current project (Alias for mskill)
+│   ├── mskill.zsh                 # Manage, install, discover, package, update, and selectively link AI Agent skills
 │   ├── weather.zsh                # Query real-time weather and weather forecast in terminal
 │   └── zfl.zsh                    # ZFL framework built-in command line management and self-discovery tool
 ├── custom_functions/              # User private local functions directory (ignored by git)
 ├── python/                        # Cross-language helper scripts
 │   ├── aicp_context.py
 │   ├── list_skills_fzf.py
+│   ├── manage_skills.py           # Core management engine for AI Agent skills (Install, Discover, Package, Update, Status)
 │   ├── preview_skill.py
 │   ├── resolve_skills.py          # Parse and expand skill groups and skill names, and provide interfaces to manage groups
 │   └── zfl_lint.py
@@ -62,7 +64,9 @@ zsh/
 │   ├── check_update.md            # Non-blocking package queries and interactive system upgrade coordinator.
 │   ├── countText.md               # Characters and words counting tool for mixed English-Chinese texts.
 │   ├── extract.md                 # Universal auto-decompressor with archive-bomb protection.
+│   ├── fmt_novel.md
 │   ├── link_skills.md             # Symbolic link management for globally-defined AI Agent skills.
+│   ├── mskill.md
 │   ├── weather.md                 # Quick weather forecast query.
 │   └── zfl.md                     # Built-in ZFL CLI manager and auto-discovery engine.
 └── automation/                    # AI programming automation verification and sync scripts
