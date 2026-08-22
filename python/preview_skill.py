@@ -190,7 +190,82 @@ def load_user_translations():
     except Exception:
         return DEFAULT_TRANSLATIONS
 
+def strip_ansi(s):
+    return re.sub(r'\x1b\[[0-9;]*m', '', s)
+
+def clean_item_id(s):
+    if not s:
+        return ""
+    s_clean = strip_ansi(s)
+    # Strip tree prefixes, icons, whitespace
+    s_clean = re.sub(r'^[ \t│├└─\-\+📦📁📂•▶▼\s]+', '', s_clean).strip()
+    parts = s_clean.split()
+    if not parts:
+        return ""
+    token = parts[0].strip("[](),:;")
+    if "group:" in s_clean and not token.startswith("group:"):
+        m = re.search(r'group:[^\s\[\]()]+', s_clean)
+        if m:
+            return m.group(0).strip("[](),:;")
+    return token
+
+def circled_num(n):
+    return chr(0x245F + n) if 1 <= n <= 20 else f"({n})"
+
+def format_markdown_line(line):
+    """Format markdown line with syntax highlights for terminal preview."""
+    # Headers
+    if line.startswith("# "):
+        return f"\033[1;36m■ {line[2:].strip()}\033[0m"
+    if line.startswith("## "):
+        return f"\033[1;34m▶ {line[3:].strip()}\033[0m"
+    if line.startswith("### "):
+        return f"\033[1;33m◆ {line[4:].strip()}\033[0m"
+    if line.startswith("#### "):
+        return f"\033[1;35m▪ {line[5:].strip()}\033[0m"
+    # Blockquotes / Alerts
+    if line.startswith("> [!NOTE]") or line.startswith("> [!TIP]"):
+        return f"\033[1;36m  💡 {line[2:].strip()}\033[0m"
+    if line.startswith("> [!IMPORTANT]") or line.startswith("> [!WARNING]"):
+        return f"\033[1;33m  ⚠️  {line[2:].strip()}\033[0m"
+    if line.startswith("> "):
+        return f"\033[0;90m  │ {line[2:].strip()}\033[0m"
+    # List items
+    if re.match(r"^[-*]\s+", line):
+        return f"\033[0;32m  • \033[0;37m{line[2:].strip()}\033[0m"
+    m_num = re.match(r"^(\d+)\.\s+(.*)", line)
+    if m_num:
+        return f"\033[0;33m  {m_num.group(1)}. \033[0;37m{m_num.group(2)}\033[0m"
+    # Code block marker
+    if line.startswith("```"):
+        return f"\033[0;90m  ───────────────────────────────────────────\033[0m"
+    return f"  {line}"
+
+def print_hotkeys_footer(is_zh):
+    CYAN = "\033[1;36m"
+    WHITE = "\033[1;37m"
+    YELLOW = "\033[1;33m"
+    GREEN = "\033[1;32m"
+    GREY = "\033[0;90m"
+    RESET = "\033[0m"
+
+    if is_zh:
+        print(f"\n{CYAN}╭───────────────────────── ⌨️  快捷键操作全览 ─────────────────────────╮{RESET}")
+        print(f"{CYAN}│{RESET}  {YELLOW}🌿 浏览:{RESET}  {WHITE}[Tab / → / ←]{RESET} 折叠/展开组  │  {WHITE}[Ctrl-O]{RESET} 全展/全折  │  {WHITE}[空格]{RESET} 多选")
+        print(f"{CYAN}│{RESET}  {YELLOW}⚡ 管理:{RESET}  {WHITE}[Ctrl-G]{RESET} 分组设置    │  {WHITE}[Ctrl-D]{RESET} 解散分组    │  {WHITE}[Ctrl-N]{RESET} 安装新技能")
+        print(f"{CYAN}│{RESET}           {WHITE}[Ctrl-U]{RESET} 检查更新    │  {WHITE}[Ctrl-B]{RESET} 解绑Git     │  {WHITE}[Ctrl-T]{RESET} 重新翻译")
+        print(f"{CYAN}│{RESET}  {GREEN}🚀 执行:{RESET}  {WHITE}[Enter]{RESET} 软链接到项目  │  {WHITE}[Alt-C]{RESET} 拷贝实体副本")
+        print(f"{CYAN}╰─────────────────────────────────────────────────────────────────────╯{RESET}")
+    else:
+        print(f"\n{CYAN}╭───────────────────────── ⌨️  Hotkeys Reference ──────────────────────╮{RESET}")
+        print(f"{CYAN}│{RESET}  {YELLOW}🌿 Browse:{RESET} {WHITE}[Tab / → / ←]{RESET} Toggle Group │ {WHITE}[Ctrl-O]{RESET} Toggle All │ {WHITE}[Space]{RESET} Multi")
+        print(f"{CYAN}│{RESET}  {YELLOW}⚡ Manage:{RESET} {WHITE}[Ctrl-G]{RESET} Groups        │ {WHITE}[Ctrl-D]{RESET} Delete Group │ {WHITE}[Ctrl-N]{RESET} Install")
+        print(f"{CYAN}│{RESET}           {WHITE}[Ctrl-U]{RESET} Update        │ {WHITE}[Ctrl-B]{RESET} Unbind Git   │ {WHITE}[Ctrl-T]{RESET} Translate")
+        print(f"{CYAN}│{RESET}  {GREEN}🚀 Action:{RESET} {WHITE}[Enter]{RESET} Symlink        │ {WHITE}[Alt-C]{RESET} Copy Entity")
+        print(f"{CYAN}╰─────────────────────────────────────────────────────────────────────╯{RESET}")
+
 def main():
+
     force_translate = False
     if "--force-translate" in sys.argv:
         force_translate = True
@@ -217,7 +292,10 @@ def main():
         print("Usage: preview_skill.py [--force-translate] [--full] <skill_name>")
         sys.exit(1)
 
-    skill = sys.argv[1]
+    raw_arg = sys.argv[1]
+    skill = clean_item_id(raw_arg)
+    if not skill:
+        skill = raw_arg.strip()
     
     if force_translate and skill.startswith("group:"):
         sys.exit(0)
@@ -225,10 +303,19 @@ def main():
     lang = os.environ.get("ZFL_LANG") or os.environ.get("LANG", "en")
     is_zh = lang.startswith("zh")
 
+    # ANSI Colors
+    CYAN = "\033[1;36m"
+    GREEN = "\033[1;32m"
+    YELLOW = "\033[1;33m"
+    BLUE = "\033[1;34m"
+    MAGENTA = "\033[1;35m"
+    WHITE = "\033[1;37m"
+    GREY = "\033[0;90m"
+    RESET = "\033[0m"
+
     if skill.startswith("group:"):
         # Group preview logic
         gkey = skill[6:]
-        # Load groups
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         try:
             import resolve_skills
@@ -238,9 +325,13 @@ def main():
         
         if gkey not in groups:
             if is_zh:
-                print(f"\033[1;31m错误：未找到分组 '{gkey}'\033[0m")
+                print(f"\033[1;31m╭─────────────────────────────────────────────────────────╮\033[0m")
+                print(f"\033[1;31m│  [✗] 错误：未找到分组 '{gkey}'                         │\033[0m")
+                print(f"\033[1;31m╰─────────────────────────────────────────────────────────╯\033[0m")
             else:
-                print(f"\033[1;31mError: Group '{gkey}' not found\033[0m")
+                print(f"\033[1;31m╭─────────────────────────────────────────────────────────╮\033[0m")
+                print(f"\033[1;31m│  [✗] Error: Group '{gkey}' not found                   │\033[0m")
+                print(f"\033[1;31m╰─────────────────────────────────────────────────────────╯\033[0m")
             sys.exit(0)
             
         ginfo = groups[gkey]
@@ -250,27 +341,30 @@ def main():
             is_ordered = ginfo.get("ordered", False)
         else:
             gname = gkey
-            gskills = ginfo
+            gskills = info
             is_ordered = False
 
-        def circled_num(n):
-            return chr(0x245F + n) if 1 <= n <= 20 else f"({n})"
+        ordered_pill = f"{YELLOW}[⚑ 有序推荐顺序]{RESET}" if is_ordered else f"{MAGENTA}[⚡ 组合技能集合]{RESET}"
+        if not is_zh:
+            ordered_pill = f"{YELLOW}[⚑ Recommended Order]{RESET}" if is_ordered else f"{MAGENTA}[⚡ Skill Set]{RESET}"
 
-        print("\033[1;36m" + "=" * 55 + "\033[0m")
+        print(f"{CYAN}╭──────────────────────── 📂 技能分组卡片 ────────────────────────╮{RESET}")
         if is_zh:
-            print(f"\033[1;32m 技能分组: \033[1;37m{gname} ({gkey})\033[0m")
-            print("\033[1;36m" + "=" * 55 + "\033[0m")
+            print(f"{CYAN}│{RESET}  📂 技能分组: {GREEN}{gname}{RESET} {WHITE}({gkey}){RESET}  {ordered_pill}")
+            print(f"{CYAN}│{RESET}  📊 规模: 包含 {WHITE}{len(gskills)}{RESET} 个技能")
+            print(f"{CYAN}├─────────────────────────────────────────────────────────────────┤{RESET}")
             if is_ordered:
-                print(f"\033[1;33m⚑ 有序分组 — 推荐按以下顺序依次调用：\033[0m\n")
+                print(f"{CYAN}│{RESET}  {YELLOW}⚑ 推荐按以下顺序依次调用此组技能：{RESET}\n{CYAN}│{RESET}")
             else:
-                print(f"\033[1;35m💡 该分组包含以下 {len(gskills)} 个技能 (空格键多选，Enter 键批量链接):\033[0m\n")
+                print(f"{CYAN}│{RESET}  {MAGENTA}💡 该分组包含以下技能 (回车键一键全量批量链接)：{RESET}\n{CYAN}│{RESET}")
         else:
-            print(f"\033[1;32m Skill Group: \033[1;37m{gname} ({gkey})\033[0m")
-            print("\033[1;36m" + "=" * 55 + "\033[0m")
+            print(f"{CYAN}│{RESET}  📂 Skill Group: {GREEN}{gname}{RESET} {WHITE}({gkey}){RESET}  {ordered_pill}")
+            print(f"{CYAN}│{RESET}  📊 Total Skills: {WHITE}{len(gskills)}{RESET}")
+            print(f"{CYAN}├─────────────────────────────────────────────────────────────────┤{RESET}")
             if is_ordered:
-                print(f"\033[1;33m⚑ Ordered group — recommended call order:\033[0m\n")
+                print(f"{CYAN}│{RESET}  {YELLOW}⚑ Recommended execution order:{RESET}\n{CYAN}│{RESET}")
             else:
-                print(f"\033[1;35m💡 This group contains the following {len(gskills)} skills (Space to multi-select, Enter to bulk link):\033[0m\n")
+                print(f"{CYAN}│{RESET}  {MAGENTA}💡 Skills contained in this group (Enter to bulk link):{RESET}\n{CYAN}│{RESET}")
         
         user_translations = load_user_translations()
         skills_dir = os.path.expanduser("~/.agents/skills")
@@ -310,37 +404,44 @@ def main():
                     desc_display = en_data.get("description") or ""
             
             if is_ordered:
-                bullet = f"\033[1;33m{circled_num(idx + 1)}\033[0m"
+                bullet = f"{YELLOW}{circled_num(idx + 1)}{RESET}"
             else:
-                bullet = "\033[1;32m•\033[0m"
-            print(f"  {bullet} \033[1;32m{s}\033[0m ({name_display})")
+                bullet = f"{GREEN}•{RESET}"
+            
+            title_part = f" {WHITE}({name_display}){RESET}" if name_display and name_display != s else ""
+            print(f"{CYAN}│{RESET}  {bullet} {GREEN}{s}{RESET}{title_part}")
             if desc_display:
                 desc_single = " ".join([l.strip() for l in desc_display.split("\n") if l.strip()])
-                if is_zh:
-                    print(f"    \033[1;30m描述: {desc_single}\033[0m")
-                else:
-                    print(f"    \033[1;30mDescription: {desc_single}\033[0m")
-            print()
+                if len(desc_single) > 60:
+                    desc_single = desc_single[:57] + "..."
+                print(f"{CYAN}│{RESET}     {GREY}↳ {desc_single}{RESET}")
+            print(f"{CYAN}│{RESET}")
+
+        print(f"{CYAN}╰─────────────────────────────────────────────────────────────────╯{RESET}")
+        print_hotkeys_footer(is_zh)
         sys.exit(0)
 
+    # Single skill preview logic
     skills_dir = os.path.expanduser("~/.agents/skills")
     skill_dir = os.path.join(skills_dir, skill)
     en_path = os.path.join(skill_dir, "SKILL.md")
 
     if not os.path.exists(en_path):
         if is_zh:
-            print(f"\033[1;31m错误：未找到技能 '{skill}' 的 SKILL.md 文件\033[0m")
-            print(f"搜索路径: {en_path}")
+            print(f"\033[1;31m╭─────────────────────────────────────────────────────────╮\033[0m")
+            print(f"\033[1;31m│  [✗] 错误：未找到技能 '{skill}' 的 SKILL.md 文件       │\033[0m")
+            print(f"\033[1;31m╰─────────────────────────────────────────────────────────╯\033[0m")
         else:
-            print(f"\033[1;31mError: SKILL.md file not found for skill '{skill}'\033[0m")
-            print(f"Search path: {en_path}")
+            print(f"\033[1;31m╭─────────────────────────────────────────────────────────╮\033[0m")
+            print(f"\033[1;31m│  [✗] Error: SKILL.md not found for '{skill}'           │\033[0m")
+            print(f"\033[1;31m╰─────────────────────────────────────────────────────────╯\033[0m")
         sys.exit(0)
 
     # 1. Load user cache translation DB
     cache_path = os.path.join(DATA_DIR, "skills_zh.json")
     user_translations = load_user_translations()
 
-    # 2. Check if a local Chinese translation file exists
+    # 2. Check if local Chinese translation file exists
     zh_paths = [
         os.path.join(skill_dir, "SKILL.zh.md"),
         os.path.join(skill_dir, "SKILL.zh-CN.md")
@@ -356,7 +457,7 @@ def main():
     if zh_path:
         zh_meta, zh_body = parse_md_content(zh_path)
 
-    # 3. Dynamic translation if not found (or force translate) and preference is Chinese
+    # 3. Dynamic translation if not found
     cached_to_file = False
     if (is_zh or force_translate) and not zh_meta and en_meta and (skill not in user_translations or force_translate):
         en_name = en_meta.get("name") or skill
@@ -394,84 +495,91 @@ def main():
             name_zh = zh_meta.get("name")
             desc_zh = zh_meta.get("description")
 
-    # Clean description lists
     desc_en_lines = [l.strip() for l in desc_en.split("\n") if l.strip()]
     desc_zh_lines = [l.strip() for l in desc_zh.split("\n") if l.strip()] if desc_zh else []
 
-    # Print layout
-    print("\033[1;36m" + "=" * 55 + "\033[0m")
-    if is_zh:
-        if name_zh:
-            print(f"\033[1;32m 技能: \033[1;37m{name_zh} ({name_en})\033[0m")
-        else:
-            print(f"\033[1;32m 技能: \033[1;37m{name_en}\033[0m")
-    else:
-        print(f"\033[1;32m Skill: \033[1;37m{name_en}\033[0m")
-    print("\033[1;36m" + "=" * 55 + "\033[0m")
-
     # Manifest Source Metadata
+    manifest_meta = None
     manifest_path = os.path.join(DATA_DIR, "skills_manifest.json")
     if os.path.exists(manifest_path):
         try:
             with open(manifest_path, "r", encoding="utf-8") as f:
-                manifest_data = json.load(f)
-                if skill in manifest_data:
-                    smeta = manifest_data[skill]
-                    srepo = smeta.get("repo_url", "")
-                    scommit = smeta.get("commit_hash", "")[:7]
-                    sdate = smeta.get("installed_at", "")[:10]
-                    if is_zh:
-                        print(f"\033[0;36m📦 来源: {srepo} | 版本: {scommit} | 安装: {sdate}\033[0m")
-                    else:
-                        print(f"\033[0;36m📦 Source: {srepo} | Commit: {scommit} | Installed: {sdate}\033[0m")
-                    print("\033[1;36m" + "-" * 55 + "\033[0m")
+                mdata = json.load(f)
+                if skill in mdata:
+                    manifest_meta = mdata[skill]
         except Exception:
             pass
 
-    # Chinese Description
-    if is_zh and desc_zh_lines:
-        print("\033[1;33m功能描述 (中文):\033[0m")
-        for line in desc_zh_lines:
-            print(f"  {line}")
-        print("\033[1;36m" + "-" * 55 + "\033[0m")
-
-    # English Description
-    if desc_en_lines:
-        if is_zh:
-            print("\033[1;33m功能描述 (英文):\033[0m")
-        else:
-            print("\033[1;33mFunctional Description:\033[0m")
-        for line in desc_en_lines:
-            print(f"  {line}")
-        print("\033[1;36m" + "-" * 55 + "\033[0m")
-
-    # Usage Tips
-    if is_zh and usage_zh:
-        print("\033[1;35m💡 使用场景与指南 (中文):\033[0m")
-        print(f"  {usage_zh}")
-        print("\033[1;36m" + "-" * 55 + "\033[0m")
-
-    # Content Preview
+    # 1. Header Banner
+    print(f"{CYAN}╭──────────────────────── 🏷️  技能卡片 (Skill Card) ────────────────────────╮{RESET}")
     if is_zh:
-        print("\033[1;34m内容预览:\033[0m")
+        if name_zh:
+            print(f"{CYAN}│{RESET}  🏷️  技能: {GREEN}{name_zh}{RESET} {WHITE}({name_en}){RESET}")
+        else:
+            print(f"{CYAN}│{RESET}  🏷️  技能: {GREEN}{name_en}{RESET}")
     else:
-        print("\033[1;34mContent Preview:\033[0m")
-        
+        print(f"{CYAN}│{RESET}  🏷️  Skill: {GREEN}{name_en}{RESET}")
+
+    # Metadata bar
+    if manifest_meta:
+        srepo = manifest_meta.get("repo_url", "")
+        if "github.com/" in srepo:
+            srepo = srepo.split("github.com/")[-1].removesuffix(".git")
+        scommit = manifest_meta.get("commit_hash", "unknown")[:7]
+        sdate = manifest_meta.get("installed_at", "")[:10]
+        if is_zh:
+            print(f"{CYAN}│{RESET}  {BLUE}📦 来源: {srepo}{RESET}  │  {YELLOW}🔖 版本: {scommit}{RESET}  │  {GREY}📅 安装: {sdate}{RESET}")
+        else:
+            print(f"{CYAN}│{RESET}  {BLUE}📦 Source: {srepo}{RESET}  │  {YELLOW}🔖 Commit: {scommit}{RESET}  │  {GREY}📅 Installed: {sdate}{RESET}")
+    else:
+        local_tag = "本地自建技能 (Local Standalone)" if is_zh else "Local Standalone Skill"
+        print(f"{CYAN}│{RESET}  {GREY}🏷️  类型: {local_tag}{RESET}")
+
+    print(f"{CYAN}╰──────────────────────────────────────────────────────────────────────────╯{RESET}")
+
+    # 2. Chinese Description Card
+    if is_zh and desc_zh_lines:
+        print(f"{YELLOW}╭─ 🇨🇳 功能描述 (中文) ───────────────────────────────────────────────────╮{RESET}")
+        for line in desc_zh_lines:
+            print(f"{YELLOW}│{RESET}  {WHITE}{line}{RESET}")
+        print(f"{YELLOW}╰─────────────────────────────────────────────────────────────────────────╯{RESET}")
+
+    # 3. English Description Card
+    if desc_en_lines:
+        title_en = "功能描述 (英文)" if is_zh else "Functional Description"
+        print(f"{CYAN}╭─ 🇬🇧 {title_en} ───────────────────────────────────────────────────╮{RESET}")
+        for line in desc_en_lines:
+            print(f"{CYAN}│{RESET}  {WHITE}{line}{RESET}")
+        print(f"{CYAN}╰─────────────────────────────────────────────────────────────────────────╯{RESET}")
+
+    # 4. Usage Scenarios & Guide Card
+    if is_zh and usage_zh:
+        print(f"{MAGENTA}╭─ 💡 使用场景与操作指南 ─────────────────────────────────────────────────╮{RESET}")
+        print(f"{MAGENTA}│{RESET}  {WHITE}{usage_zh}{RESET}")
+        print(f"{MAGENTA}╰─────────────────────────────────────────────────────────────────────────╯{RESET}")
+
+    # 5. Body Markdown Content Preview Card
+    title_content = "正文内容预览 (SKILL.md)" if is_zh else "Content Preview (SKILL.md)"
+    print(f"{BLUE}╭─ 📄 {title_content} ───────────────────────────────────────────╮{RESET}")
     body_to_print = zh_body if (is_zh and zh_body) else en_body
     if body_to_print:
         body_lines = body_to_print.strip().split("\n")
         printed_lines = 0
         for line in body_lines:
-            if not show_full and printed_lines >= 25:
+            if not show_full and printed_lines >= 30:
                 break
-            print(f"  {line}")
+            formatted = format_markdown_line(line)
+            print(f"{BLUE}│{RESET}{formatted}")
             printed_lines += 1
-        if not show_full and len(body_lines) > 25:
-            print("\033[1;30m  ... (more content below) ...\033[0m")
+        if not show_full and len(body_lines) > 30:
+            print(f"{BLUE}│{RESET}  {GREY}... (剩余 {len(body_lines) - 30} 行内容已折叠，按 Ctrl-V 展开预览) ...{RESET}")
+    print(f"{BLUE}╰─────────────────────────────────────────────────────────────────────────╯{RESET}")
             
     if is_zh and cached_to_file:
-        print(f"\033[1;30m  *已自动翻译元数据并持久化至 {DATA_DIR}/skills_zh.json*\033[0m")
+        print(f"{GREY}*已自动翻译元数据并持久化至 {DATA_DIR}/skills_zh.json*{RESET}")
 
+    print_hotkeys_footer(is_zh)
 
 if __name__ == "__main__":
     main()
+

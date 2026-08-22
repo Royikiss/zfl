@@ -450,18 +450,18 @@ mskill() {
             local prompt_msg header_msg
             if [[ "$lang" == zh* ]]; then
                 if (( opt_copy )); then
-                    header_msg="💡 快捷键: 空格:多选 | Ctrl-G:组管理 | Ctrl-U:更新 | Ctrl-B:解绑Git | Ctrl-I:安装 | Ctrl-D:删除组 | Ctrl-T:重译 | Ctrl-V:缩放 | Enter:确认拷贝实体到项目"
+                    header_msg=$'🌿 浏览: Tab/方向键 折叠展开  │  Ctrl-O 全展/全折  │  空格 多选\n⚡ 管理: Ctrl-G 分组  │  Ctrl-D 解散  │  Ctrl-N 安装  │  Ctrl-U 更新\n🚀 执行: Enter 拷贝实体到项目  │  Ctrl-B 解绑Git'
                     prompt_msg="Skill Copy > "
                 else
-                    header_msg="💡 快捷键: 空格:多选 | Ctrl-G:组管理 | Ctrl-U:更新 | Ctrl-B:解绑Git | Ctrl-I:安装 | Ctrl-D:删除组 | Ctrl-T:重译 | Ctrl-V:缩放 | Alt-C:拷贝实体 | Enter:软链接"
+                    header_msg=$'🌿 浏览: Tab/方向键 折叠展开  │  Ctrl-O 全展/全折  │  空格 多选\n⚡ 管理: Ctrl-G 分组  │  Ctrl-D 解散  │  Ctrl-N 安装  │  Ctrl-U 更新\n🚀 执行: Enter 软链接  │  Alt-C 实体拷贝  │  Ctrl-B 解绑Git'
                     prompt_msg="Skill Search > "
                 fi
             else
                 if (( opt_copy )); then
-                    header_msg="💡 Shortcuts: Space:Multi | Ctrl-G:Groups | Ctrl-U:Update | Ctrl-B:Unbind | Ctrl-I:Install | Ctrl-D:Delete | Ctrl-T:Translate | Ctrl-V:Preview | Enter:Copy to Project"
+                    header_msg=$'🌿 Browse: Tab/Arrows Toggle  │  Ctrl-O Toggle All  │  Space Multi\n⚡ Manage: Ctrl-G Groups  │  Ctrl-D Delete  │  Ctrl-N Install  │  Ctrl-U Update\n🚀 Action: Enter Copy to Project  │  Ctrl-B Unbind Git'
                     prompt_msg="Skill Copy > "
                 else
-                    header_msg="💡 Shortcuts: Space:Multi | Ctrl-G:Groups | Ctrl-U:Update | Ctrl-B:Unbind | Ctrl-I:Install | Ctrl-D:Delete | Ctrl-T:Translate | Ctrl-V:Preview | Alt-C:Copy | Enter:Symlink"
+                    header_msg=$'🌿 Browse: Tab/Arrows Toggle  │  Ctrl-O Toggle All  │  Space Multi\n⚡ Manage: Ctrl-G Groups  │  Ctrl-D Delete  │  Ctrl-N Install  │  Ctrl-U Update\n🚀 Action: Enter Symlink  │  Alt-C Copy Entity  │  Ctrl-B Unbind Git'
                     prompt_msg="Skill Search > "
                 fi
             fi
@@ -472,15 +472,22 @@ mskill() {
                 --reverse
                 --multi
                 --expect=alt-c
-                --bind "start:reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
-                --bind "ctrl-t:reload(python3 $ZFL_HOME/python/preview_skill.py --force-translate {1} >/dev/null 2>&1; python3 $ZFL_HOME/python/list_skills_fzf.py)"
-                --bind "ctrl-g:execute(python3 $ZFL_HOME/python/resolve_skills.py --interactive-set {+1})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
-                --bind "ctrl-d:execute(python3 $ZFL_HOME/python/resolve_skills.py --interactive-rm {1})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
-                --bind "ctrl-u:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-update {1})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
-                --bind "ctrl-b:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-unbind {1})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
-                --bind "ctrl-i:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-install)+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
+                --bind "start:execute(python3 $ZFL_HOME/python/list_skills_fzf.py --init)+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
+                --bind "tab:execute(python3 $ZFL_HOME/python/list_skills_fzf.py --toggle {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
+                --bind "btab:execute(python3 $ZFL_HOME/python/list_skills_fzf.py --toggle-all)+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
+                --bind "ctrl-o:execute(python3 $ZFL_HOME/python/list_skills_fzf.py --toggle-all)+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
+                --bind "ctrl-e:execute(python3 $ZFL_HOME/python/list_skills_fzf.py --toggle-all)+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
+                --bind "right:execute(python3 $ZFL_HOME/python/list_skills_fzf.py --expand {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
+                --bind "left:execute(python3 $ZFL_HOME/python/list_skills_fzf.py --collapse {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
+                --bind "space:toggle+down"
+                --bind "ctrl-t:reload(python3 $ZFL_HOME/python/preview_skill.py --force-translate {} >/dev/null 2>&1; python3 $ZFL_HOME/python/list_skills_fzf.py)"
+                --bind "ctrl-g:execute(python3 $ZFL_HOME/python/resolve_skills.py --interactive-set {+})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
+                --bind "ctrl-d:execute(python3 $ZFL_HOME/python/resolve_skills.py --interactive-rm {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
+                --bind "ctrl-u:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-update {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
+                --bind "ctrl-b:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-unbind {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
+                --bind "ctrl-n:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-install)+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
                 --bind "ctrl-v:toggle-preview-wrap"
-                --preview "python3 $ZFL_HOME/python/preview_skill.py {1}"
+                --preview "python3 $ZFL_HOME/python/preview_skill.py {}"
                 --preview-window "right:50%:wrap"
                 --header "$header_msg"
                 --prompt "$prompt_msg"
@@ -491,7 +498,7 @@ mskill() {
 
             if [[ -z "$selected_raw" ]]; then
                 if [[ "$lang" == zh* ]]; then
-                    echo "未选择任何 skill。"
+                    echo "未选择任何技能。"
                 else
                     echo "No skill selected."
                 fi
@@ -507,8 +514,7 @@ mskill() {
                     fi
                     continue
                 fi
-                local s_id="${line%% *}"
-                [[ -n "$s_id" ]] && skills_to_link+=("$s_id")
+                [[ -n "$line" ]] && skills_to_link+=("$line")
             done <<< "$selected_raw"
         else
             if [[ "$lang" == zh* ]]; then
@@ -580,27 +586,35 @@ mskill() {
     if (( ${#success_skills[@]} > 0 )); then
         if (( opt_copy )); then
             if [[ "$lang" == zh* ]]; then
-                echo -e "${GREEN}[mskill] 成功将以下技能实体拷贝到当前项目的 $dest_dir/ :${RESET}"
+                echo -e "${GREEN}╭──────────────────────── ✓ 技能实体拷贝成功 ────────────────────────╮${RESET}"
+                echo -e "${GREEN}│${RESET} 成功将以下 ${#success_skills[@]} 个技能实体独立拷贝至 ${CYAN}$dest_dir/${RESET} :"
                 for skill in "${success_skills[@]}"; do
-                    echo -e "  ${GREEN}✓${RESET} $skill -> $dest_dir/$skill (实体副本)"
+                    echo -e "${GREEN}│${RESET}   ${GREEN}✓${RESET} $skill -> $dest_dir/$skill (实体副本)"
                 done
+                echo -e "${GREEN}╰────────────────────────────────────────────────────────────────────╯${RESET}"
             else
-                echo -e "${GREEN}[mskill] Successfully copied the following skill entities to $dest_dir/ :${RESET}"
+                echo -e "${GREEN}╭──────────────────────── ✓ Skill Entities Copied ────────────────────╮${RESET}"
+                echo -e "${GREEN}│${RESET} Successfully copied ${#success_skills[@]} skill entities to ${CYAN}$dest_dir/${RESET} :"
                 for skill in "${success_skills[@]}"; do
-                    echo -e "  ${GREEN}✓${RESET} $skill -> $dest_dir/$skill (copied entity)"
+                    echo -e "${GREEN}│${RESET}   ${GREEN}✓${RESET} $skill -> $dest_dir/$skill (copied entity)"
                 done
+                echo -e "${GREEN}╰────────────────────────────────────────────────────────────────────╯${RESET}"
             fi
         else
             if [[ "$lang" == zh* ]]; then
-                echo -e "${GREEN}[mskill] 成功将以下技能软链接到当前项目的 $dest_dir/ :${RESET}"
+                echo -e "${GREEN}╭──────────────────────── ✓ 技能软链接成功 ──────────────────────────╮${RESET}"
+                echo -e "${GREEN}│${RESET} 成功将以下 ${#success_skills[@]} 个技能软链接至 ${CYAN}$dest_dir/${RESET} :"
                 for skill in "${success_skills[@]}"; do
-                    echo -e "  ${GREEN}✓${RESET} $skill -> $dest_dir/$skill (软链接)"
+                    echo -e "${GREEN}│${RESET}   ${GREEN}✓${RESET} $skill -> $dest_dir/$skill (软链接)"
                 done
+                echo -e "${GREEN}╰────────────────────────────────────────────────────────────────────╯${RESET}"
             else
-                echo -e "${GREEN}[mskill] Successfully symlinked the following skills to $dest_dir/ :${RESET}"
+                echo -e "${GREEN}╭──────────────────────── ✓ Skills Symlinked ────────────────────────╮${RESET}"
+                echo -e "${GREEN}│${RESET} Successfully symlinked ${#success_skills[@]} skills to ${CYAN}$dest_dir/${RESET} :"
                 for skill in "${success_skills[@]}"; do
-                    echo -e "  ${GREEN}✓${RESET} $skill -> $dest_dir/$skill (symlink)"
+                    echo -e "${GREEN}│${RESET}   ${GREEN}✓${RESET} $skill -> $dest_dir/$skill (symlink)"
                 done
+                echo -e "${GREEN}╰────────────────────────────────────────────────────────────────────╯${RESET}"
             fi
         fi
     fi
@@ -613,15 +627,19 @@ mskill() {
             action_str=$([[ "$lang" == zh* ]] && echo "软链接" || echo "link")
         fi
         if [[ "$lang" == zh* ]]; then
-            echo -e "${RED}[mskill] 以下技能${action_str}失败:${RESET}" >&2
+            echo -e "${RED}╭──────────────────────── ✗ 操作部分失败 ───────────────────────────╮${RESET}" >&2
+            echo -e "${RED}│${RESET} 以下技能${action_str}失败:" >&2
             for skill in "${failed_skills[@]}"; do
-                echo -e "  ${RED}✗${RESET} $skill" >&2
+                echo -e "${RED}│${RESET}   ${RED}✗${RESET} $skill" >&2
             done
+            echo -e "${RED}╰────────────────────────────────────────────────────────────────────╯${RESET}" >&2
         else
-            echo -e "${RED}[mskill] Failed to ${action_str} the following skills:${RESET}" >&2
+            echo -e "${RED}╭──────────────────────── ✗ Operation Failed ────────────────────────╮${RESET}" >&2
+            echo -e "${RED}│${RESET} Failed to ${action_str} the following skills:" >&2
             for skill in "${failed_skills[@]}"; do
-                echo -e "  ${RED}✗${RESET} $skill" >&2
+                echo -e "${RED}│${RESET}   ${RED}✗${RESET} $skill" >&2
             done
+            echo -e "${RED}╰────────────────────────────────────────────────────────────────────╯${RESET}" >&2
         fi
         return 1
     fi

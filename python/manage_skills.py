@@ -692,8 +692,27 @@ def update_skills_workflow(target_skills=None, update_all=False):
         c_print("0;33", "Notice: All skill groups preserved intact, symlinks updated automatically.")
     return 0
 
+def strip_ansi(s):
+    return re.sub(r'\x1b\[[0-9;]*m', '', s)
+
+def clean_item_id(s):
+    if not s:
+        return ""
+    s_clean = strip_ansi(s)
+    # Strip tree prefixes, icons, whitespace
+    s_clean = re.sub(r'^[ \t│├└─\-\+📦📁📂•▶▼\s]+', '', s_clean).strip()
+    parts = s_clean.split()
+    if not parts:
+        return ""
+    token = parts[0].strip("[](),:;")
+    if "group:" in s_clean and not token.startswith("group:"):
+        m = re.search(r'group:[^\s\[\]()]+', s_clean)
+        if m:
+            return m.group(0).strip("[](),:;")
+    return token
+
 def list_skills_status():
-    """Display installation and version status of all skills."""
+    """Display installation and version status of all skills in a sleek rounded table."""
     manifest = load_manifest()
     installed_dirs = []
     if os.path.exists(SKILLS_DIR):
@@ -707,38 +726,65 @@ def list_skills_status():
             c_print("1;33", "No skills found under ~/.agents/skills/.")
         return 0
 
-    print("\033[1;36m" + "=" * 75 + "\033[0m")
+    CYAN = "\033[1;36m"
+    GREEN = "\033[1;32m"
+    YELLOW = "\033[1;33m"
+    BLUE = "\033[1;34m"
+    MAGENTA = "\033[1;35m"
+    WHITE = "\033[1;37m"
+    GREY = "\033[0;90m"
+    RESET = "\033[0m"
+
+    tracked_count = sum(1 for d in installed_dirs if d in manifest)
+    local_count = len(installed_dirs) - tracked_count
+
+    print(f"{CYAN}╭──────────────────────── 📦 AI Agent 技能版本与来源状态 ────────────────────────╮{RESET}")
     if IS_ZH:
-        print(f"\033[1;37m{'技能名称 (Skill Name)':<26} {'版本/Commit':<12} {'来源 (Source Repo)':<35}\033[0m")
+        stat_line = f"  总计安装: {WHITE}{len(installed_dirs)}{RESET} 个  │  {BLUE}📦 Git 追踪: {tracked_count} 个{RESET}  │  {GREY}🏷️ 本地自建: {local_count} 个{RESET}"
     else:
-        print(f"\033[1;37m{'Skill Name':<26} {'Commit':<12} {'Source Repo':<35}\033[0m")
-    print("\033[1;36m" + "-" * 75 + "\033[0m")
+        stat_line = f"  Total: {WHITE}{len(installed_dirs)}{RESET}  │  {BLUE}📦 Tracked: {tracked_count}{RESET}  │  {GREY}🏷️ Local: {local_count}{RESET}"
+    print(f"{CYAN}│{RESET}{stat_line}")
+    print(f"{CYAN}├──────────────────────────┬──────────────┬──────────────┬────────────────────────┤{RESET}")
+    if IS_ZH:
+        print(f"{CYAN}│{RESET} {WHITE}{'技能名称 (Skill Name)':<24}{RESET} {CYAN}│{RESET} {WHITE}{'类型 (Type)':<12}{RESET} {CYAN}│{RESET} {WHITE}{'版本 (Commit)':<12}{RESET} {CYAN}│{RESET} {WHITE}{'来源仓库 (Source Repo)':<22}{RESET} {CYAN}│{RESET}")
+    else:
+        print(f"{CYAN}│{RESET} {WHITE}{'Skill Name':<24}{RESET} {CYAN}│{RESET} {WHITE}{'Type':<12}{RESET} {CYAN}│{RESET} {WHITE}{'Commit':<12}{RESET} {CYAN}│{RESET} {WHITE}{'Source Repo':<22}{RESET} {CYAN}│{RESET}")
+    print(f"{CYAN}├──────────────────────────┼──────────────┼──────────────┼────────────────────────┤{RESET}")
 
     for s_name in installed_dirs:
+        disp_name = s_name if len(s_name) <= 24 else s_name[:21] + "..."
         if s_name in manifest:
             meta = manifest[s_name]
             commit_short = meta.get("commit_hash", "unknown")[:7]
             repo_display = meta.get("repo_url", "")
             if "github.com/" in repo_display:
                 repo_display = repo_display.split("github.com/")[-1].removesuffix(".git")
-            print(f"\033[1;32m{s_name:<26}\033[0m \033[0;33m{commit_short:<12}\033[0m {repo_display:<35}")
+            if len(repo_display) > 22:
+                repo_display = repo_display[:19] + "..."
+            type_pill = f"{BLUE}Git 追踪{RESET}" if IS_ZH else f"{BLUE}Tracked{RESET}"
+            print(f"{CYAN}│{RESET} {GREEN}{disp_name:<24}{RESET} {CYAN}│{RESET} {type_pill:<21} {CYAN}│{RESET} {YELLOW}{commit_short:<12}{RESET} {CYAN}│{RESET} {WHITE}{repo_display:<22}{RESET} {CYAN}│{RESET}")
         else:
-            local_tag = "本地自建" if IS_ZH else "local"
-            print(f"\033[1;37m{s_name:<26}\033[0m \033[0;90m{local_tag:<12}\033[0m \033[0;90m-\033[0m")
+            local_tag = f"{GREY}本地自建{RESET}" if IS_ZH else f"{GREY}Local{RESET}"
+            dash = f"{GREY}-{RESET}"
+            print(f"{CYAN}│{RESET} {WHITE}{disp_name:<24}{RESET} {CYAN}│{RESET} {local_tag:<21} {CYAN}│{RESET} {dash:<21} {CYAN}│{RESET} {dash:<31} {CYAN}│{RESET}")
 
-    print("\033[1;36m" + "=" * 75 + "\033[0m")
+    print(f"{CYAN}╰──────────────────────────┴──────────────┴──────────────┴────────────────────────╯{RESET}")
+    if IS_ZH:
+        print(f"{GREY}💡 提示: 运行 'mskill -u <名>' 更新技能，'mskill -b <名>' 解绑 Git 追踪。{RESET}\n")
+    else:
+        print(f"{GREY}💡 Tip: Run 'mskill -u <name>' to update, 'mskill -b <name>' to unbind Git.{RESET}\n")
     return 0
 
 def uninstall_skill_workflow(skill_name):
     """Uninstall a skill and clean up its manifest entry."""
-    s_name = skill_name.strip()
+    s_name = clean_item_id(skill_name)
     dest_path = os.path.join(SKILLS_DIR, s_name)
 
     if not os.path.exists(dest_path):
         if IS_ZH:
-            c_print("1;31", f"错误: 技能 '{s_name}' 在 ~/.agents/skills/ 中不存在。", file=sys.stderr)
+            c_print("1;31", f"[✗] 错误: 技能 '{s_name}' 在 ~/.agents/skills/ 中不存在。", file=sys.stderr)
         else:
-            c_print("1;31", f"Error: Skill '{s_name}' does not exist in ~/.agents/skills/.", file=sys.stderr)
+            c_print("1;31", f"[✗] Error: Skill '{s_name}' does not exist in ~/.agents/skills/.", file=sys.stderr)
         return 1
 
     if os.path.isdir(dest_path):
@@ -759,32 +805,30 @@ def uninstall_skill_workflow(skill_name):
 
 def interactive_install_workflow():
     """Interactive workflow invoked from FZF or CLI to install a new skill."""
-    print("\033[1;36m" + "=" * 55 + "\033[0m")
+    print("\033[1;36m╭──────────────── 📥 安装/下载新的 AI Agent 技能 ────────────────╮\033[0m")
     if IS_ZH:
-        print("\033[1;32m📥 安装/下载新的 AI Agent 技能 (Skill)\033[0m")
-        print("支持输入:")
-        print("  - GitHub 仓库简写 (如 anthropics/anthropic-quickstarts)")
-        print("  - 完整 URL (如 https://github.com/owner/repo)")
-        print("  - 目录直链 (如 https://github.com/owner/repo/tree/main/skills/video)")
+        print("\033[1;37m│  支持输入:\033[0m")
+        print("\033[0;90m│    • GitHub 简写 (如 anthropics/anthropic-quickstarts)\033[0m")
+        print("\033[0;90m│    • 完整仓库 URL (如 https://github.com/owner/repo)\033[0m")
+        print("\033[0;90m│    • 目录直链 (如 https://github.com/owner/repo/tree/main/skills/video)\033[0m")
     else:
-        print("\033[1;32m📥 Install / Download new AI Agent Skill\033[0m")
-        print("Supported formats:")
-        print("  - GitHub shorthand (e.g. anthropics/anthropic-quickstarts)")
-        print("  - Full URL (e.g. https://github.com/owner/repo)")
-        print("  - Subdirectory URL (e.g. https://github.com/owner/repo/tree/main/skills/video)")
-    print("\033[1;36m" + "=" * 55 + "\033[0m")
+        print("\033[1;37m│  Supported formats:\033[0m")
+        print("\033[0;90m│    • GitHub shorthand (e.g. anthropics/anthropic-quickstarts)\033[0m")
+        print("\033[0;90m│    • Full URL (e.g. https://github.com/owner/repo)\033[0m")
+        print("\033[0;90m│    • Subdirectory URL (e.g. https://github.com/owner/repo/tree/main/skills/video)\033[0m")
+    print("\033[1;36m╰────────────────────────────────────────────────────────────────╯\033[0m")
 
     if IS_ZH:
-        target = safe_input("请输入技能仓库地址或简写 (回车取消):")
+        target = safe_input("请输入技能仓库地址或简写 (直接回车取消):")
     else:
         target = safe_input("Please enter repository URL or shorthand (Enter to cancel):")
 
     if not target:
         if IS_ZH:
-            c_print("1;33", "操作已取消。")
+            c_print("1;33", "[*] 操作已取消。")
             safe_input("\n按回车键返回 FZF...")
         else:
-            c_print("1;33", "Operation cancelled.")
+            c_print("1;33", "[*] Operation cancelled.")
             safe_input("\nPress Enter to return to FZF...")
         return 0
 
@@ -797,10 +841,12 @@ def interactive_install_workflow():
 
 def interactive_update_workflow(focused_item):
     """Interactive workflow to update a focused skill or all skills from FZF."""
-    s_name = focused_item.strip()
+    s_name = clean_item_id(focused_item)
+    if not s_name:
+        return 0
+
     if s_name.startswith("group:"):
         gkey = s_name[6:]
-        # Update all skills in this group
         try:
             with open(GROUPS_FILE, "r", encoding="utf-8") as f:
                 gdata = json.load(f)
@@ -809,20 +855,21 @@ def interactive_update_workflow(focused_item):
             gskills = []
         if not gskills:
             if IS_ZH:
-                c_print("1;33", f"分组 '{gkey}' 中没有技能。")
+                c_print("1;33", f"[*] 分组 '{gkey}' 中没有技能。")
             else:
-                c_print("1;33", f"No skills in group '{gkey}'.")
+                c_print("1;33", f"[*] No skills in group '{gkey}'.")
+            safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
             return 0
         if IS_ZH:
-            c_print("1;34", f"正在更新分组 '{gkey}' 中的 {len(gskills)} 个技能...")
+            c_print("1;34", f"==> 正在更新分组 '{gkey}' 中的 {len(gskills)} 个技能...")
         else:
-            c_print("1;34", f"Updating {len(gskills)} skills in group '{gkey}'...")
+            c_print("1;34", f"==> Updating {len(gskills)} skills in group '{gkey}'...")
         ret = update_skills_workflow(target_skills=gskills)
     else:
         if IS_ZH:
-            c_print("1;34", f"正在检查并更新技能 '{s_name}'...")
+            c_print("1;34", f"==> 正在检查并更新技能 '{s_name}'...")
         else:
-            c_print("1;34", f"Checking and updating skill '{s_name}'...")
+            c_print("1;34", f"==> Checking and updating skill '{s_name}'...")
         ret = update_skills_workflow(target_skills=[s_name])
 
     if IS_ZH:
@@ -848,8 +895,8 @@ def unbind_skills_workflow(target_skills):
     unbound_count = 0
     not_tracked_count = 0
 
-    for s_name in target_skills:
-        s_name = s_name.strip()
+    for raw_name in target_skills:
+        s_name = clean_item_id(raw_name)
         if not s_name:
             continue
         dest_path = os.path.join(SKILLS_DIR, s_name)
@@ -883,11 +930,11 @@ def unbind_skills_workflow(target_skills):
 
 def interactive_unbind_workflow(focused_item):
     """Interactive workflow to unbind Git tracking for a focused skill or group from FZF."""
-    s_name = focused_item.strip()
+    s_name = clean_item_id(focused_item)
     if not s_name:
         return 0
 
-    print("\033[1;36m" + "=" * 55 + "\033[0m")
+    print("\033[1;36m╭──────────────── 🔗 解绑远程 Git 关联 ────────────────╮\033[0m")
     if s_name.startswith("group:"):
         gkey = s_name[6:]
         try:
@@ -898,9 +945,9 @@ def interactive_unbind_workflow(focused_item):
             gskills = []
         if not gskills:
             if IS_ZH:
-                c_print("1;33", f"分组 '{gkey}' 中没有技能。")
+                c_print("1;33", f"[*] 分组 '{gkey}' 中没有技能。")
             else:
-                c_print("1;33", f"No skills in group '{gkey}'.")
+                c_print("1;33", f"[*] No skills in group '{gkey}'.")
             safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
             return 0
 
@@ -908,26 +955,28 @@ def interactive_unbind_workflow(focused_item):
         tracked = [s for s in gskills if s in manifest]
         if not tracked:
             if IS_ZH:
-                c_print("1;33", f"分组 '{gkey}' 中的技能均为本地技能，无需解绑。")
+                c_print("1;33", f"[*] 分组 '{gkey}' 中的技能均为本地技能，无需解绑。")
             else:
-                c_print("1;33", f"All skills in group '{gkey}' are already local skills.")
+                c_print("1;33", f"[*] All skills in group '{gkey}' are already local skills.")
             safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
             return 0
 
         if IS_ZH:
-            c_print("1;35", f"🔗 解绑 Git 关联")
-            c_print("0;37", f"分组 '{gkey}' 下有 {len(tracked)} 个已绑定 Git 的技能: {', '.join(tracked)}")
+            print(f"\033[1;37m│  分组 '\033[1;33m{gkey}\033[1;37m' 下有 {len(tracked)} 个已绑定 Git 的技能:\033[0m")
+            print(f"\033[0;90m│  {', '.join(tracked)}\033[0m")
+            print("\033[1;36m╰─────────────────────────────────────────────────────╯\033[0m")
             ans = safe_input("确定要解绑该分组下所有技能的远程 Git 关联吗？(y/N):")
         else:
-            c_print("1;35", f"🔗 Unbind Git Tracking")
-            c_print("0;37", f"Group '{gkey}' has {len(tracked)} tracked skills: {', '.join(tracked)}")
+            print(f"\033[1;37m│  Group '\033[1;33m{gkey}\033[1;37m' has {len(tracked)} tracked skills:\033[0m")
+            print(f"\033[0;90m│  {', '.join(tracked)}\033[0m")
+            print("\033[1;36m╰─────────────────────────────────────────────────────╯\033[0m")
             ans = safe_input("Are you sure you want to unbind all skills in this group? (y/N):")
 
         if ans.lower() not in ("y", "yes"):
             if IS_ZH:
-                c_print("1;33", "操作已取消。")
+                c_print("1;33", "[*] 操作已取消。")
             else:
-                c_print("1;33", "Operation cancelled.")
+                c_print("1;33", "[*] Operation cancelled.")
             safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
             return 0
 
@@ -944,19 +993,19 @@ def interactive_unbind_workflow(focused_item):
 
         repo_url = manifest[s_name].get("repo_url", "remote git")
         if IS_ZH:
-            c_print("1;35", f"🔗 解绑 Git 关联")
-            c_print("0;37", f"技能 '{s_name}' 当前绑定了远程仓库: {repo_url}")
+            print(f"\033[1;37m│  技能 '\033[1;32m{s_name}\033[1;37m' 当前绑定了远程仓库: \033[0;36m{repo_url}\033[0m")
+            print("\033[1;36m╰─────────────────────────────────────────────────────╯\033[0m")
             ans = safe_input(f"确定要解绑技能 '{s_name}' 的 Git 关联吗？(y/N):")
         else:
-            c_print("1;35", f"🔗 Unbind Git Tracking")
-            c_print("0;37", f"Skill '{s_name}' is currently linked to: {repo_url}")
+            print(f"\033[1;37m│  Skill '\033[1;32m{s_name}\033[1;37m' is currently linked to: \033[0;36m{repo_url}\033[0m")
+            print("\033[1;36m╰─────────────────────────────────────────────────────╯\033[0m")
             ans = safe_input(f"Are you sure you want to unbind Git tracking for '{s_name}'? (y/N):")
 
         if ans.lower() not in ("y", "yes"):
             if IS_ZH:
-                c_print("1;33", "操作已取消。")
+                c_print("1;33", "[*] 操作已取消。")
             else:
-                c_print("1;33", "Operation cancelled.")
+                c_print("1;33", "[*] Operation cancelled.")
             safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
             return 0
 
@@ -1022,3 +1071,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+

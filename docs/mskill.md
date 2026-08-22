@@ -18,7 +18,7 @@
    - Symlinks skills into `.agents/skills/` of the current working directory.
    - Any updates in global `~/.agents/skills/` automatically sync into projects without relinking.
 4. **Interactive FZF Interface**:
-   - Real-time previews, bilingual descriptions, and hotkeys for group management (`Ctrl-G`), updating (`Ctrl-U`), unbinding Git (`Ctrl-B`), installing (`Ctrl-I`), and deleting (`Ctrl-D`).
+    - Real-time previews, bilingual descriptions, and hotkeys for group toggle (`Tab` / `→` / `←`), toggle all (`Ctrl-O`), multi-select (`Space`), group management (`Ctrl-G`), updating (`Ctrl-U`), unbinding Git (`Ctrl-B`), installing (`Ctrl-N`), and deleting (`Ctrl-D`).
 5. **Unbind Git Tracking (Convert to Local)**:
    - For deprecated, unmaintained, or locally customized skills, use `mskill -b <skill_name>` or `Ctrl-B` in FZF to detach from upstream Git tracking.
    - Preserves all skill files and group configurations while preventing unwanted remote updates or overwrites.

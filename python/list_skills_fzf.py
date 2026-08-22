@@ -84,9 +84,6 @@ DEFAULT_TRANSLATIONS = {
 }
 
 def parse_md_frontmatter(path):
-    """
-    Parse YAML frontmatter from a markdown file.
-    """
     if not os.path.exists(path):
         return None
     try:
@@ -155,7 +152,6 @@ def load_user_translations():
     try:
         with open(cache_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            # Auto-merge defaults if missing
             updated = False
             for k, v in DEFAULT_TRANSLATIONS.items():
                 if k not in data:
@@ -171,9 +167,51 @@ def load_user_translations():
     except Exception:
         return DEFAULT_TRANSLATIONS
 
+STATE_FILE = os.path.expanduser("~/.cache/zsh/mskill_fzf_state.json")
+
+def load_state():
+    if not os.path.exists(STATE_FILE):
+        return {"expanded_groups": [], "expand_all": False}
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    return {"expanded_groups": [], "expand_all": False}
+
+def save_state(state):
+    try:
+        os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+    except Exception:
+        pass
+
+def strip_ansi(s):
+    return re.sub(r'\x1b\[[0-9;]*m', '', s)
+
+def clean_item_id(s):
+    if not s:
+        return ""
+    s_clean = strip_ansi(s)
+    # Strip tree prefixes, icons, whitespace
+    s_clean = re.sub(r'^[ \t│├└─\-\+📦📁📂•▶▼\s]+', '', s_clean).strip()
+    parts = s_clean.split()
+    if not parts:
+        return ""
+    token = parts[0].strip("[](),:;")
+    if "group:" in s_clean and not token.startswith("group:"):
+        m = re.search(r'group:[^\s\[\]()]+', s_clean)
+        if m:
+            return m.group(0).strip("[](),:;")
+    return token
+
 def get_display_width(s):
+    s_clean = strip_ansi(s)
     w = 0
-    for ch in s:
+    for ch in s_clean:
         status = unicodedata.east_asian_width(ch)
         if status in ('F', 'W'):
             w += 2
@@ -187,6 +225,94 @@ def pad_display(s, target_width):
         return s
     return s + " " * (target_width - curr_w)
 
+def get_skill_info(skill, skills_dir, is_zh, user_translations):
+    name_display = skill
+    desc_display = ""
+    
+    if is_zh:
+        if skill in user_translations:
+            name_display = user_translations[skill].get("name_zh") or user_translations[skill].get("name", skill)
+            desc_display = user_translations[skill].get("desc_zh") or user_translations[skill].get("description", "")
+        else:
+            zh_paths = [
+                os.path.join(skills_dir, skill, "SKILL.zh.md"),
+                os.path.join(skills_dir, skill, "SKILL.zh-CN.md")
+            ]
+            zh_data = None
+            for p in zh_paths:
+                if os.path.exists(p):
+                    zh_data = parse_md_frontmatter(p)
+                    if zh_data:
+                        break
+            if zh_data:
+                name_display = zh_data.get("name") or skill
+                desc_display = zh_data.get("description") or ""
+            else:
+                en_path = os.path.join(skills_dir, skill, "SKILL.md")
+                en_data = parse_md_frontmatter(en_path)
+                if en_data:
+                    name_display = en_data.get("name") or skill
+                    desc_display = en_data.get("description") or ""
+    else:
+        en_path = os.path.join(skills_dir, skill, "SKILL.md")
+        en_data = parse_md_frontmatter(en_path)
+        if en_data:
+            name_display = en_data.get("name") or skill
+            desc_display = en_data.get("description") or ""
+
+    desc_single = " ".join([l.strip() for l in desc_display.split("\n") if l.strip()]).strip('“"”')
+    if len(desc_single) > 55:
+        desc_single = desc_single[:52] + "..."
+
+    return name_display, desc_single
+
+def find_group_for_item(item_raw, groups):
+    token = clean_item_id(item_raw)
+    if token.startswith("group:"):
+        gkey = token[6:]
+        if gkey in groups:
+            return gkey
+    # Check if token is a member of any group
+    for gkey, info in groups.items():
+        gskills = info.get("skills", []) if isinstance(info, dict) else info
+        if token in gskills:
+            return gkey
+    return None
+
+def handle_action(action, arg, groups):
+    state = load_state()
+    expanded = set(state.get("expanded_groups", []))
+
+    if action == "--init":
+        save_state({"expanded_groups": [], "expand_all": False})
+        return
+
+    if action == "--toggle-all":
+        if state.get("expand_all", False) or len(expanded) >= len(groups):
+            save_state({"expanded_groups": [], "expand_all": False})
+        else:
+            save_state({"expanded_groups": list(groups.keys()), "expand_all": True})
+        return
+
+    gkey = find_group_for_item(arg, groups)
+    if not gkey:
+        return
+
+    if action == "--toggle":
+        if gkey in expanded:
+            expanded.remove(gkey)
+        else:
+            expanded.add(gkey)
+    elif action == "--expand":
+        expanded.add(gkey)
+    elif action == "--collapse":
+        expanded.discard(gkey)
+
+    save_state({
+        "expanded_groups": list(expanded),
+        "expand_all": (len(expanded) == len(groups) and len(groups) > 0)
+    })
+
 def main():
     skills_dir = os.path.expanduser("~/.agents/skills")
     if not os.path.exists(skills_dir):
@@ -196,12 +322,7 @@ def main():
     lang = os.environ.get("ZFL_LANG") or os.environ.get("LANG", "en")
     is_zh = lang.startswith("zh")
 
-    # Load translations from ~/.cache/zsh/skills_zh.json (initialize if needed)
-    user_translations = load_user_translations()
-
-    items = []
-
-    # Load groups and add them to items
+    # Load groups
     groups = {}
     try:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -210,6 +331,30 @@ def main():
     except Exception:
         pass
 
+    # Action handling (e.g. --toggle, --toggle-all, --expand, --collapse, --init)
+    if len(sys.argv) > 1 and sys.argv[1].startswith("--"):
+        action = sys.argv[1]
+        arg = sys.argv[2] if len(sys.argv) > 2 else ""
+        handle_action(action, arg, groups)
+        sys.exit(0)
+
+    user_translations = load_user_translations()
+    state = load_state()
+    expanded_groups = set(state.get("expanded_groups", []))
+    expand_all = state.get("expand_all", False)
+
+    # All installed skills
+    all_skills = []
+    if os.path.exists(skills_dir):
+        for entry in sorted(os.listdir(skills_dir)):
+            entry_path = os.path.join(skills_dir, entry)
+            if os.path.isdir(entry_path):
+                all_skills.append(entry)
+
+    items = []
+    skills_in_groups = set()
+
+    # Build hierarchical group nodes & child skill nodes
     for gid, info in sorted(groups.items()):
         if isinstance(info, dict):
             name = info.get("name", gid)
@@ -220,99 +365,84 @@ def main():
             gskills = info
             is_ordered = False
 
-        item_id = f"group:{gid}"
-        name_bracket = f"[分组: {name}]" if is_zh else f"[Group: {name}]"
+        for s in gskills:
+            skills_in_groups.add(s)
+
+        is_expanded = expand_all or (gid in expanded_groups)
+        toggle_icon = "\033[1;33m▼\033[0m" if is_expanded else "\033[1;34m▶\033[0m"
+        group_id_display = f"{toggle_icon} \033[1;36mgroup:{gid}\033[0m"
+        name_bracket = f"\033[1;33m[分组: {name}]\033[0m" if is_zh else f"\033[1;33m[Group: {name}]\033[0m"
+
+        hint_pill = f" \033[0;90m[Tab折叠]\033[0m" if is_expanded else f" \033[0;90m[Tab展开]\033[0m"
+        if not is_zh:
+            hint_pill = f" \033[0;90m[Tab:collapse]\033[0m" if is_expanded else f" \033[0;90m[Tab:expand]\033[0m"
 
         if is_ordered:
             def _cn(n):
                 return chr(0x245F + n) if 1 <= n <= 20 else f"({n})"
             numbered = " ".join(f"{_cn(i+1)}{s}" for i, s in enumerate(gskills))
-            desc_single = f"⚑ 有序 · {numbered}" if is_zh else f"⚑ Ordered · {numbered}"
+            desc_single = f"\033[0;35m⚑ 有序 · {len(gskills)} 个技能 ({numbered})\033[0m{hint_pill}" if is_zh else f"\033[0;35m⚑ Ordered · {len(gskills)} skills ({numbered})\033[0m{hint_pill}"
         else:
-            gskills_str = ", ".join(gskills)
-            desc_single = f"包含: {gskills_str}" if is_zh else f"Contains: {gskills_str}"
+            gskills_summary = ", ".join(gskills[:5]) + ("..." if len(gskills) > 5 else "")
+            desc_single = f"\033[0;36m📂 包含 {len(gskills)} 个技能 ({gskills_summary})\033[0m{hint_pill}" if is_zh else f"\033[0;36m📂 Contains {len(gskills)} skills ({gskills_summary})\033[0m{hint_pill}"
 
         items.append({
-            "id": item_id,
-            "name_bracket": name_bracket,
-            "desc": desc_single
+            "col1": group_id_display,
+            "col2": name_bracket,
+            "col3": desc_single
         })
 
-    # Scan available skills
-    skills = []
-    for entry in sorted(os.listdir(skills_dir)):
-        entry_path = os.path.join(skills_dir, entry)
-        if not os.path.isdir(entry_path):
-            continue
-        skills.append(entry)
-
-    for skill in skills:
-        name_display = skill
-        desc_display = ""
-        
-        if is_zh:
-            # 1. Check database cache for Chinese translations
-            if skill in user_translations:
-                name_display = user_translations[skill].get("name_zh") or user_translations[skill].get("name", skill)
-                desc_display = user_translations[skill].get("desc_zh") or user_translations[skill].get("description", "")
-            else:
-                # 2. Check local SKILL.zh.md or SKILL.zh-CN.md (fallback)
-                zh_paths = [
-                    os.path.join(skills_dir, skill, "SKILL.zh.md"),
-                    os.path.join(skills_dir, skill, "SKILL.zh-CN.md")
-                ]
-                zh_data = None
-                for p in zh_paths:
-                    if os.path.exists(p):
-                        zh_data = parse_md_frontmatter(p)
-                        if zh_data:
-                            break
+        # Output children only when this group is expanded
+        if is_expanded:
+            for idx, skill in enumerate(gskills):
+                is_last = (idx == len(gskills) - 1)
+                tree_branch = "  └── " if is_last else "  ├── "
                 
-                if zh_data:
-                    name_display = zh_data.get("name") or skill
-                    desc_display = zh_data.get("description") or ""
-                else:
-                    # 3. Fallback to English SKILL.md
-                    en_path = os.path.join(skills_dir, skill, "SKILL.md")
-                    en_data = parse_md_frontmatter(en_path)
-                    if en_data:
-                        name_display = en_data.get("name") or skill
-                        desc_display = en_data.get("description") or ""
-        else:
-            # English preference: load from English SKILL.md directly
-            en_path = os.path.join(skills_dir, skill, "SKILL.md")
-            en_data = parse_md_frontmatter(en_path)
-            if en_data:
-                name_display = en_data.get("name") or skill
-                desc_display = en_data.get("description") or ""
+                s_name_display, s_desc_display = get_skill_info(skill, skills_dir, is_zh, user_translations)
+                
+                child_id_display = f"\033[0;90m{tree_branch}\033[0;32m{skill}\033[0m"
+                child_name_bracket = f"\033[1;37m[{s_name_display}]\033[0m"
+                child_desc = f"\033[0;90m{s_desc_display}\033[0m" if s_desc_display else ""
 
-        # Make description single line and trim leading/trailing quotes
-        desc_single = " ".join([l.strip() for l in desc_display.split("\n") if l.strip()]).strip('“"”')
-        if len(desc_single) > 60:
-            desc_single = desc_single[:57] + "..."
+                items.append({
+                    "col1": child_id_display,
+                    "col2": child_name_bracket,
+                    "col3": child_desc
+                })
+
+    # Ungrouped / standalone skills
+    ungrouped_skills = [s for s in all_skills if s not in skills_in_groups]
+    for skill in ungrouped_skills:
+        s_name_display, s_desc_display = get_skill_info(skill, skills_dir, is_zh, user_translations)
+        
+        standalone_id_display = f"\033[0;90m  \033[0;32m{skill}\033[0m"
+        standalone_name_bracket = f"\033[1;37m[{s_name_display}]\033[0m"
+        standalone_desc = f"\033[0;90m{s_desc_display}\033[0m" if s_desc_display else ""
 
         items.append({
-            "id": skill,
-            "name_bracket": f"[{name_display}]",
-            "desc": desc_single
+            "col1": standalone_id_display,
+            "col2": standalone_name_bracket,
+            "col3": standalone_desc
         })
 
     if not items:
         return
 
-    # Calculate padding widths
-    max_id_len = max([len(x["id"]) for x in items] + [30])
-    id_col_width = max_id_len + 3
+    # Calculate padding widths based on visible character widths (excluding ANSI)
+    max_col1_w = max([get_display_width(x["col1"]) for x in items] + [32])
+    col1_width = max_col1_w + 3
 
-    max_name_len = max([get_display_width(x["name_bracket"]) for x in items] + [20])
-    name_col_width = max_name_len + 3
+    max_col2_w = max([get_display_width(x["col2"]) for x in items] + [22])
+    col2_width = max_col2_w + 3
 
     for item in items:
-        col1 = pad_display(item["id"], id_col_width)
-        col2 = pad_display(item["name_bracket"], name_col_width)
-        col3 = item["desc"]
-        print(f"{col1}{col2}{col3}")
+        c1 = pad_display(item["col1"], col1_width)
+        c2 = pad_display(item["col2"], col2_width)
+        c3 = item["col3"]
+        print(f"{c1}{c2}{c3}")
 
 if __name__ == "__main__":
     main()
+
+
 
