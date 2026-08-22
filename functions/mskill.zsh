@@ -1,10 +1,10 @@
 #? name: mskill
-#? description: Manage, install, discover, package, update, and selectively link AI Agent skills
+#? description: Manage, install, discover, package, update, and selectively link or copy AI Agent skills
 #? author: Royi
-#? version: 1.2.0
+#? version: 1.3.0
 #? deps: python3
 #? usage: mskill [options] [skill_name/group_name...]
-#? example: mskill -i anthropics/anthropic-quickstarts
+#? example: mskill -c startup
 
 _mskill_help() {
     local lang=${ZFL_LANG:-${LANG%%.*}}
@@ -14,10 +14,12 @@ mskill (Manage Skill) - AI Agent 技能全生命周期管理工具
 
 用法:
   mskill [选项] [技能名称/分组名称...]
+  mskill -c / --copy [技能名称/分组名称...]
   mskill -i / --install <仓库地址/简写> [技能名...]
   mskill -u / --update [技能名...]
   mskill --update-all
   mskill --status
+  mskill -b / --unbind <技能名...>
   mskill -d / --uninstall <技能名>
   mskill -s / --group-set <分组名称> [--ordered] <技能列表...>
   mskill -r / --group-rm <分组名称>
@@ -26,19 +28,25 @@ mskill (Manage Skill) - AI Agent 技能全生命周期管理工具
 
 常用示例:
   mskill                            # 交互式选择、管理与软链接技能 (使用 fzf)
+  mskill -c                         # 交互式选择并拷贝技能实体副本到当前项目
+  mskill -c startup                 # 拷贝 startup 分组下的所有技能实体副本到当前项目
+  mskill -c caveman diagnose        # 拷贝指定技能实体到当前项目 (解除软链接依赖)
+  mskill startup                    # 批量软链接 startup 分组下的所有技能到当前项目
+  mskill caveman diagnose           # 软链接指定的技能到当前项目
   mskill -i anthropics/quickstarts  # 从 GitHub 仓库自动识别并打包下载技能 (多技能支持自动分组引导)
   mskill -u video-generator         # 检查并更新指定技能至最新版本
   mskill --update-all               # 一键更新所有已追踪的远程技能
   mskill --status                   # 查看已安装技能的版本 Commit 与来源
-  mskill startup                    # 批量链接 startup 分组下的所有技能到当前项目
-  mskill caveman diagnose           # 链接指定的技能到当前项目
+  mskill -b video-generator         # 解绑指定技能的远程 Git 关联 (转为本地自建技能)
 
 选项:
   -h, --help                        显示帮助信息
+  -c, --copy [技能/组...]           拷贝技能实体副本到当前项目 (独立存在，修改不影响全局)
   -i, --install <url/repo> [名...]  安装技能（以 SKILL.md 为锚点自包含打包，多技能自动引导分组）
   -u, --update [技能名...]          更新指定的技能（分组关系自动 100% 保持不变）
   --update-all                      更新所有已安装的远程技能
   --status                          查看技能的版本、来源仓库与更新状态
+  -b, --unbind <技能名...>          解绑技能的远程 Git 仓库（转为本地技能，保留本地代码且不再追踪更新）
   -d, --uninstall <技能名>          卸载指定的技能包并清理元数据
   -s, --group-set <组名> [--ordered] <技能...>
                                     创建或修改技能分组，加 --ordered 则将顺序标记为推荐调用顺序
@@ -47,9 +55,11 @@ mskill (Manage Skill) - AI Agent 技能全生命周期管理工具
   -v, --view / view                 直接查看当前项目底下的已连接技能及其中文翻译
 
 说明:
+  - 软链接（默认）：使用符号链接（ln -s），全局技能一旦更新，项目内即时同步生效。
+  - 实体拷贝（-c / --copy / Alt-C）：将完整技能目录独立复制到项目中，方便按项目定制修改或冻结版本。
+  - 解绑 Git（-b / --unbind / Ctrl-B）：将下载的技能脱离远程仓库追踪，适合下游维护已停止或已做本地定制的技能。
   - 下载多技能数据包时会自动提示是否快速创建分组，方便下次一键批量引用。
   - 技能更新仅同步技能文件与版本，绝对不会影响分组配置（skills_groups.json）。
-  - 项目端使用符号链接（ln -s），全局技能一旦更新，项目内即时同步生效。
 EOF
     else
         cat <<'EOF'
@@ -57,10 +67,12 @@ mskill (Manage Skill) - Full Lifecycle Manager for AI Agent Skills
 
 Usage:
   mskill [options] [skill_name/group_name...]
+  mskill -c / --copy [skill_name/group_name...]
   mskill -i / --install <repo_url_or_shorthand> [skill_name...]
   mskill -u / --update [skill_name...]
   mskill --update-all
   mskill --status
+  mskill -b / --unbind <skill_name...>
   mskill -d / --uninstall <skill_name>
   mskill -s / --group-set <group_name> [--ordered] <skills_list...>
   mskill -r / --group-rm <group_name>
@@ -69,19 +81,25 @@ Usage:
 
 Examples:
   mskill                            # Interactive selection and management (uses fzf)
+  mskill -c                         # Interactive selection to copy skill entities to project
+  mskill -c startup                 # Copy all skill entities in 'startup' group into project
+  mskill -c caveman diagnose        # Copy specified skill entities into project (independent)
+  mskill startup                    # Link all skills in 'startup' group into current project
+  mskill caveman diagnose           # Link specified skills into current project
   mskill -i anthropics/quickstarts  # Auto-discover, package and download from GitHub
   mskill -u video-generator         # Check and update specified skill
   mskill --update-all               # Update all tracked remote skills
   mskill --status                   # View versions, commits, and source repositories
-  mskill startup                    # Link all skills in 'startup' group into current project
-  mskill caveman diagnose           # Link specified skills into current project
+  mskill -b video-generator         # Unbind skill from remote Git tracking (convert to local)
 
 Options:
   -h, --help                        Show help information
+  -c, --copy [skill/group...]       Copy standalone skill entities to project (independent of global)
   -i, --install <url/repo> [name]   Install skill (self-contained packaging, auto-groups multi-skill packages)
   -u, --update [skill_name...]      Update specified skills (group mappings preserved 100%)
   --update-all                      Update all tracked remote skills
   --status                          View version commit and source repository status
+  -b, --unbind <skill_name...>      Unbind skill from remote Git repo (preserve files, stop remote tracking)
   -d, --uninstall <skill_name>      Uninstall specified skill and clean manifest
   -s, --group-set <grp> [--ordered] <skills...>
                                     Create or modify a skill group; --ordered marks sequence
@@ -90,9 +108,11 @@ Options:
   -v, --view / view                 View connected skills of the current project
 
 Description:
-  - When downloading multi-skill packages, automatically prompts to create a skill group for easy batch linking.
+  - Symlink (default): Uses symlinks (ln -s); updates in global directory reflect in projects instantly.
+  - Entity Copy (-c / --copy / Alt-C): Copies standalone skill directory into project, ideal for local tweaks.
+  - Unbind Git (-b / --unbind / Ctrl-B): Detaches skill from remote Git repo, ideal for modified or abandoned skills.
+  - Multi-skill packages prompt to create a skill group for easy batch linking or copying.
   - Skill updates only sync files and commits; skill groups remain 100% untouched.
-  - Project symlinks (ln -s) ensure updates reflect in projects instantly in real-time.
 EOF
     fi
 }
@@ -110,12 +130,17 @@ _mskill() {
         options=(
             '-h:显示帮助信息'
             '--help:显示帮助信息'
+            '-c:拷贝技能实体到当前项目 (解除对全局软链接依赖)'
+            '--copy:拷贝技能实体到当前项目 (解除对全局软链接依赖)'
             '-i:安装/下载技能包 (支持 GitHub 简写/完整 URL/目录直链)'
             '--install:安装/下载技能包 (支持 GitHub 简写/完整 URL/目录直链)'
             '-u:检查并更新指定技能'
             '--update:检查并更新指定技能'
             '--update-all:一键更新所有已追踪的远程技能'
             '--status:查看技能版本 Commit 与来源状态'
+            '-b:解绑技能的远程 Git 仓库关联 (转为本地自建技能)'
+            '--unbind:解绑技能的远程 Git 仓库关联 (转为本地自建技能)'
+            '--unbind-git:解绑技能的远程 Git 仓库关联 (转为本地自建技能)'
             '-d:卸载指定的技能包并清理元数据'
             '--uninstall:卸载指定的技能包并清理元数据'
             '--remove:卸载指定的技能包并清理元数据'
@@ -133,12 +158,17 @@ _mskill() {
         options=(
             '-h:Show help information'
             '--help:Show help information'
+            '-c:Copy skill entities to current project (independent entity)'
+            '--copy:Copy skill entities to current project (independent entity)'
             '-i:Install skill package (supports GitHub shorthand/URL/path)'
             '--install:Install skill package (supports GitHub shorthand/URL/path)'
             '-u:Check and update specified skill'
             '--update:Check and update specified skill'
             '--update-all:Update all tracked remote skills'
             '--status:View skill version commit and source status'
+            '-b:Unbind skill from remote Git repo (convert to local)'
+            '--unbind:Unbind skill from remote Git repo (convert to local)'
+            '--unbind-git:Unbind skill from remote Git repo (convert to local)'
             '-d:Uninstall specified skill package'
             '--uninstall:Uninstall specified skill package'
             '--remove:Uninstall specified skill package'
@@ -165,7 +195,17 @@ _mskill() {
     # 2. Context-aware completions based on previous word
     local prev_word="$words[CURRENT-1]"
     case "$prev_word" in
-        -u|--update|-d|--uninstall|--remove)
+        -c|--copy)
+            local desc_grp="skill groups" desc_skl="available skills"
+            if [[ "$lang" == zh* ]]; then
+                desc_grp="技能分组"
+                desc_skl="可用技能"
+            fi
+            _describe -t available_groups "$desc_grp" available_groups
+            _describe -t available_skills "$desc_skl" available_skills
+            return
+            ;;
+        -u|--update|-b|--unbind|--unbind-git|-d|--uninstall|--remove)
             local desc_skills="available skills"
             [[ "$lang" == zh* ]] && desc_skills="已安装技能"
             _describe -t available_skills "$desc_skills" available_skills
@@ -201,9 +241,9 @@ mskill() {
     local lang=${ZFL_LANG:-${LANG%%.*}}
 
     local -a available_skills skills_to_link group_skills
-    local opt_set=0 opt_rm=0 opt_list=0 opt_view=0 opt_install=0 opt_update=0 opt_update_all=0 opt_status=0 opt_uninstall=0
-    local group_name target_repo uninstall_target selected line dest_dir skill src dest
-    local -a update_targets=() install_args=()
+    local opt_set=0 opt_rm=0 opt_list=0 opt_view=0 opt_install=0 opt_update=0 opt_update_all=0 opt_status=0 opt_uninstall=0 opt_copy=0 opt_unbind=0
+    local group_name target_repo uninstall_target line dest_dir skill src dest
+    local -a update_targets=() install_args=() unbind_targets=()
 
     available_skills=( $HOME/.agents/skills/*(/N:t) )
 
@@ -212,6 +252,10 @@ mskill() {
             -h|--help)
                 _mskill_help
                 return 0
+                ;;
+            -c|--copy|copy)
+                opt_copy=1
+                shift
                 ;;
             -i|--install|install)
                 opt_install=1
@@ -246,6 +290,15 @@ mskill() {
             --status|status)
                 opt_status=1
                 shift
+                break
+                ;;
+            -b|--unbind|--unbind-git|unbind|detach)
+                opt_unbind=1
+                shift
+                while (( $# > 0 )) && [[ "$1" != -* ]]; do
+                    unbind_targets+=("$1")
+                    shift
+                done
                 break
                 ;;
             -d|--uninstall|--remove|uninstall|remove)
@@ -352,6 +405,19 @@ mskill() {
         return $?
     fi
 
+    if (( opt_unbind )); then
+        if (( ${#unbind_targets[@]} == 0 )); then
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${RED}[mskill] 错误: 需要指定要解绑 Git 关联的技能名称。${RESET}" >&2
+            else
+                echo -e "${RED}[mskill] Error: Skill name(s) required for unbinding.${RESET}" >&2
+            fi
+            return 1
+        fi
+        python3 "$ZFL_HOME/python/manage_skills.py" --unbind "${unbind_targets[@]}"
+        return $?
+    fi
+
     if (( opt_uninstall )); then
         python3 "$ZFL_HOME/python/manage_skills.py" --uninstall "$uninstall_target"
         return $?
@@ -383,10 +449,21 @@ mskill() {
         if (( $+commands[fzf] )); then
             local prompt_msg header_msg
             if [[ "$lang" == zh* ]]; then
-                header_msg="💡 快捷键: 空格:多选 | Ctrl-G:组管理 | Ctrl-U:更新 | Ctrl-I:安装 | Ctrl-D:删除组 | Ctrl-T:重译 | Ctrl-V:缩放 | Enter:确认链接"
-                prompt_msg="Skill Search > "
+                if (( opt_copy )); then
+                    header_msg="💡 快捷键: 空格:多选 | Ctrl-G:组管理 | Ctrl-U:更新 | Ctrl-B:解绑Git | Ctrl-I:安装 | Ctrl-D:删除组 | Ctrl-T:重译 | Ctrl-V:缩放 | Enter:确认拷贝实体到项目"
+                    prompt_msg="Skill Copy > "
+                else
+                    header_msg="💡 快捷键: 空格:多选 | Ctrl-G:组管理 | Ctrl-U:更新 | Ctrl-B:解绑Git | Ctrl-I:安装 | Ctrl-D:删除组 | Ctrl-T:重译 | Ctrl-V:缩放 | Alt-C:拷贝实体 | Enter:软链接"
+                    prompt_msg="Skill Search > "
+                fi
             else
-                header_msg="💡 Shortcuts: Space:Multi | Ctrl-G:Groups | Ctrl-U:Update | Ctrl-I:Install | Ctrl-D:Delete | Ctrl-T:Translate | Ctrl-V:Preview | Enter:Link"
+                if (( opt_copy )); then
+                    header_msg="💡 Shortcuts: Space:Multi | Ctrl-G:Groups | Ctrl-U:Update | Ctrl-B:Unbind | Ctrl-I:Install | Ctrl-D:Delete | Ctrl-T:Translate | Ctrl-V:Preview | Enter:Copy to Project"
+                    prompt_msg="Skill Copy > "
+                else
+                    header_msg="💡 Shortcuts: Space:Multi | Ctrl-G:Groups | Ctrl-U:Update | Ctrl-B:Unbind | Ctrl-I:Install | Ctrl-D:Delete | Ctrl-T:Translate | Ctrl-V:Preview | Alt-C:Copy | Enter:Symlink"
+                    prompt_msg="Skill Search > "
+                fi
             fi
 
             local fzf_opts=(
@@ -394,11 +471,13 @@ mskill() {
                 --height 90%
                 --reverse
                 --multi
+                --expect=alt-c
                 --bind "start:reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
                 --bind "ctrl-t:reload(python3 $ZFL_HOME/python/preview_skill.py --force-translate {1} >/dev/null 2>&1; python3 $ZFL_HOME/python/list_skills_fzf.py)"
                 --bind "ctrl-g:execute(python3 $ZFL_HOME/python/resolve_skills.py --interactive-set {+1})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
                 --bind "ctrl-d:execute(python3 $ZFL_HOME/python/resolve_skills.py --interactive-rm {1})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
                 --bind "ctrl-u:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-update {1})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
+                --bind "ctrl-b:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-unbind {1})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
                 --bind "ctrl-i:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-install)+reload(python3 $ZFL_HOME/python/list_skills_fzf.py)"
                 --bind "ctrl-v:toggle-preview-wrap"
                 --preview "python3 $ZFL_HOME/python/preview_skill.py {1}"
@@ -419,14 +498,22 @@ mskill() {
                 return 0
             fi
 
+            local first_line=1
             while IFS= read -r line; do
+                if (( first_line )); then
+                    first_line=0
+                    if [[ "$line" == "alt-c" || "$line" == "alt-C" ]]; then
+                        opt_copy=1
+                    fi
+                    continue
+                fi
                 local s_id="${line%% *}"
                 [[ -n "$s_id" ]] && skills_to_link+=("$s_id")
             done <<< "$selected_raw"
         else
             if [[ "$lang" == zh* ]]; then
                 echo -e "${YELLOW}[mskill] 提示: 未安装 fzf，无法使用交互式选择。${RESET}"
-                echo "请直接指定要链接的 skill 名称，或安装 fzf 以获得交互式体验。"
+                echo "请直接指定要引入的 skill 名称，或安装 fzf 以获得交互式体验。"
             else
                 echo -e "${YELLOW}[mskill] Notice: fzf is not installed, cannot open interactive menu.${RESET}"
                 echo "Please specify skill names directly, or install fzf for interactive selection."
@@ -440,15 +527,17 @@ mskill() {
     resolved_skills=( ${(f)"$(python3 "$ZFL_HOME/python/resolve_skills.py" "${skills_to_link[@]}")"} )
 
     if (( ${#resolved_skills[@]} == 0 )); then
-        if [[ "$lang" == zh* ]]; then
-            echo -e "${YELLOW}[mskill] 没有需要链接的有效技能。${RESET}"
+        local no_action_msg
+        if (( opt_copy )); then
+            no_action_msg=$([[ "$lang" == zh* ]] && echo "没有需要拷贝的有效技能。" || echo "No valid skills to copy.")
         else
-            echo -e "${YELLOW}[mskill] No valid skills to link.${RESET}"
+            no_action_msg=$([[ "$lang" == zh* ]] && echo "没有需要链接的有效技能。" || echo "No valid skills to link.")
         fi
+        echo -e "${YELLOW}[mskill] ${no_action_msg}${RESET}"
         return 0
     fi
 
-    # 5. Create Symlinks in Current Project Directory
+    # 5. Create Symlinks or Copy Entities into Current Project Directory
     dest_dir=".agents/skills"
     mkdir -p "$dest_dir"
 
@@ -472,36 +561,64 @@ mskill() {
             rm -rf "$dest"
         fi
 
-        if ln -s "$src" "$dest"; then
-            success_skills+=("$skill")
+        if (( opt_copy )); then
+            if cp -r "$src" "$dest"; then
+                success_skills+=("$skill")
+            else
+                failed_skills+=("$skill")
+            fi
         else
-            failed_skills+=("$skill")
+            if ln -s "$src" "$dest"; then
+                success_skills+=("$skill")
+            else
+                failed_skills+=("$skill")
+            fi
         fi
     done
 
     # 6. Report Execution Summary
     if (( ${#success_skills[@]} > 0 )); then
-        if [[ "$lang" == zh* ]]; then
-            echo -e "${GREEN}[mskill] 成功将以下技能软链接到当前项目的 $dest_dir/ :${RESET}"
-            for skill in "${success_skills[@]}"; do
-                echo -e "  ${GREEN}✓${RESET} $skill -> $dest_dir/$skill"
-            done
+        if (( opt_copy )); then
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${GREEN}[mskill] 成功将以下技能实体拷贝到当前项目的 $dest_dir/ :${RESET}"
+                for skill in "${success_skills[@]}"; do
+                    echo -e "  ${GREEN}✓${RESET} $skill -> $dest_dir/$skill (实体副本)"
+                done
+            else
+                echo -e "${GREEN}[mskill] Successfully copied the following skill entities to $dest_dir/ :${RESET}"
+                for skill in "${success_skills[@]}"; do
+                    echo -e "  ${GREEN}✓${RESET} $skill -> $dest_dir/$skill (copied entity)"
+                done
+            fi
         else
-            echo -e "${GREEN}[mskill] Successfully symlinked the following skills to $dest_dir/ :${RESET}"
-            for skill in "${success_skills[@]}"; do
-                echo -e "  ${GREEN}✓${RESET} $skill -> $dest_dir/$skill"
-            done
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${GREEN}[mskill] 成功将以下技能软链接到当前项目的 $dest_dir/ :${RESET}"
+                for skill in "${success_skills[@]}"; do
+                    echo -e "  ${GREEN}✓${RESET} $skill -> $dest_dir/$skill (软链接)"
+                done
+            else
+                echo -e "${GREEN}[mskill] Successfully symlinked the following skills to $dest_dir/ :${RESET}"
+                for skill in "${success_skills[@]}"; do
+                    echo -e "  ${GREEN}✓${RESET} $skill -> $dest_dir/$skill (symlink)"
+                done
+            fi
         fi
     fi
 
     if (( ${#failed_skills[@]} > 0 )); then
+        local action_str
+        if (( opt_copy )); then
+            action_str=$([[ "$lang" == zh* ]] && echo "拷贝" || echo "copy")
+        else
+            action_str=$([[ "$lang" == zh* ]] && echo "软链接" || echo "link")
+        fi
         if [[ "$lang" == zh* ]]; then
-            echo -e "${RED}[mskill] 以下技能软链接失败:${RESET}" >&2
+            echo -e "${RED}[mskill] 以下技能${action_str}失败:${RESET}" >&2
             for skill in "${failed_skills[@]}"; do
                 echo -e "  ${RED}✗${RESET} $skill" >&2
             done
         else
-            echo -e "${RED}[mskill] Failed to link the following skills:${RESET}" >&2
+            echo -e "${RED}[mskill] Failed to ${action_str} the following skills:${RESET}" >&2
             for skill in "${failed_skills[@]}"; do
                 echo -e "  ${RED}✗${RESET} $skill" >&2
             done
@@ -511,3 +628,4 @@ mskill() {
 
     return 0
 }
+

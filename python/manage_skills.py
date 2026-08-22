@@ -831,6 +831,143 @@ def interactive_update_workflow(focused_item):
         safe_input("\nPress Enter to return to FZF...")
     return ret
 
+def unbind_skills_workflow(target_skills):
+    """
+    Unbind one or more skills from their remote Git repository tracking.
+    Removes tracking metadata from manifest, converting them into local standalone skills.
+    Skill directories, files, and group mappings are preserved intact.
+    """
+    if not target_skills:
+        if IS_ZH:
+            c_print("1;31", "错误: 需要指定要解绑 Git 关联的技能名称。", file=sys.stderr)
+        else:
+            c_print("1;31", "Error: Skill name(s) required for unbinding.", file=sys.stderr)
+        return 1
+
+    manifest = load_manifest()
+    unbound_count = 0
+    not_tracked_count = 0
+
+    for s_name in target_skills:
+        s_name = s_name.strip()
+        if not s_name:
+            continue
+        dest_path = os.path.join(SKILLS_DIR, s_name)
+        if not os.path.exists(dest_path):
+            if IS_ZH:
+                c_print("1;33", f"警告: 技能 '{s_name}' 在 ~/.agents/skills/ 中不存在，已跳过。")
+            else:
+                c_print("1;33", f"Warning: Skill '{s_name}' does not exist in ~/.agents/skills/, skipped.")
+            continue
+
+        if s_name in manifest:
+            repo_url = manifest[s_name].get("repo_url", "remote git")
+            del manifest[s_name]
+            unbound_count += 1
+            if IS_ZH:
+                c_print("1;32", f"[✓] 成功解绑技能 '{s_name}' 的 Git 关联 ({repo_url})")
+                c_print("0;36", f"    -> 已转为本地自建技能，本地文件完整保留，不再追踪远程更新。")
+            else:
+                c_print("1;32", f"[✓] Successfully unbound '{s_name}' from {repo_url}")
+                c_print("0;36", f"    -> Converted to local skill; files preserved, remote updates stopped.")
+        else:
+            not_tracked_count += 1
+            if IS_ZH:
+                c_print("0;33", f"[*] 技能 '{s_name}' 本身即为本地自建技能（未绑定任何远程 Git 仓库）。")
+            else:
+                c_print("0;33", f"[*] Skill '{s_name}' is already a local skill (no remote Git tracking).")
+
+    if unbound_count > 0:
+        save_manifest(manifest)
+    return 0
+
+def interactive_unbind_workflow(focused_item):
+    """Interactive workflow to unbind Git tracking for a focused skill or group from FZF."""
+    s_name = focused_item.strip()
+    if not s_name:
+        return 0
+
+    print("\033[1;36m" + "=" * 55 + "\033[0m")
+    if s_name.startswith("group:"):
+        gkey = s_name[6:]
+        try:
+            with open(GROUPS_FILE, "r", encoding="utf-8") as f:
+                gdata = json.load(f)
+                gskills = gdata.get(gkey, {}).get("skills", [])
+        except Exception:
+            gskills = []
+        if not gskills:
+            if IS_ZH:
+                c_print("1;33", f"分组 '{gkey}' 中没有技能。")
+            else:
+                c_print("1;33", f"No skills in group '{gkey}'.")
+            safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
+            return 0
+
+        manifest = load_manifest()
+        tracked = [s for s in gskills if s in manifest]
+        if not tracked:
+            if IS_ZH:
+                c_print("1;33", f"分组 '{gkey}' 中的技能均为本地技能，无需解绑。")
+            else:
+                c_print("1;33", f"All skills in group '{gkey}' are already local skills.")
+            safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
+            return 0
+
+        if IS_ZH:
+            c_print("1;35", f"🔗 解绑 Git 关联")
+            c_print("0;37", f"分组 '{gkey}' 下有 {len(tracked)} 个已绑定 Git 的技能: {', '.join(tracked)}")
+            ans = safe_input("确定要解绑该分组下所有技能的远程 Git 关联吗？(y/N):")
+        else:
+            c_print("1;35", f"🔗 Unbind Git Tracking")
+            c_print("0;37", f"Group '{gkey}' has {len(tracked)} tracked skills: {', '.join(tracked)}")
+            ans = safe_input("Are you sure you want to unbind all skills in this group? (y/N):")
+
+        if ans.lower() not in ("y", "yes"):
+            if IS_ZH:
+                c_print("1;33", "操作已取消。")
+            else:
+                c_print("1;33", "Operation cancelled.")
+            safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
+            return 0
+
+        ret = unbind_skills_workflow(tracked)
+    else:
+        manifest = load_manifest()
+        if s_name not in manifest:
+            if IS_ZH:
+                c_print("0;33", f"[*] 技能 '{s_name}' 本身即为本地自建技能（未绑定任何远程 Git 仓库）。")
+            else:
+                c_print("0;33", f"[*] Skill '{s_name}' is already a local skill (no remote Git tracking).")
+            safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
+            return 0
+
+        repo_url = manifest[s_name].get("repo_url", "remote git")
+        if IS_ZH:
+            c_print("1;35", f"🔗 解绑 Git 关联")
+            c_print("0;37", f"技能 '{s_name}' 当前绑定了远程仓库: {repo_url}")
+            ans = safe_input(f"确定要解绑技能 '{s_name}' 的 Git 关联吗？(y/N):")
+        else:
+            c_print("1;35", f"🔗 Unbind Git Tracking")
+            c_print("0;37", f"Skill '{s_name}' is currently linked to: {repo_url}")
+            ans = safe_input(f"Are you sure you want to unbind Git tracking for '{s_name}'? (y/N):")
+
+        if ans.lower() not in ("y", "yes"):
+            if IS_ZH:
+                c_print("1;33", "操作已取消。")
+            else:
+                c_print("1;33", "Operation cancelled.")
+            safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
+            return 0
+
+        ret = unbind_skills_workflow([s_name])
+
+    if IS_ZH:
+        safe_input("\n按回车键返回 FZF...")
+    else:
+        safe_input("\nPress Enter to return to FZF...")
+    return ret
+
 def main():
     if len(sys.argv) < 2:
         return list_skills_status()
@@ -856,6 +993,12 @@ def main():
     elif cmd in ("--status", "status", "-s"):
         return list_skills_status()
 
+    elif cmd in ("-b", "--unbind", "--unbind-git", "unbind", "detach"):
+        if not args:
+            c_print("1;31", "Usage: manage_skills.py --unbind <skill_names...>", file=sys.stderr)
+            return 1
+        return unbind_skills_workflow(args)
+
     elif cmd in ("-d", "--uninstall", "--remove", "uninstall", "remove"):
         if not args:
             c_print("1;31", "Usage: manage_skills.py --uninstall <skill_name>", file=sys.stderr)
@@ -868,6 +1011,10 @@ def main():
     elif cmd == "--interactive-update":
         focused = args[0] if args else ""
         return interactive_update_workflow(focused)
+
+    elif cmd == "--interactive-unbind":
+        focused = args[0] if args else ""
+        return interactive_unbind_workflow(focused)
 
     else:
         c_print("1;31", f"Unknown command: {cmd}", file=sys.stderr)

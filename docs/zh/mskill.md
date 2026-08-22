@@ -19,7 +19,10 @@
    - 全局更新后，所有关联项目瞬间自动获得最新版本，无需重新链接。
 4. **全功能 FZF 交互控制台**：
    - 终端直接运行 `mskill` 即可唤起交互式菜单，支持实时中英文预览。
-   - 快捷键支持：组管理 (`Ctrl-G`)、更新当前项 (`Ctrl-U`)、安装新技能 (`Ctrl-I`)、删除组 (`Ctrl-D`)、重译 (`Ctrl-T`)。
+   - 快捷键支持：组管理 (`Ctrl-G`)、更新当前项 (`Ctrl-U`)、解绑 Git (`Ctrl-B`)、安装新技能 (`Ctrl-I`)、删除组 (`Ctrl-D`)、重译 (`Ctrl-T`)。
+5. **解绑 Git 仓库（转为本地自建）**：
+   - 针对下游已停止维护或已被本地定制修改的技能，可通过 `mskill -b <技能名>` 或 FZF 快捷键 `Ctrl-B` 解绑远程 Git 追踪。
+   - 本地技能文件与分组配置 100% 完整保留，不再受到远程更新检查或覆盖影响。
 
 ---
 
@@ -56,7 +59,15 @@ mskill -u video-generator
 mskill --update-all
 ```
 
-### 3. 技能分组管理 (`-s`, `-r`, `-l`)
+### 3. 解绑 Git 追踪 (`-b, --unbind`)
+```bash
+# 解绑指定技能的远程 Git 关联（转为本地自建技能，保留全部文件）
+mskill -b video-generator
+
+# 在 FZF 菜单中直接按 Ctrl-B 解绑当前高亮技能或分组
+```
+
+### 4. 技能分组管理 (`-s`, `-r`, `-l`)
 ```bash
 # 创建或修改技能分组
 mskill --group-set dev prototype handoff grill-me
@@ -71,15 +82,39 @@ mskill --group-list
 mskill --group-rm dev
 ```
 
-### 4. 软链接引入项目
+### 5. 引入技能到当前项目 (软链接 vs 实体拷贝)
+
+`mskill` 支持两种方式将技能引入当前项目的 `.agents/skills/` 目录：
+
+#### A. 软链接模式 (默认 / 实时同步)
+将全局技能以符号链接（`ln -s`）方式接入当前项目。当全局技能更新时，项目内立即同步生效：
 ```bash
-# 软链接指定技能到当前项目的 .agents/skills/
+# 软链接指定技能到当前项目
 mskill caveman diagnose
 
 # 软链接整个分组下的所有技能
 mskill startup
 
-# 交互式选择软链接 (FZF)
+# 交互式选择并软链接 (FZF 菜单按 Enter)
 mskill
 ```
+
+#### B. 实体拷贝模式 (`-c, --copy` / 独立副本)
+将技能实体目录完整拷贝（`cp -r`）到当前项目中，摆脱软链接依赖。适合需要为特定项目定制修改 Skill 内容或冻结特定版本的场景：
+```bash
+# 拷贝指定技能实体到当前项目
+mskill -c caveman diagnose
+
+# 拷贝整个分组下的所有技能实体到当前项目
+mskill -c startup
+
+# 交互式选择并拷贝技能实体 (FZF 菜单按 Alt-C 或直接运行 mskill -c 按 Enter)
+mskill -c
+```
+
+### 6. 查看当前项目已引入的技能 (`-v, --view`)
+```bash
+mskill -v
+```
+清晰展示当前项目中已引入的所有技能、区分 **[软链接]** 与 **[实体副本]** 状态，并列出其中文译名与功能描述。
 

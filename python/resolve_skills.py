@@ -363,15 +363,22 @@ def view_connected():
     GREEN = "\033[1;32m"
     CYAN = "\033[1;36m"
     YELLOW = "\033[1;33m"
+    BLUE = "\033[1;34m"
+    MAGENTA = "\033[1;35m"
     RESET = "\033[0m"
     GREY = "\033[1;30m"
 
     if IS_ZH:
-        print(f"{CYAN}=== 当前项目已连接的技能 (共 {len(skills)} 个) ==={RESET}")
+        print(f"{CYAN}=== 当前项目已引入的技能 (共 {len(skills)} 个) ==={RESET}")
     else:
         print(f"{CYAN}=== Connected Skills for Current Project (Total: {len(skills)}) ==={RESET}")
 
     for idx, skill in enumerate(skills, 1):
+        full_path = os.path.join(connected_dir, skill)
+        is_link = os.path.islink(full_path)
+        icon = "🔗" if is_link else "📁"
+        type_str = f" {BLUE}[软链接]{RESET}" if is_link else f" {MAGENTA}[实体副本]{RESET}" if IS_ZH else (f" {BLUE}[symlink]{RESET}" if is_link else f" {MAGENTA}[copied entity]{RESET}")
+
         name_zh = ""
         desc_zh = ""
         if skill in translations:
@@ -380,12 +387,12 @@ def view_connected():
             
         # Display format
         if name_zh:
-            print(f"  🔗 {GREEN}{skill}{RESET} ({name_zh})")
+            print(f"  {icon} {GREEN}{skill}{RESET}{type_str} ({name_zh})")
         else:
             if IS_ZH:
-                print(f"  🔗 {GREEN}{skill}{RESET} (无缓存翻译)")
+                print(f"  {icon} {GREEN}{skill}{RESET}{type_str} (无缓存翻译)")
             else:
-                print(f"  🔗 {GREEN}{skill}{RESET} (No cached translation)")
+                print(f"  {icon} {GREEN}{skill}{RESET}{type_str} (No cached translation)")
         
         if desc_zh:
             # Clean up the description

@@ -46,7 +46,7 @@ zsh/
 │   ├── check_update.zsh           # Asynchronously check system updates in read-only mode and prompt in terminal, supporting pacman/yay and flatpak
 │   ├── countText.zsh              # Count words or Chinese characters in a text file based on the specified mode
 │   ├── extract.zsh                # Universal auto-decompressor and compressor with format options, password encryption, compression stats, content listing, and Tab completion
-│   ├── mskill.zsh                 # Manage, install, discover, package, update, and selectively link AI Agent skills
+│   ├── mskill.zsh                 # Manage, install, discover, package, update, and selectively link or copy AI Agent skills
 │   ├── weather.zsh                # Query real-time weather and weather forecast in terminal
 │   └── zfl.zsh                    # ZFL framework built-in command line management and self-discovery tool
 ├── custom_functions/              # User private local functions directory (ignored by git)
@@ -64,7 +64,7 @@ zsh/
 │   ├── countText.md               # Characters and words counting tool for mixed English-Chinese texts.
 │   ├── extract.md                 # Universal auto-decompressor with archive-bomb protection.
 │   ├── fmt_novel.md
-│   ├── mskill.md
+│   ├── mskill.md                  # Full-lifecycle AI Agent skills manager (install, package, update, unbind git, group, link, and copy).
 │   ├── weather.md                 # Quick weather forecast query.
 │   └── zfl.md                     # Built-in ZFL CLI manager and auto-discovery engine.
 └── automation/                    # AI programming automation verification and sync scripts
@@ -125,7 +125,7 @@ Each tool in ZFL has a companion markdown documentation under [docs/](file:///ho
 - 🤖 [aicp](file:///home/royi/.config/zsh/docs/aicp.md) - AI context packaging, token estimation, and interactive `--exec` loop helper.
 - 🔄 [check_update](file:///home/royi/.config/zsh/docs/check_update.md) - Non-blocking package queries and interactive system upgrade coordinator.
 - ⚙️ [add_task](file:///home/royi/.config/zsh/docs/add_task.md) - Non-blocking startup command and schedule scheduler.
-- 🔗 [link_skills](file:///home/royi/.config/zsh/docs/link_skills.md) - Symbolic link management for globally-defined AI Agent skills.
+- 🧠 [mskill](file:///home/royi/.config/zsh/docs/mskill.md) - Full-lifecycle AI Agent skills manager (install, package, update, unbind git, group, link, and copy).
 - 📊 [countText](file:///home/royi/.config/zsh/docs/countText.md) - Characters and words counting tool for mixed English-Chinese texts.
 - 📦 [extract](file:///home/royi/.config/zsh/docs/extract.md) - Universal auto-decompressor with archive-bomb protection.
 - 🌤️ [weather](file:///home/royi/.config/zsh/docs/weather.md) - Quick weather forecast query.

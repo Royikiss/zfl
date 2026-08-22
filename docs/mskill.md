@@ -18,7 +18,10 @@
    - Symlinks skills into `.agents/skills/` of the current working directory.
    - Any updates in global `~/.agents/skills/` automatically sync into projects without relinking.
 4. **Interactive FZF Interface**:
-   - Real-time previews, bilingual descriptions, and hotkeys for group management (`Ctrl-G`), updating (`Ctrl-U`), installing (`Ctrl-I`), and deleting (`Ctrl-D`).
+   - Real-time previews, bilingual descriptions, and hotkeys for group management (`Ctrl-G`), updating (`Ctrl-U`), unbinding Git (`Ctrl-B`), installing (`Ctrl-I`), and deleting (`Ctrl-D`).
+5. **Unbind Git Tracking (Convert to Local)**:
+   - For deprecated, unmaintained, or locally customized skills, use `mskill -b <skill_name>` or `Ctrl-B` in FZF to detach from upstream Git tracking.
+   - Preserves all skill files and group configurations while preventing unwanted remote updates or overwrites.
 
 ---
 
@@ -55,7 +58,15 @@ mskill -u video-generator
 mskill --update-all
 ```
 
-### 3. Skill Groups Management (`-s`, `-r`, `-l`)
+### 3. Unbind Git Tracking (`-b, --unbind`)
+```bash
+# Unbind a skill from remote Git repo (converts to local, preserves files)
+mskill -b video-generator
+
+# Press Ctrl-B in FZF menu to unbind focused skill or group
+```
+
+### 4. Skill Groups Management (`-s`, `-r`, `-l`)
 ```bash
 # Create/modify group
 mskill --group-set dev prototype handoff grill-me
@@ -70,15 +81,39 @@ mskill --group-list
 mskill --group-rm dev
 ```
 
-### 4. Link to Project
+### 5. Import Skills into Current Project (Symlink vs Copy)
+
+`mskill` supports two modes to import skills into the current project's `.agents/skills/` directory:
+
+#### A. Symlink Mode (Default / Real-time Sync)
+Symlinks global skills via `ln -s`. Updates in the global skills directory automatically propagate to your project in real-time:
 ```bash
-# Link specific skills
+# Symlink specific skills
 mskill caveman diagnose
 
-# Link entire group
+# Symlink entire group
 mskill startup
 
-# Interactive selection via FZF
+# Interactive selection via FZF (Press Enter to symlink)
 mskill
 ```
+
+#### B. Copy Entity Mode (`-c, --copy` / Standalone Entity)
+Copies the full skill directory (`cp -r`) into the current project, eliminating symlink dependency. Ideal for project-specific skill customizations or freezing skill versions:
+```bash
+# Copy specific skill entities to project
+mskill -c caveman diagnose
+
+# Copy all skills in a group as standalone entities
+mskill -c startup
+
+# Interactive selection to copy (Press Alt-C in FZF or run mskill -c and press Enter)
+mskill -c
+```
+
+### 6. View Connected Skills (`-v, --view`)
+```bash
+mskill -v
+```
+Displays all imported skills in the current project, clearly distinguishing **[symlink]** vs **[copied entity]** status along with localized translations and descriptions.
 
