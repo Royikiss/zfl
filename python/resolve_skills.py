@@ -152,6 +152,7 @@ def interactive_set(selected_args):
     # Filter out empty arguments or option arguments
     skills = []
     groups = load_groups()
+    detected_gkeys = []
     
     # Expand any selected group to its member skills
     for raw_item in selected_args:
@@ -161,14 +162,24 @@ def interactive_set(selected_args):
         if item.startswith("group:"):
             gkey = item[6:]
             if gkey in groups:
+                detected_gkeys.append(gkey)
                 ginfo = groups[gkey]
                 skills.extend(ginfo.get("skills", []) if isinstance(ginfo, dict) else ginfo)
         elif item in groups:
+            detected_gkeys.append(item)
             ginfo = groups[item]
             skills.extend(ginfo.get("skills", []) if isinstance(ginfo, dict) else ginfo)
         else:
             skills.append(item)
             
+    # Default group key if editing a single existing group
+    default_gkey = detected_gkeys[0] if len(detected_gkeys) == 1 and len(selected_args) == 1 else ""
+    current_ordered = None
+    if default_gkey and default_gkey in groups:
+        ginfo = groups[default_gkey]
+        if isinstance(ginfo, dict):
+            current_ordered = ginfo.get("ordered", False)
+
     # Deduplicate skills while preserving order
     unique_skills = []
     seen = set()
@@ -192,6 +203,11 @@ def interactive_set(selected_args):
     
     # --- Step 1: Show selected skills and allow reordering by index ---
     print("\033[1;36m╭──────────────── 🛠️  技能分组配置向导 ────────────────╮\033[0m")
+    if default_gkey:
+        if IS_ZH:
+            print(f"\033[1;33m│  当前正在编辑分组: {default_gkey}\033[0m")
+        else:
+            print(f"\033[1;33m│  Editing existing group: {default_gkey}\033[0m")
     if IS_ZH:
         print(f"\033[1;32m│  已选中 {len(unique_skills)} 个技能：\033[0m")
     else:
@@ -228,29 +244,46 @@ def interactive_set(selected_args):
                     print("\033[1;33m[*] Invalid input, keeping original order.\033[0m")
 
         # --- Step 2: Ask if this group is ordered ---
-        if IS_ZH:
-            ordered_ans = safe_input("是否设为有序分组（即按上方顺序依次调用）？(y/N):").lower()
+        if current_ordered is True:
+            prompt_ordered = "是否设为有序分组（即按上方顺序依次调用）？(Y/n，直接回车保持当前【有序】):" if IS_ZH else "Mark as ordered group? (Y/n, Enter to keep current [Ordered]):"
+            ordered_ans = safe_input(prompt_ordered).lower()
+            is_ordered = False if ordered_ans in ('n', 'no') else True
+        elif current_ordered is False:
+            prompt_ordered = "是否设为有序分组（即按上方顺序依次调用）？(y/N，直接回车保持当前【无序】):" if IS_ZH else "Mark as ordered group? (y/N, Enter to keep current [Unordered]):"
+            ordered_ans = safe_input(prompt_ordered).lower()
+            is_ordered = True if ordered_ans in ('y', 'yes') else False
         else:
-            ordered_ans = safe_input("Mark as ordered group (recommended call order)? (y/N):").lower()
-        is_ordered = ordered_ans in ('y', 'yes')
+            prompt_ordered = "是否设为有序分组（即按上方顺序依次调用）？(y/N):" if IS_ZH else "Mark as ordered group (recommended call order)? (y/N):"
+            ordered_ans = safe_input(prompt_ordered).lower()
+            is_ordered = ordered_ans in ('y', 'yes')
 
         # --- Step 3: Ask for group name ---
-        if IS_ZH:
-            gname = safe_input("请输入要创建/修改的分组名称 (或按回车键取消):")
+        if default_gkey:
+            prompt_name = f"请输入分组标识名 (直接回车保持 '{default_gkey}'):" if IS_ZH else f"Please enter group key (Press Enter to keep '{default_gkey}'):"
+            gname = safe_input(prompt_name)
+            if not gname:
+                gname = default_gkey
         else:
-            gname = safe_input("Please enter group name to create/modify (or press Enter to cancel):")
-        if not gname:
-            if IS_ZH:
-                print("\033[1;33m[*] 操作已取消。\033[0m")
-                safe_input("\n按回车键返回 FZF...")
-            else:
-                print("\033[1;33m[*] Operation cancelled.\033[0m")
-                safe_input("\nPress Enter to return to FZF...")
-            return
+            prompt_name = "请输入要创建的分组名称 (或按回车键取消):" if IS_ZH else "Please enter group name to create (or press Enter to cancel):"
+            gname = safe_input(prompt_name)
+            if not gname:
+                if IS_ZH:
+                    print("\033[1;33m[*] 操作已取消。\033[0m")
+                    safe_input("\n按回车键返回 FZF...")
+                else:
+                    print("\033[1;33m[*] Operation cancelled.\033[0m")
+                    safe_input("\nPress Enter to return to FZF...")
+                return
             
         disp_name = gname
         if gname in groups and isinstance(groups[gname], dict):
             disp_name = groups[gname].get("name", gname)
+        elif default_gkey and default_gkey in groups and isinstance(groups[default_gkey], dict):
+            disp_name = groups[default_gkey].get("name", gname)
+
+        # If renamed from an existing group, remove the old key to avoid stale duplicates
+        if default_gkey and default_gkey != gname and default_gkey in groups:
+            del groups[default_gkey]
             
         groups[gname] = {
             "name": disp_name,
