@@ -15,9 +15,9 @@ ZFL is a high-performance, modular configuration and function library for Zsh. W
 - **🤖 AI-Collaboration Friendly (AICP)**
   - Built-in `aicp` tool packages codebase context under token budgets (`fast`/`balanced`/`deep`/`full` levels) and multi-dimensional filters.
   - Interactive `--exec` mode handles tool execution via XML tags, displaying source ranges and interactively applying unified diff patches upon user confirmation.
-- **🔄 Read-only, Non-Blocking Update Checks (check_update)**
-  - Query updates asynchronously (Pacman/AUR, Flatpak) on shell startup. Processes only count packages and never invoke `sudo` in the background.
-  - Lock directories prevent duplicate checks, and customizable policies (`pending_first`, `once_per_day`, `strict_daily`) control prompt frequency.
+- **🔄 Lightweight Update Checks & One-Click Upgrade (check_update / update)**
+  - `check_update` performs zero-latency check of the last update date on shell startup and prompts if at least one day has passed, completely non-blocking and free of background scans.
+  - Simply run `update` to upgrade system (Pacman/AUR via yay) and Flatpak packages in one go.
 - 🔍 **Static Quality Gates & Management (zfl)**
   - Built-in `zfl` static code checker lints variable/file-descriptor leaks, naming styles, hardcoded colors, and missing documentation. Integrates with GitHub Actions gate checks.
   - Parses standardized metadata comment headers to auto-generate lists of available tools and verify system CLI dependencies.
@@ -43,10 +43,11 @@ zsh/
 ├── functions/                     # Modular function directory (1:1 mapping between file name and function name)
 │   ├── add_task.zsh               # Manage startup tasks list (whitelist management)
 │   ├── aicp.zsh                   # Generate project context suitable for AI consumption (directory tree + file index + code snippet budget trimming)
-│   ├── check_update.zsh           # Asynchronously check system updates in read-only mode and prompt in terminal, supporting pacman/yay and flatpak
+│   ├── check_update.zsh           # Check last system update date and prompt update reminder
 │   ├── countText.zsh              # Count words or Chinese characters in a text file based on the specified mode
 │   ├── extract.zsh                # Universal auto-decompressor and compressor with format options, password encryption, compression stats, content listing, and Tab completion
 │   ├── mskill.zsh                 # Manage, install, discover, package, update, and selectively link or copy AI Agent skills
+│   ├── update.zsh                 # Update system packages (yay/pacman and flatpak)
 │   ├── weather.zsh                # Query real-time weather and weather forecast in terminal
 │   └── zfl.zsh                    # ZFL framework built-in command line management and self-discovery tool
 ├── custom_functions/              # User private local functions directory (ignored by git)
@@ -60,11 +61,12 @@ zsh/
 ├── docs/                          # Technical design, core mechanics, and troubleshooting documentation
 │   ├── add_task.md                # Non-blocking startup command and schedule scheduler.
 │   ├── aicp.md                    # AI context packaging, token estimation, and interactive `--exec` loop helper.
-│   ├── check_update.md            # Non-blocking package queries and interactive system upgrade coordinator.
+│   ├── check_update.md            # Lightweight startup update reminder.
 │   ├── countText.md               # Characters and words counting tool for mixed English-Chinese texts.
 │   ├── extract.md                 # Universal auto-decompressor with archive-bomb protection.
 │   ├── fmt_novel.md
 │   ├── mskill.md                  # Full-lifecycle AI Agent skills manager (install, package, update, unbind git, group, link, and copy).
+│   ├── update.md                  # One-click system and Flatpak package updater.
 │   ├── weather.md                 # Quick weather forecast query.
 │   └── zfl.md                     # Built-in ZFL CLI manager and auto-discovery engine.
 └── automation/                    # AI programming automation verification and sync scripts
@@ -110,9 +112,6 @@ alias l='eza -lgh --header --git --icons'
 export HTTPS_PROXY=http://127.0.0.1:7897
 export HTTP_PROXY=http://127.0.0.1:7897
 
-# check_update configs
-export CHECK_UPDATE_CACHE_TTL_SECONDS=3600   # Cache duration: 1 hour
-export CHECK_UPDATE_PROMPT_POLICY=once_per_day # Silent on subsequent prompts today if skipped
 ```
 
 ---
@@ -123,7 +122,8 @@ Each tool in ZFL has a companion markdown documentation under [docs/](file:///ho
 
 - ⚙️ [zfl](file:///home/royi/.config/zsh/docs/zfl.md) - Built-in ZFL CLI manager and auto-discovery engine.
 - 🤖 [aicp](file:///home/royi/.config/zsh/docs/aicp.md) - AI context packaging, token estimation, and interactive `--exec` loop helper.
-- 🔄 [check_update](file:///home/royi/.config/zsh/docs/check_update.md) - Non-blocking package queries and interactive system upgrade coordinator.
+- 🔄 [check_update](file:///home/royi/.config/zsh/docs/check_update.md) - Lightweight startup update reminder.
+- ⚡ [update](file:///home/royi/.config/zsh/docs/update.md) - One-click system and Flatpak package updater.
 - ⚙️ [add_task](file:///home/royi/.config/zsh/docs/add_task.md) - Non-blocking startup command and schedule scheduler.
 - 🧠 [mskill](file:///home/royi/.config/zsh/docs/mskill.md) - Full-lifecycle AI Agent skills manager (install, package, update, unbind git, group, link, and copy).
 - 📊 [countText](file:///home/royi/.config/zsh/docs/countText.md) - Characters and words counting tool for mixed English-Chinese texts.

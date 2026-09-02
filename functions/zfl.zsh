@@ -501,7 +501,7 @@ _zfl_addfunc() {
         return 1
     fi
 
-    local -a core_funcs=('zfl' 'aicp' 'check_update' 'add_task' 'mskill' 'countText' 'weather' 'extract')
+    local -a core_funcs=('zfl' 'aicp' 'check_update' 'update' 'add_task' 'mskill' 'countText' 'weather' 'extract')
     if (( ${core_funcs[(Ie)$target_name]} )); then
         if [[ "$lang" == zh* ]]; then
             echo -e "${RED}[ERROR]${RESET} 名称 '${target_name}' 与 ZFL 系统保留核心函数重名，禁止创建！" >&2
@@ -599,7 +599,7 @@ _zfl_remove() {
     fi
 
     # Protect system core functions (hardcoded whitelist)
-    local -a core_funcs=('zfl' 'aicp' 'check_update' 'add_task' 'mskill' 'countText' 'weather' 'extract')
+    local -a core_funcs=('zfl' 'aicp' 'check_update' 'update' 'add_task' 'mskill' 'countText' 'weather' 'extract')
     if (( ${core_funcs[(Ie)$target]} )); then
         if [[ "$lang" == zh* ]]; then
             echo -e "${RED}[ERROR]${RESET} 函数 '${target}' 是 ZFL 的核心/内置系统函数，已被系统写死保护，禁止删除！" >&2
@@ -835,7 +835,7 @@ _zfl() {
                 ;;
             remove|rm)
                 local -a removable_funcs
-                local -a core_funcs=('zfl' 'aicp' 'check_update' 'add_task' 'mskill' 'countText' 'weather' 'extract')
+                local -a core_funcs=('zfl' 'aicp' 'check_update' 'update' 'add_task' 'mskill' 'countText' 'weather' 'extract')
                 local dir file fname
                 for dir in "$ZFL_HOME/functions" "$ZFL_HOME/custom_functions"; do
                     [[ -d "$dir" ]] || continue
