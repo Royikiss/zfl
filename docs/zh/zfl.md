@@ -105,6 +105,7 @@ fi
 > 2. **全局环境变量**：设置 `export ZFL_LAZY_QUIET=1` 可全局静默所有函数的首次懒加载提示。
 > 3. **单函数临时环境变量**：使用 `ZFL_LAZY_QUIET_<func_name>=1` 或 `0` 可单次精准覆盖控制（优先级最高）。
 > 4. **终端启动任务联动**：在 `core/startup_tasks.zsh` 运行期间默认静默懒加载提示，避免污染启动流输出。
+> 5. **启动流纯净输出**：`core/startup_tasks.zsh` 默认对 `[Startup] 开始` 与 `[Startup] 完成` 执行静默，仅呈现任务自身实际输出与错误；如需查看详细耗时，可设置 `export ZFL_STARTUP_VERBOSE=1`。
 
 *元数据解析器在读取到非注释行或空行后将自动停止，保证极其轻量的高效执行。*
 

@@ -54,11 +54,20 @@ if [[ -o interactive ]]; then
                 fi
 
                 if whence "$cmd" > /dev/null; then
+                    local is_verbose=0
+                    if [[ "$ZFL_STARTUP_VERBOSE" == "1" || "$ZFL_STARTUP_VERBOSE" == "true" ]]; then
+                        is_verbose=1
+                    elif [[ "$ZFL_STARTUP_QUIET" == "0" || "$ZFL_STARTUP_QUIET" == "false" ]]; then
+                        is_verbose=1
+                    fi
+
                     start_ts=$(date +%s)
-                    if [[ "$lang" == zh* ]]; then
-                        echo -e "${BRIGHT_BLUE}[Startup]${RESET} 开始: ${task_str}"
-                    else
-                        echo -e "${BRIGHT_BLUE}[Startup]${RESET} Start: ${task_str}"
+                    if (( is_verbose )); then
+                        if [[ "$lang" == zh* ]]; then
+                            echo -e "${BRIGHT_BLUE}[Startup]${RESET} 开始: ${task_str}"
+                        else
+                            echo -e "${BRIGHT_BLUE}[Startup]${RESET} Start: ${task_str}"
+                        fi
                     fi
 
                     "${(@)args}"
@@ -68,10 +77,12 @@ if [[ -o interactive ]]; then
                     elapsed_sec=$(( end_ts - start_ts ))
 
                     if (( exit_code == 0 )); then
-                        if [[ "$lang" == zh* ]]; then
-                            echo -e "${GREEN}[Startup]${RESET} 完成: ${task_str} | exit=${exit_code} | 耗时=${elapsed_sec}s"
-                        else
-                            echo -e "${GREEN}[Startup]${RESET} Completed: ${task_str} | exit=${exit_code} | elapsed=${elapsed_sec}s"
+                        if (( is_verbose )); then
+                            if [[ "$lang" == zh* ]]; then
+                                echo -e "${GREEN}[Startup]${RESET} 完成: ${task_str} | exit=${exit_code} | 耗时=${elapsed_sec}s"
+                            else
+                                echo -e "${GREEN}[Startup]${RESET} Completed: ${task_str} | exit=${exit_code} | elapsed=${elapsed_sec}s"
+                            fi
                         fi
                     else
                         if [[ "$lang" == zh* ]]; then

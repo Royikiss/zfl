@@ -110,6 +110,7 @@ To enable `zfl` to parse and display function information, it is recommended to 
 > 2. **Global Environment Variable**: Set `export ZFL_LAZY_QUIET=1` to suppress lazy load notices for all functions globally.
 > 3. **Per-Function Environment Variable**: Set `ZFL_LAZY_QUIET_<func_name>=1` or `0` for high-priority granular overrides.
 > 4. **Startup Tasks Integration**: Lazy load notices are silenced by default during `core/startup_tasks.zsh` execution for a clean terminal experience.
+> 5. **Clean Startup Stream**: `core/startup_tasks.zsh` runs startup tasks quietly by default, only showing the command's own output and errors. Set `export ZFL_STARTUP_VERBOSE=1` to view `[Startup]` timing logs.
 
 *The metadata parser will automatically stop reading after it encounters a non-comment or empty line, ensuring lightweight and fast execution.*
 

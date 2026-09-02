@@ -18,4 +18,8 @@
 # Lazy load notification control: set to 1 to suppress '[lazy_load] for <func> ...' output globally
 # export ZFL_LAZY_QUIET=1
 
+# Startup tasks output mode: startup tasks run quietly by default (only show actual output and errors).
+# Set to 1 to display [Startup] Start / Completed timing logs on shell launch:
+# export ZFL_STARTUP_VERBOSE=1
+
 
