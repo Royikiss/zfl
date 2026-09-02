@@ -15,4 +15,7 @@
 # Environment variables & PATH examples:
 # export PATH=$PATH:~/.local/bin
 
+# Lazy load notification control: set to 1 to suppress '[lazy_load] for <func> ...' output globally
+# export ZFL_LAZY_QUIET=1
+
 

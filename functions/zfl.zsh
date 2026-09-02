@@ -17,6 +17,7 @@ _zfl_parse_metadata() {
     func_meta_usage=""
     func_meta_example=""
     func_meta_protected=""
+    func_meta_quiet=""
 
     [[ -f "$file" ]] || return 1
 
@@ -52,6 +53,7 @@ _zfl_parse_metadata() {
                     "用法"|"usage") func_meta_usage="$val" ;;
                     "示例"|"example") func_meta_example="$val" ;;
                     "受保护"|"protected") func_meta_protected="$val" ;;
+                    "静默"|"免提示"|"quiet"|"lazy_quiet"|"lazy_silent") func_meta_quiet="$val" ;;
                 esac
             fi
         fi
@@ -136,19 +138,19 @@ _zfl_diagnose_file() {
 
     # Check 2: Header Metadata (#?)
     _zfl_parse_metadata "$file"
-    if [[ -z "$func_meta_desc" ]]; then
-        if [[ "$lang" == zh* ]]; then
-            diag_warnings+=("【元数据缺失】缺少描述信息 (#? description: ...)。")
-        else
-            diag_warnings+=("[Missing Metadata] Missing description (#? description: ...).")
-        fi
-    fi
+    local -a missing_meta=()
+    [[ -z "$func_meta_name" ]] && missing_meta+=("name/名称")
+    [[ -z "$func_meta_desc" ]] && missing_meta+=("description/描述")
+    [[ -z "$func_meta_author" ]] && missing_meta+=("author/作者")
+    [[ -z "$func_meta_version" ]] && missing_meta+=("version/版本")
+    [[ -z "$func_meta_usage" ]] && missing_meta+=("usage/用法")
+    [[ -z "$func_meta_example" ]] && missing_meta+=("example/示例")
 
-    if [[ -z "$func_meta_usage" ]]; then
+    if (( ${#missing_meta[@]} > 0 )); then
         if [[ "$lang" == zh* ]]; then
-            diag_warnings+=("【元数据缺失】缺少用法说明 (#? usage: ...)。")
+            diag_warnings+=("【元数据不完整】头部注释未显式写全，缺少: ${(j:, :)missing_meta}。")
         else
-            diag_warnings+=("[Missing Metadata] Missing usage instruction (#? usage: ...).")
+            diag_warnings+=("[Incomplete Metadata] Header comments incomplete, missing: ${(j:, :)missing_meta}.")
         fi
     fi
 
@@ -181,7 +183,7 @@ _zfl_list() {
     fi
 
     local dir file fname source_type color_source
-    local func_meta_name func_meta_desc func_meta_author func_meta_version func_meta_deps func_meta_usage func_meta_example func_meta_protected
+    local func_meta_name func_meta_desc func_meta_author func_meta_version func_meta_deps func_meta_usage func_meta_example func_meta_protected func_meta_quiet
     local -a diag_errors diag_warnings
     local -a problem_details
 
@@ -307,8 +309,23 @@ _zfl_info() {
         return 1
     fi
 
-    local func_meta_name func_meta_desc func_meta_author func_meta_version func_meta_deps func_meta_usage func_meta_example
+    local func_meta_name func_meta_desc func_meta_author func_meta_version func_meta_deps func_meta_usage func_meta_example func_meta_protected func_meta_quiet
+    local quiet_display
     _zfl_parse_metadata "$path_found"
+
+    if [[ "$func_meta_quiet" == "true" || "$func_meta_quiet" == "1" || "$func_meta_quiet" == "yes" ]]; then
+        if [[ "$lang" == zh* ]]; then
+            quiet_display="${YELLOW}静默 (Quiet)${RESET}"
+        else
+            quiet_display="${YELLOW}Quiet${RESET}"
+        fi
+    else
+        if [[ "$lang" == zh* ]]; then
+            quiet_display="${GREEN}提示 (Verbose)${RESET}"
+        else
+            quiet_display="${GREEN}Verbose${RESET}"
+        fi
+    fi
 
     if [[ "$lang" == zh* ]]; then
         echo -e "${BOLD}${CYAN}函数详情: ${target}${RESET}"
@@ -317,6 +334,7 @@ _zfl_info() {
         echo -e "${BOLD}简短描述:${RESET} ${func_meta_desc:-暂无}"
         echo -e "${BOLD}脚本作者:${RESET} ${func_meta_author:-未知}"
         echo -e "${BOLD}当前版本:${RESET} ${func_meta_version:-1.0.0}"
+        echo -e "${BOLD}首次加载:${RESET} ${quiet_display}"
         echo -e "${BOLD}必要依赖:${RESET} ${func_meta_deps:-无}"
         echo -e "${BOLD}使用方法:${RESET} ${func_meta_usage:-暂无}"
         if [[ -n "$func_meta_example" ]]; then
@@ -329,6 +347,7 @@ _zfl_info() {
         echo -e "${BOLD}Description:    ${RESET} ${func_meta_desc:-None}"
         echo -e "${BOLD}Author:         ${RESET} ${func_meta_author:-Unknown}"
         echo -e "${BOLD}Version:        ${RESET} ${func_meta_version:-1.0.0}"
+        echo -e "${BOLD}Lazy Notice:    ${RESET} ${quiet_display}"
         echo -e "${BOLD}Dependencies:   ${RESET} ${func_meta_deps:-None}"
         echo -e "${BOLD}Usage:          ${RESET} ${func_meta_usage:-None}"
         if [[ -n "$func_meta_example" ]]; then
@@ -356,7 +375,7 @@ _zfl_check() {
 
     local dir file fname dep
     local -a deps_list
-    local func_meta_name func_meta_desc func_meta_author func_meta_version func_meta_deps func_meta_usage func_meta_example
+    local func_meta_name func_meta_desc func_meta_author func_meta_version func_meta_deps func_meta_usage func_meta_example func_meta_protected func_meta_quiet
 
     for dir in "$ZFL_HOME/functions" "$ZFL_HOME/custom_functions"; do
         [[ -d "$dir" ]] || continue
@@ -545,6 +564,7 @@ _zfl_addfunc() {
 #? description: ${func_desc}
 #? author: ${func_author}
 #? version: 1.0.0
+#? quiet: false
 #? deps: 
 #? usage: ${target_name} [args]
 #? example: ${target_name}
@@ -610,6 +630,7 @@ _zfl_remove() {
     fi
 
     local file path_found="" dir
+    local func_meta_name func_meta_desc func_meta_author func_meta_version func_meta_deps func_meta_usage func_meta_example func_meta_protected func_meta_quiet
     for dir in "$ZFL_HOME/functions" "$ZFL_HOME/custom_functions"; do
         if [[ -f "$dir/${target}.zsh" ]]; then
             path_found="$dir/${target}.zsh"
@@ -837,6 +858,7 @@ _zfl() {
                 local -a removable_funcs
                 local -a core_funcs=('zfl' 'aicp' 'check_update' 'update' 'add_task' 'mskill' 'countText' 'weather' 'extract')
                 local dir file fname
+                local func_meta_name func_meta_desc func_meta_author func_meta_version func_meta_deps func_meta_usage func_meta_example func_meta_protected func_meta_quiet
                 for dir in "$ZFL_HOME/functions" "$ZFL_HOME/custom_functions"; do
                     [[ -d "$dir" ]] || continue
                     for file in "$dir"/*.zsh(N); do

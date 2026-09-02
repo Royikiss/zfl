@@ -5,7 +5,57 @@ lazy_load_functions() {
     load_color RED GREEN RESET    # Load colors
     local func_name=$1
     local func_file=$2
-    echo "${GREEN}[lazy_load]${RESET} for ${GREEN}${func_name}${RESET} ..."
+    local is_quiet=0
+    local env_func_quiet="ZFL_LAZY_QUIET_${func_name}"
+
+    # Priority 1: Per-function environment variable (e.g. ZFL_LAZY_QUIET_check_update)
+    if [[ -n "${(P)env_func_quiet}" ]]; then
+        if [[ "${(P)env_func_quiet}" == "1" || "${(P)env_func_quiet}" == "true" ]]; then
+            is_quiet=1
+        elif [[ "${(P)env_func_quiet}" == "0" || "${(P)env_func_quiet}" == "false" ]]; then
+            is_quiet=0
+        fi
+    # Priority 2: Global environment variable (e.g. ZFL_LAZY_QUIET)
+    elif [[ -n "$ZFL_LAZY_QUIET" ]]; then
+        if [[ "$ZFL_LAZY_QUIET" == "1" || "$ZFL_LAZY_QUIET" == "true" ]]; then
+            is_quiet=1
+        elif [[ "$ZFL_LAZY_QUIET" == "0" || "$ZFL_LAZY_QUIET" == "false" ]]; then
+            is_quiet=0
+        fi
+    # Priority 3: Function file header metadata tag (#? quiet: true)
+    elif [[ -f "$func_file" ]]; then
+        local line trimmed content key val
+        while IFS= read -r line; do
+            trimmed="${line##[[:space:]]}"
+            [[ -z "$trimmed" ]] && continue
+            [[ "$trimmed" != "#"* ]] && break
+            if [[ "$trimmed" == "#?"* ]]; then
+                content="${trimmed#\#?}"
+                content="${content##[[:space:]]}"
+                if [[ "$content" == *":"* ]]; then
+                    key="${content%%:*}"
+                    val="${content#*:}"
+                    key="${key##[[:space:]]}"; key="${key%%[[:space:]]}"
+                    val="${val##[[:space:]]}"; val="${val%%[[:space:]]}"
+                    case "$key" in
+                        "quiet"|"lazy_quiet"|"lazy_silent"|"静默"|"免提示")
+                            if [[ "$val" == "true" || "$val" == "1" || "$val" == "yes" ]]; then
+                                is_quiet=1
+                            elif [[ "$val" == "false" || "$val" == "0" || "$val" == "no" ]]; then
+                                is_quiet=0
+                            fi
+                            break
+                            ;;
+                    esac
+                fi
+            fi
+        done < "$func_file"
+    fi
+
+    if (( ! is_quiet )); then
+        echo "${GREEN}[lazy_load]${RESET} for ${GREEN}${func_name}${RESET} ..."
+    fi
+
     source "$func_file" || {
         echo -e "${RED}[ERROR]${RESET}: load ${func_name} failed from ${func_file}." >&2
         return 1

@@ -12,7 +12,7 @@ GLOBAL_WHITELIST = {
     "IFS", "PATH", "HOME", "USER", "PWD", "OLDPWD", "SHLVL", "RANDOM", "SECONDS",
     "COLUMNS", "LINES", "UID", "GID", "PID", "CPUTYPE", "MACHTYPE", "OSTYPE",
     # ZFL 框架自定义全局变量
-    "ZFL_HOME", "COLORS", 
+    "ZFL_HOME", "COLORS", "ZFL_LANG", "ZFL_LAZY_QUIET", "ZFL_STARTUP_LAZY_QUIET",
     # check_update.zsh 相关的全局配置/状态变量
     "CHECK_UPDATE_CACHE_TTL_SECONDS", "CHECK_UPDATE_PROMPT_POLICY",
     "CHECK_UPDATE_APT_CMD", "CHECK_UPDATE_PACMAN_CMD", "CHECK_UPDATE_YAY_CMD",
@@ -307,19 +307,25 @@ def lint_file(file_path):
                     k = content.split(":", 1)[0].strip()
                     meta_keys.add(k)
             
+            REQUIRED_FIELDS = [
+                (("name", "名称"), "name/名称"),
+                (("desc", "description", "描述"), "description/描述"),
+                (("author", "作者"), "author/作者"),
+                (("version", "版本"), "version/版本"),
+                (("deps", "dependencies", "依赖"), "deps/依赖"),
+                (("usage", "用法"), "usage/用法"),
+                (("example", "示例"), "example/示例"),
+            ]
             missing_meta = []
-            has_desc = any(k in meta_keys for k in ("name", "名称", "desc", "description", "描述"))
-            if not has_desc:
-                missing_meta.append("description/描述")
-            has_usage = any(k in meta_keys for k in ("usage", "用法"))
-            if not has_usage:
-                missing_meta.append("usage/用法")
+            for aliases, label in REQUIRED_FIELDS:
+                if not any(k in meta_keys for k in aliases):
+                    missing_meta.append(label)
                 
             if missing_meta:
                 if is_zh:
-                    warnings.append(f"【元数据不完整】文件头部 #? 元数据缺少推荐字段: {', '.join(missing_meta)}")
+                    warnings.append(f"【元数据不完整】文件头部 #? 规范注释未显式写全，缺少字段: {', '.join(missing_meta)}")
                 else:
-                    warnings.append(f"[Incomplete Metadata] File header #? metadata missing recommended fields: {', '.join(missing_meta)}")
+                    warnings.append(f"[Incomplete Metadata] File header #? metadata must be explicitly written in full. Missing: {', '.join(missing_meta)}")
 
     # 3. Extract and validate function definitions
     funcs = extract_functions(preprocessed_code)

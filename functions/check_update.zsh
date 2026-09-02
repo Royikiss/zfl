@@ -2,6 +2,7 @@
 #? description: Check last system update date and prompt update reminder
 #? author: Royi
 #? version: 2.0.0
+#? quiet: true
 #? deps:
 #? usage: check_update [-f|--force]
 #? example: check_update

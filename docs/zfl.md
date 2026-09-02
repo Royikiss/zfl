@@ -60,7 +60,7 @@ zfl remove weather  # Safely delete weather and unload its hooks from current se
 `zfl lint` integrates a Python static analysis tool to inspect script quality in local environments or CI workflows. Key check items include:
 
 1.  **File Extension & Mapping**: File extension must be `.zsh`. File `foo.zsh` must contain and only define a main entry function `foo()`.
-2.  **Header Metadata Standard (#?)**: Verifies file header for valid `#?` comment block and required fields like `description` and `usage`.
+2.  **Header Metadata Standard (#?)**: Verifies that the file header explicitly declares all 7 mandatory metadata fields (`name`, `description`, `author`, `version`, `deps`, `usage`, `example`) in full, ensuring complete self-documentation.
 3.  **Global Variable Leaks**: Scans variables assigned in functions. Any variable that is not explicitly declared using `local` or `typeset`, and is not in the system whitelist, will trigger a leak warning.
 4.  **FD 3 Leak Risks**: Checks if background tasks (like `&`, `coproc`) have file descriptor 3 safely closed (`3<&-`), preventing sub-processes from locking the parent terminal.
 5.  **Hardcoded Colors**: Flags any hardcoded ANSI escape color codes, encouraging developers to use the library's `load_color` instead.
@@ -93,6 +93,7 @@ To enable `zfl` to parse and display function information, it is recommended to 
 #? description: Query real-time weather and forecast in terminal
 #? author: Royi
 #? version: 1.0.0
+#? quiet: false
 #? protected: true
 #? deps: curl
 #? usage: weather [city_name]
@@ -103,6 +104,12 @@ To enable `zfl` to parse and display function information, it is recommended to 
 > 1. **Hardcoded Protection Whitelist**: Built-in core functions (`zfl`, `aicp`, `check_update`, `add_task`, `mskill`, `countText`, `weather`, `extract`) are hardcoded and cannot be deleted via `zfl remove`.
 > 2. **Metadata Protection Tag**: Adding `#? protected: true` in any script header prevents `zfl remove` from deleting it.
 > 3. **Tab Completion Filtering**: `zfl remove <Tab>` automatically excludes protected core functions, allowing completion only for removable custom scripts.
+
+> **🔇 Lazy Load Notification Control**:
+> 1. **Metadata Header Tag**: Add `#? quiet: true` (or `#? lazy_quiet: true`) to suppress `[lazy_load] for <func> ...` when the function is first loaded.
+> 2. **Global Environment Variable**: Set `export ZFL_LAZY_QUIET=1` to suppress lazy load notices for all functions globally.
+> 3. **Per-Function Environment Variable**: Set `ZFL_LAZY_QUIET_<func_name>=1` or `0` for high-priority granular overrides.
+> 4. **Startup Tasks Integration**: Lazy load notices are silenced by default during `core/startup_tasks.zsh` execution for a clean terminal experience.
 
 *The metadata parser will automatically stop reading after it encounters a non-comment or empty line, ensuring lightweight and fast execution.*
 

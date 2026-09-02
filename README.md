@@ -22,6 +22,7 @@ ZFL is a high-performance, modular configuration and function library for Zsh. W
   - Built-in `zfl` static code checker lints variable/file-descriptor leaks, naming styles, hardcoded colors, and missing documentation. Integrates with GitHub Actions gate checks.
   - Parses standardized metadata comment headers to auto-generate lists of available tools and verify system CLI dependencies.
   - Implements immutable core function protection and metadata `#? protected: true` safeguards, preventing built-in tools from accidental deletion.
+  - Supports granular lazy loading prompt control via metadata tags (`#? quiet: true`) and environment variables (`ZFL_LAZY_QUIET=1`).
 - 📦 **Universal Decompression & One-Key Compression (extract)**
   - Seamlessly handles multi-format archives (tar, gz, bz2, xz, zst, zip, 7z, rar) with built-in archive-bomb protection.
   - Supports `--compress` (`-c`) mode with parameter-driven format selection (`--zip`, `--tar.gz`, etc.) and rich Tab-completion descriptions.
@@ -137,7 +138,7 @@ Each tool in ZFL has a companion markdown documentation under [docs/](file:///ho
 If you plan to contribute new tools or modify functions in ZFL, please adhere to the conventions defined in [CONTRIBUTING.md](file:///home/royi/.config/zsh/CONTRIBUTING.md) and [AGENTS.md](file:///home/royi/.config/zsh/AGENTS.md):
 
 1. **File-to-Function 1:1 Mapping**: New features must reside under `functions/<name>.zsh` containing exactly one entry function named `<name>()`.
-2. **Metadata Header Standards**: Include standardized metadata descriptions (lines starting with `#?`) declaring name, description, author, version, deps, and usage at the very top of files.
+2. **Metadata Header Standards**: Include standardized metadata descriptions (lines starting with `#?`) declaring name, description, author, version, deps, usage, and optional control tags (`quiet: true`, `protected: true`) at the very top of files.
 3. **Strong Variable Declarations**: All loop iterators, read buffers, and temporary variables must be explicitly declared as `local` to prevent namespace pollution.
 4. **Helper Function Cleanup**: Out-of-scope helper functions must start with `_parentname_` and be unloaded using `unfunction` before the parent exits. Embedded inner function structures are highly recommended.
 5. **FD 3 Safe Closing**: Background tasks (`&`, `coproc`) or subshell forks must explicitly close file descriptor 3 (`3<&-`), preventing parent shells from hanging or locking.
