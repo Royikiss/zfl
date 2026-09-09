@@ -366,12 +366,34 @@ def main():
     def get_group_mount_stats(gskills):
         if not os.path.exists(proj_skills_dir) or not gskills:
             return ""
-        count = sum(1 for s in gskills if os.path.exists(os.path.join(proj_skills_dir, s)))
-        if count == len(gskills):
-            return "\033[1;32m[全组已连]\033[0m " if is_zh else "\033[1;32m[all mounted]\033[0m "
-        elif count > 0:
-            return f"\033[1;33m[{count}/{len(gskills)}已连]\033[0m " if is_zh else f"\033[1;33m[{count}/{len(gskills)} mounted]\033[0m "
-        return ""
+        total = len(gskills)
+        if total == 0:
+            return ""
+
+        link_count = 0
+        copy_count = 0
+        for s in gskills:
+            dest = os.path.join(proj_skills_dir, s)
+            if os.path.islink(dest):
+                link_count += 1
+            elif os.path.isdir(dest):
+                copy_count += 1
+
+        if link_count == 0 and copy_count == 0:
+            return ""
+
+        link_pct = round(link_count / total * 100)
+        copy_pct = round(copy_count / total * 100)
+
+        badge_text = f"[🔗:{link_pct}%, 📦:{copy_pct}%]"
+        if link_count > 0 and copy_count == 0:
+            color = "\033[1;34m"  # 蓝色：全是软链接
+        elif copy_count > 0 and link_count == 0:
+            color = "\033[1;32m"  # 绿色：全是下载拷贝
+        else:
+            color = "\033[1;33m"  # 黄色：两者都有
+
+        return f"{color}{badge_text}\033[0m "
 
     items = []
     skills_in_groups = set()
