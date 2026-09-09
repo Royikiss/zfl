@@ -167,47 +167,32 @@ _zfl_diagnose_file() {
 }
 
 _zfl_list() {
-    load_color GREEN YELLOW CYAN RED RESET BOLD
+    load_color GREEN YELLOW CYAN RED RESET BOLD BRIGHT_BLACK
     local lang=${ZFL_LANG:-${LANG%%.*}}
 
+    local -a system_files=("$ZFL_HOME/functions"/*(N))
+    local -a user_files=("$ZFL_HOME/custom_functions"/*(N))
+    local total_count=$(( ${#system_files[@]} + ${#user_files[@]} ))
+
     if [[ "$lang" == zh* ]]; then
-        echo -e "${BOLD}${CYAN}ZFL (Zsh Function Library) 函数与物理文件列表:${RESET}"
-        echo -e "--------------------------------------------------------------------------------"
-        printf "%-22s | %-4s | %s\n" "文件/函数名称" "来源" "状态与描述信息"
-        echo -e "--------------------------------------------------------------------------------"
+        echo -e "\n  ${BOLD}${CYAN}📦 ZFL (Zsh Function Library) 函数清单${RESET}  [总计: ${BOLD}${total_count}${RESET}]  [${GREEN}● 社区内置: ${#system_files[@]}${RESET}]  [${YELLOW}○ 用户自建: ${#user_files[@]}${RESET}]\n"
+        echo -e "  ${BOLD}函数/文件 (Function)     来源类型      功能描述与状态${RESET}"
+        echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────────────────────${RESET}"
     else
-        echo -e "${BOLD}${CYAN}ZFL (Zsh Function Library) Function & File List:${RESET}"
-        echo -e "--------------------------------------------------------------------------------"
-        printf "%-22s | %-6s | %s\n" "File/Function Name" "Source" "Status & Description"
-        echo -e "--------------------------------------------------------------------------------"
+        echo -e "\n  ${BOLD}${CYAN}📦 ZFL (Zsh Function Library) Functions${RESET}  [Total: ${BOLD}${total_count}${RESET}]  [${GREEN}● Built-in: ${#system_files[@]}${RESET}]  [${YELLOW}○ Custom: ${#user_files[@]}${RESET}]\n"
+        echo -e "  ${BOLD}Function/File (Name)     Source Type   Status & Description${RESET}"
+        echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────────────────────${RESET}"
     fi
 
-    local dir file fname source_type color_source
+    local dir file fname source_pill padded_name status_desc colored_name detail_msg is_user
     local func_meta_name func_meta_desc func_meta_author func_meta_version func_meta_deps func_meta_usage func_meta_example func_meta_protected func_meta_quiet
     local -a diag_errors diag_warnings
     local -a problem_details
 
     for dir in "$ZFL_HOME/functions" "$ZFL_HOME/custom_functions"; do
         [[ -d "$dir" ]] || continue
-        if [[ "$dir" == *"/custom_functions" ]]; then
-            if [[ "$lang" == zh* ]]; then
-                source_type="用户"
-                local padded_source="${(r:4:)source_type}"
-            else
-                source_type="User"
-                local padded_source="${(r:6:)source_type}"
-            fi
-            color_source="${YELLOW}"
-        else
-            if [[ "$lang" == zh* ]]; then
-                source_type="社区"
-                local padded_source="${(r:4:)source_type}"
-            else
-                source_type="System"
-                local padded_source="${(r:6:)source_type}"
-            fi
-            color_source="${GREEN}"
-        fi
+        is_user=0
+        [[ "$dir" == *"/custom_functions" ]] && is_user=1
 
         for file in "$dir"/*(N); do
             [[ -f "$file" ]] || continue
@@ -215,34 +200,47 @@ _zfl_list() {
 
             _zfl_diagnose_file "$file"
 
-            local padded_name="${(r:22:)fname}"
-            local colored_source="${color_source}${padded_source}${RESET}"
-            local status_desc=""
+            padded_name="${(r:24:)fname}"
+            status_desc=""
+
+            if (( is_user )); then
+                if [[ "$lang" == zh* ]]; then
+                    source_pill="${YELLOW}○ 用户自建    ${RESET}"
+                else
+                    source_pill="${YELLOW}○ Custom      ${RESET}"
+                fi
+            else
+                if [[ "$lang" == zh* ]]; then
+                    source_pill="${GREEN}● 社区内置    ${RESET}"
+                else
+                    source_pill="${GREEN}● Built-in    ${RESET}"
+                fi
+            fi
 
             if (( ${#diag_errors[@]} > 0 )); then
-                local colored_name="${BOLD}${RED}${padded_name}${RESET}"
+                colored_name="${BOLD}${RED}${padded_name}${RESET}"
                 status_desc="${RED}[错误/无法加载] ${diag_errors[1]}${RESET}"
-                local detail_msg="${BOLD}${RED}${fname}${RESET} (${file}):"
+                detail_msg="  ${BOLD}${RED}${fname}${RESET} (${file}):"
                 local err warn
                 for err in "${diag_errors[@]}"; do
-                    detail_msg+=$'\n'"  └─ ${RED}✗ ${err}${RESET}"
+                    detail_msg+=$'\n'"    └─ ${RED}✗ ${err}${RESET}"
                 done
                 for warn in "${diag_warnings[@]}"; do
-                    detail_msg+=$'\n'"  └─ ${YELLOW}! ${warn}${RESET}"
+                    detail_msg+=$'\n'"    └─ ${YELLOW}! ${warn}${RESET}"
                 done
                 problem_details+=("$detail_msg")
             elif (( ${#diag_warnings[@]} > 0 )); then
-                local colored_name="${BOLD}${YELLOW}${padded_name}${RESET}"
+                colored_name="${BOLD}${YELLOW}${padded_name}${RESET}"
                 local desc_txt="${func_meta_desc:-暂无描述}"
                 status_desc="${YELLOW}[警告: 格式欠佳] ${desc_txt}${RESET}"
-                local detail_msg="${BOLD}${YELLOW}${fname}${RESET} (${file}):"
+                detail_msg="  ${BOLD}${YELLOW}${fname}${RESET} (${file}):"
                 local warn
                 for warn in "${diag_warnings[@]}"; do
-                    detail_msg+=$'\n'"  └─ ${YELLOW}! ${warn}${RESET}"
+                    detail_msg+=$'\n'"    └─ ${YELLOW}! ${warn}${RESET}"
                 done
                 problem_details+=("$detail_msg")
             else
-                local colored_name="${BOLD}${CYAN}${padded_name}${RESET}"
+                colored_name="${CYAN}${padded_name}${RESET}"
                 local no_desc="No description"
                 if [[ "$lang" == zh* ]]; then
                     no_desc="暂无描述"
@@ -250,36 +248,36 @@ _zfl_list() {
                 status_desc="${func_meta_desc:-$no_desc}"
             fi
 
-            printf "%b | %b | %b\n" "$colored_name" "$colored_source" "$status_desc"
+            echo -e "  ${colored_name}  ${source_pill}  ${status_desc}"
         done
     done
-    echo -e "--------------------------------------------------------------------------------"
+    echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────────────────────${RESET}"
 
     if (( ${#problem_details[@]} > 0 )); then
         echo ""
         if [[ "$lang" == zh* ]]; then
-            echo -e "${BOLD}${RED}⚠️  检测到不合规文件格式诊断报告 (${#problem_details[@]} 个文件需要处理):${RESET}"
-            echo -e "--------------------------------------------------------------------------------"
+            echo -e "  ${BOLD}${RED}⚠️  检测到不合规文件格式诊断报告 (${#problem_details[@]} 个文件需要处理):${RESET}"
+            echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────────────────────${RESET}"
         else
-            echo -e "${BOLD}${RED}⚠️  Format Diagnostics Report (${#problem_details[@]} files need attention):${RESET}"
-            echo -e "--------------------------------------------------------------------------------"
+            echo -e "  ${BOLD}${RED}⚠️  Format Diagnostics Report (${#problem_details[@]} files need attention):${RESET}"
+            echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────────────────────${RESET}"
         fi
         local item
         for item in "${problem_details[@]}"; do
             echo -e "$item"
         done
-        echo -e "--------------------------------------------------------------------------------"
+        echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────────────────────${RESET}"
     fi
 
     if [[ "$lang" == zh* ]]; then
-        echo -e "提示: 使用 ${GREEN}zfl info <函数名>${RESET} 查看详细用法，使用 ${GREEN}zfl lint <函数名>${RESET} 进行深度静态检查。"
+        echo -e "  ${BRIGHT_BLACK}💡 提示: 使用 'zfl info <函数名>' 查看详细用法，'zfl lint <函数名>' 进行深度静态检查。${RESET}\n"
     else
-        echo -e "Tip: Use ${GREEN}zfl info <func_name>${RESET} for usage, and ${GREEN}zfl lint <func_name>${RESET} for deep linting."
+        echo -e "  ${BRIGHT_BLACK}💡 Tip: Use 'zfl info <func_name>' for usage, and 'zfl lint <func_name>' for deep linting.${RESET}\n"
     fi
 }
 
 _zfl_info() {
-    load_color GREEN YELLOW CYAN RED RESET BOLD
+    load_color GREEN YELLOW CYAN RED RESET BOLD BRIGHT_BLACK
     local target=$1
     local lang=${ZFL_LANG:-${LANG%%.*}}
 
@@ -328,53 +326,52 @@ _zfl_info() {
     fi
 
     if [[ "$lang" == zh* ]]; then
-        echo -e "${BOLD}${CYAN}函数详情: ${target}${RESET}"
-        echo -e "----------------------------------------"
-        echo -e "${BOLD}文件路径:${RESET} ${path_found}"
-        echo -e "${BOLD}简短描述:${RESET} ${func_meta_desc:-暂无}"
-        echo -e "${BOLD}脚本作者:${RESET} ${func_meta_author:-未知}"
-        echo -e "${BOLD}当前版本:${RESET} ${func_meta_version:-1.0.0}"
-        echo -e "${BOLD}首次加载:${RESET} ${quiet_display}"
-        echo -e "${BOLD}必要依赖:${RESET} ${func_meta_deps:-无}"
-        echo -e "${BOLD}使用方法:${RESET} ${func_meta_usage:-暂无}"
+        echo -e "\n  ${BOLD}${CYAN}ℹ️  ZFL 函数详情: ${target}${RESET}"
+        echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}"
+        echo -e "  ${BOLD}文件路径:${RESET} ${path_found}"
+        echo -e "  ${BOLD}简短描述:${RESET} ${func_meta_desc:-暂无}"
+        echo -e "  ${BOLD}脚本作者:${RESET} ${func_meta_author:-未知}"
+        echo -e "  ${BOLD}当前版本:${RESET} ${func_meta_version:-1.0.0}"
+        echo -e "  ${BOLD}首次加载:${RESET} ${quiet_display}"
+        echo -e "  ${BOLD}必要依赖:${RESET} ${func_meta_deps:-无}"
+        echo -e "  ${BOLD}使用方法:${RESET} ${func_meta_usage:-暂无}"
         if [[ -n "$func_meta_example" ]]; then
-            echo -e "${BOLD}使用示例:${RESET} ${GREEN}${func_meta_example}${RESET}"
+            echo -e "  ${BOLD}使用示例:${RESET} ${GREEN}${func_meta_example}${RESET}"
         fi
+        echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}\n"
     else
-        echo -e "${BOLD}${CYAN}Function Details: ${target}${RESET}"
-        echo -e "----------------------------------------"
-        echo -e "${BOLD}File Path:      ${RESET} ${path_found}"
-        echo -e "${BOLD}Description:    ${RESET} ${func_meta_desc:-None}"
-        echo -e "${BOLD}Author:         ${RESET} ${func_meta_author:-Unknown}"
-        echo -e "${BOLD}Version:        ${RESET} ${func_meta_version:-1.0.0}"
-        echo -e "${BOLD}Lazy Notice:    ${RESET} ${quiet_display}"
-        echo -e "${BOLD}Dependencies:   ${RESET} ${func_meta_deps:-None}"
-        echo -e "${BOLD}Usage:          ${RESET} ${func_meta_usage:-None}"
+        echo -e "\n  ${BOLD}${CYAN}ℹ️  ZFL Function Details: ${target}${RESET}"
+        echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}"
+        echo -e "  ${BOLD}File Path:      ${RESET} ${path_found}"
+        echo -e "  ${BOLD}Description:    ${RESET} ${func_meta_desc:-None}"
+        echo -e "  ${BOLD}Author:         ${RESET} ${func_meta_author:-Unknown}"
+        echo -e "  ${BOLD}Version:        ${RESET} ${func_meta_version:-1.0.0}"
+        echo -e "  ${BOLD}Lazy Notice:    ${RESET} ${quiet_display}"
+        echo -e "  ${BOLD}Dependencies:   ${RESET} ${func_meta_deps:-None}"
+        echo -e "  ${BOLD}Usage:          ${RESET} ${func_meta_usage:-None}"
         if [[ -n "$func_meta_example" ]]; then
-            echo -e "${BOLD}Example:        ${RESET} ${GREEN}${func_meta_example}${RESET}"
+            echo -e "  ${BOLD}Example:        ${RESET} ${GREEN}${func_meta_example}${RESET}"
         fi
+        echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}\n"
     fi
-    echo -e "----------------------------------------"
 }
 
 _zfl_check() {
-    load_color GREEN YELLOW CYAN RED RESET BOLD
+    load_color GREEN YELLOW CYAN RED RESET BOLD BRIGHT_BLACK
     local lang=${ZFL_LANG:-${LANG%%.*}}
 
     if [[ "$lang" == zh* ]]; then
-        echo -e "${BOLD}${CYAN}正在检测 ZFL 所有函数的系统依赖状态...${RESET}"
-        echo -e "--------------------------------------------------------"
-        printf "%-18s | %-8s | %s\n" "函数名称" "依赖状态" "缺失依赖"
-        echo -e "--------------------------------------------------------"
+        echo -e "\n  ${BOLD}${CYAN}⚡ ZFL 函数外部依赖巡检${RESET}\n"
+        echo -e "  ${BOLD}函数名称 (Function)      依赖状态      系统依赖与缺失项${RESET}"
+        echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}"
     else
-        echo -e "${BOLD}${CYAN}Checking ZFL dependency status for all functions...${RESET}"
-        echo -e "--------------------------------------------------------"
-        printf "%-18s | %-8s | %s\n" "Function Name" "Status" "Missing Deps"
-        echo -e "--------------------------------------------------------"
+        echo -e "\n  ${BOLD}${CYAN}⚡ ZFL Function Dependencies Check${RESET}\n"
+        echo -e "  ${BOLD}Function Name            Status        Dependencies & Missing${RESET}"
+        echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}"
     fi
 
-    local dir file fname dep
-    local -a deps_list
+    local dir file fname dep padded_name colored_name status_pill
+    local -a deps_list missing
     local func_meta_name func_meta_desc func_meta_author func_meta_version func_meta_deps func_meta_usage func_meta_example func_meta_protected func_meta_quiet
 
     for dir in "$ZFL_HOME/functions" "$ZFL_HOME/custom_functions"; do
@@ -382,19 +379,22 @@ _zfl_check() {
         for file in "$dir"/*.zsh(N); do
             fname=$(basename "$file" .zsh)
             _zfl_parse_metadata "$file"
-            
-            local padded_name="${(r:18:)fname}"
-            local colored_name="${BOLD}${CYAN}${padded_name}${RESET}"
+
+            padded_name="${(r:24:)fname}"
+            colored_name="${CYAN}${padded_name}${RESET}"
 
             if [[ -z "$func_meta_deps" ]]; then
-                local status_str="[ NONE ]"
-                local colored_status="${status_str}"
-                printf "%b | %b | %s\n" "$colored_name" "$colored_status" "-"
+                if [[ "$lang" == zh* ]]; then
+                    status_pill="${BRIGHT_BLACK}— 无依赖      ${RESET}"
+                else
+                    status_pill="${BRIGHT_BLACK}— None        ${RESET}"
+                fi
+                echo -e "  ${colored_name}  ${status_pill}  ${BRIGHT_BLACK}—${RESET}"
                 continue
             fi
 
             deps_list=(${(s:,:)func_meta_deps})
-            local missing=()
+            missing=()
             for dep in "${deps_list[@]}"; do
                 dep="${dep##[[:space:]]}"
                 dep="${dep%%[[:space:]]}"
@@ -405,17 +405,23 @@ _zfl_check() {
             done
 
             if (( ${#missing[@]} == 0 )); then
-                local status_str="[  OK  ]"
-                local colored_status="${GREEN}${status_str}${RESET}"
-                printf "%b | %b | %s\n" "$colored_name" "$colored_status" "-"
+                if [[ "$lang" == zh* ]]; then
+                    status_pill="${GREEN}● 全部就绪    ${RESET}"
+                else
+                    status_pill="${GREEN}● Ready       ${RESET}"
+                fi
+                echo -e "  ${colored_name}  ${status_pill}  ${BRIGHT_BLACK}${func_meta_deps}${RESET}"
             else
-                local status_str="[ MISS ]"
-                local colored_status="${RED}${status_str}${RESET}"
-                printf "%b | %b | %b\n" "$colored_name" "$colored_status" "${YELLOW}${missing[*]}${RESET}"
+                if [[ "$lang" == zh* ]]; then
+                    status_pill="${RED}▲ 缺失依赖    ${RESET}"
+                else
+                    status_pill="${RED}▲ Missing     ${RESET}"
+                fi
+                echo -e "  ${colored_name}  ${status_pill}  ${RED}${missing[*]}${RESET}"
             fi
         done
     done
-    echo -e "--------------------------------------------------------"
+    echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}\n"
 }
 
 _zfl_lint() {

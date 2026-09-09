@@ -41,8 +41,14 @@ aicp() {
     }
 
     _aicp_help_row() {
-        printf "  ${GREEN}%-30s${RESET} %-34s ${BLUE}[%s]${RESET}
-" "$1" "$2" "$3"
+        local opt="$1" desc="$2" default_val="$3"
+        local num_chars=${#desc}
+        local ascii_only="${desc//[^ -~]/}"
+        local non_ascii_count=$(( num_chars - ${#ascii_only} ))
+        local visual_w=$(( num_chars + non_ascii_count ))
+        local pad_spaces=$(( 34 - visual_w ))
+        (( pad_spaces < 1 )) && pad_spaces=1
+        printf "  ${GREEN}%-34s${RESET} %s%*s ${BLUE}[%s]${RESET}\n" "$opt" "$desc" "$pad_spaces" "" "$default_val"
     }
 
     _aicp_help_general() {

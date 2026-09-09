@@ -84,9 +84,20 @@ DEFAULT_TRANSLATIONS = {
   }
 }
 
+def atomic_save_json(file_path, data):
+    try:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        tmp_file = f"{file_path}.tmp.{os.getpid()}"
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_file, file_path)
+        return True
+    except Exception:
+        return False
+
 def translate_via_google(text, to_lang='zh-CN'):
     """
-    Using public GTX Translate API to translate text.
+    Using public GTX Translate API to translate text with fast 1.5s timeout.
     """
     url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=" + to_lang + "&dt=t&q=" + urllib.parse.quote(text)
     headers = {
@@ -94,7 +105,7 @@ def translate_via_google(text, to_lang='zh-CN'):
     }
     req = urllib.request.Request(url, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=1.5) as response:
             res = json.loads(response.read().decode('utf-8'))
             translated = "".join([item[0] for item in res[0] if item[0]])
             return translated
@@ -165,12 +176,8 @@ DATA_DIR = get_zfl_data_dir()
 def load_user_translations():
     cache_path = os.path.join(DATA_DIR, "skills_zh.json")
     if not os.path.exists(cache_path):
-        try:
-            with open(cache_path, "w", encoding="utf-8") as f:
-                json.dump(DEFAULT_TRANSLATIONS, f, indent=2, ensure_ascii=False)
-            return DEFAULT_TRANSLATIONS
-        except Exception:
-            return DEFAULT_TRANSLATIONS
+        atomic_save_json(cache_path, DEFAULT_TRANSLATIONS)
+        return DEFAULT_TRANSLATIONS
     try:
         with open(cache_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -181,11 +188,7 @@ def load_user_translations():
                     data[k] = v
                     updated = True
             if updated:
-                try:
-                    with open(cache_path, "w", encoding="utf-8") as f:
-                        json.dump(data, f, indent=2, ensure_ascii=False)
-                except Exception:
-                    pass
+                atomic_save_json(cache_path, data)
             return data
     except Exception:
         return DEFAULT_TRANSLATIONS
@@ -254,6 +257,7 @@ def print_hotkeys_footer(is_zh):
         print(f"{CYAN}│{RESET}  {YELLOW}🌿 浏览:{RESET}  {WHITE}[Tab / → / ←]{RESET} 折叠/展开组  │  {WHITE}[Ctrl-O]{RESET} 全展/全折  │  {WHITE}[空格]{RESET} 多选")
         print(f"{CYAN}│{RESET}  {YELLOW}⚡ 管理:{RESET}  {WHITE}[Ctrl-G]{RESET} 分组设置    │  {WHITE}[Ctrl-D]{RESET} 解散分组    │  {WHITE}[Ctrl-N]{RESET} 安装新技能")
         print(f"{CYAN}│{RESET}           {WHITE}[Ctrl-U]{RESET} 检查更新    │  {WHITE}[Ctrl-B]{RESET} 解绑Git     │  {WHITE}[Ctrl-T]{RESET} 重新翻译")
+        print(f"{CYAN}│{RESET}           {WHITE}[Ctrl-E]{RESET} 编辑SKILL   │  {WHITE}[Ctrl-X]{RESET} 项目解挂    │  {WHITE}[Ctrl-V]{RESET} 预览折行")
         print(f"{CYAN}│{RESET}  {GREEN}🚀 执行:{RESET}  {WHITE}[Enter]{RESET} 软链接到项目  │  {WHITE}[Alt-C]{RESET} 拷贝实体副本")
         print(f"{CYAN}╰─────────────────────────────────────────────────────────────────────╯{RESET}")
     else:
@@ -261,10 +265,55 @@ def print_hotkeys_footer(is_zh):
         print(f"{CYAN}│{RESET}  {YELLOW}🌿 Browse:{RESET} {WHITE}[Tab / → / ←]{RESET} Toggle Group │ {WHITE}[Ctrl-O]{RESET} Toggle All │ {WHITE}[Space]{RESET} Multi")
         print(f"{CYAN}│{RESET}  {YELLOW}⚡ Manage:{RESET} {WHITE}[Ctrl-G]{RESET} Groups        │ {WHITE}[Ctrl-D]{RESET} Delete Group │ {WHITE}[Ctrl-N]{RESET} Install")
         print(f"{CYAN}│{RESET}           {WHITE}[Ctrl-U]{RESET} Update        │ {WHITE}[Ctrl-B]{RESET} Unbind Git   │ {WHITE}[Ctrl-T]{RESET} Translate")
+        print(f"{CYAN}│{RESET}           {WHITE}[Ctrl-E]{RESET} Edit SKILL    │ {WHITE}[Ctrl-X]{RESET} Unlink Proj  │ {WHITE}[Ctrl-V]{RESET} Wrap Preview")
         print(f"{CYAN}│{RESET}  {GREEN}🚀 Action:{RESET} {WHITE}[Enter]{RESET} Symlink        │ {WHITE}[Alt-C]{RESET} Copy Entity")
         print(f"{CYAN}╰─────────────────────────────────────────────────────────────────────╯{RESET}")
 
+def translate_all_workflow(is_zh):
+    skills_dir = os.path.expanduser("~/.agents/skills")
+    if not os.path.exists(skills_dir):
+        print("未检测到 ~/.agents/skills 目录。" if is_zh else "No ~/.agents/skills found.")
+        return 0
+    cache_path = os.path.join(DATA_DIR, "skills_zh.json")
+    user_translations = load_user_translations()
+    all_skills = [d for d in sorted(os.listdir(skills_dir)) if os.path.isdir(os.path.join(skills_dir, d))]
+    
+    untranslated = [s for s in all_skills if s not in user_translations]
+    if not untranslated:
+        print("\033[1;32m[✓] 所有本地技能均已具备中文翻译缓存！\033[0m" if is_zh else "\033[1;32m[✓] All skills already translated!\033[0m")
+        return 0
+        
+    print(f"\033[1;36m==> 正在为 {len(untranslated)} 个尚未翻译的技能批量拉取中文译名与描述...\033[0m" if is_zh else f"\033[1;36m==> Translating {len(untranslated)} skills...\033[0m")
+    success = 0
+    for s in untranslated:
+        en_path = os.path.join(skills_dir, s, "SKILL.md")
+        en_meta, _ = parse_md_content(en_path)
+        if not en_meta:
+            continue
+        en_name = en_meta.get("name") or s
+        en_desc = en_meta.get("description") or ""
+        zh_name = translate_via_google(en_name)
+        zh_desc = translate_via_google(en_desc)
+        if zh_name or zh_desc:
+            user_translations[s] = {
+                "name_zh": zh_name or en_name,
+                "desc_zh": zh_desc or en_desc
+            }
+            success += 1
+            print(f"  \033[1;32m✓\033[0m {s} -> {zh_name or en_name}")
+        else:
+            print(f"  \033[1;33m-\033[0m {s} (超时/跳过)")
+            
+    atomic_save_json(cache_path, user_translations)
+    print(f"\033[1;32m\n批量翻译完成！已成功入库 {success}/{len(untranslated)} 个技能。\033[0m" if is_zh else f"\033[1;32m\nTranslation complete! {success}/{len(untranslated)} translated.\033[0m")
+    return 0
+
 def main():
+    lang = os.environ.get("ZFL_LANG") or os.environ.get("LANG", "en")
+    is_zh = lang.startswith("zh")
+
+    if "--translate-all" in sys.argv:
+        return translate_all_workflow(is_zh)
 
     force_translate = False
     if "--force-translate" in sys.argv:
@@ -520,6 +569,18 @@ def main():
     else:
         print(f"{CYAN}│{RESET}  🏷️  Skill: {GREEN}{name_en}{RESET}")
 
+    # Project mount status detection
+    proj_skills_dir = os.path.join(os.getcwd(), ".agents", "skills")
+    proj_badge = ""
+    if os.path.exists(proj_skills_dir):
+        p_dest = os.path.join(proj_skills_dir, skill)
+        if os.path.islink(p_dest):
+            proj_badge = f"  │  {CYAN}🔗 当前项目: 已软链{RESET}" if is_zh else f"  │  {CYAN}🔗 Project: Linked{RESET}"
+        elif os.path.isdir(p_dest):
+            proj_badge = f"  │  {GREEN}📄 当前项目: 独立实体{RESET}" if is_zh else f"  │  {GREEN}📄 Project: Copied{RESET}"
+        else:
+            proj_badge = f"  │  {GREY}▫️ 当前项目: 未引入{RESET}" if is_zh else f"  │  {GREY}▫️ Project: Not linked{RESET}"
+
     # Metadata bar
     if manifest_meta:
         srepo = manifest_meta.get("repo_url", "")
@@ -528,12 +589,12 @@ def main():
         scommit = manifest_meta.get("commit_hash", "unknown")[:7]
         sdate = manifest_meta.get("installed_at", "")[:10]
         if is_zh:
-            print(f"{CYAN}│{RESET}  {BLUE}📦 来源: {srepo}{RESET}  │  {YELLOW}🔖 版本: {scommit}{RESET}  │  {GREY}📅 安装: {sdate}{RESET}")
+            print(f"{CYAN}│{RESET}  {BLUE}📦 来源: {srepo}{RESET}  │  {YELLOW}🔖 版本: {scommit}{RESET}  │  {GREY}📅 安装: {sdate}{RESET}{proj_badge}")
         else:
-            print(f"{CYAN}│{RESET}  {BLUE}📦 Source: {srepo}{RESET}  │  {YELLOW}🔖 Commit: {scommit}{RESET}  │  {GREY}📅 Installed: {sdate}{RESET}")
+            print(f"{CYAN}│{RESET}  {BLUE}📦 Source: {srepo}{RESET}  │  {YELLOW}🔖 Commit: {scommit}{RESET}  │  {GREY}📅 Installed: {sdate}{RESET}{proj_badge}")
     else:
         local_tag = "本地自建技能 (Local Standalone)" if is_zh else "Local Standalone Skill"
-        print(f"{CYAN}│{RESET}  {GREY}🏷️  类型: {local_tag}{RESET}")
+        print(f"{CYAN}│{RESET}  {GREY}🏷️  类型: {local_tag}{RESET}{proj_badge}")
 
     print(f"{CYAN}╰──────────────────────────────────────────────────────────────────────────╯{RESET}")
 

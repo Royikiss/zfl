@@ -351,6 +351,28 @@ def main():
             if os.path.isdir(entry_path):
                 all_skills.append(entry)
 
+    proj_skills_dir = os.path.join(os.getcwd(), ".agents", "skills")
+
+    def get_mount_badge(s):
+        if not os.path.exists(proj_skills_dir):
+            return ""
+        dest = os.path.join(proj_skills_dir, s)
+        if os.path.islink(dest):
+            return "\033[1;36m[🔗软链]\033[0m " if is_zh else "\033[1;36m[🔗linked]\033[0m "
+        elif os.path.isdir(dest):
+            return "\033[1;32m[📄拷贝]\033[0m " if is_zh else "\033[1;32m[📄copied]\033[0m "
+        return ""
+
+    def get_group_mount_stats(gskills):
+        if not os.path.exists(proj_skills_dir) or not gskills:
+            return ""
+        count = sum(1 for s in gskills if os.path.exists(os.path.join(proj_skills_dir, s)))
+        if count == len(gskills):
+            return "\033[1;32m[全组已连]\033[0m " if is_zh else "\033[1;32m[all mounted]\033[0m "
+        elif count > 0:
+            return f"\033[1;33m[{count}/{len(gskills)}已连]\033[0m " if is_zh else f"\033[1;33m[{count}/{len(gskills)} mounted]\033[0m "
+        return ""
+
     items = []
     skills_in_groups = set()
 
@@ -370,8 +392,9 @@ def main():
 
         is_expanded = expand_all or (gid in expanded_groups)
         toggle_icon = "\033[1;33m▼\033[0m" if is_expanded else "\033[1;34m▶\033[0m"
+        grp_badge = get_group_mount_stats(gskills)
         group_id_display = f"{toggle_icon} \033[1;36mgroup:{gid}\033[0m"
-        name_bracket = f"\033[1;33m[分组: {name}]\033[0m" if is_zh else f"\033[1;33m[Group: {name}]\033[0m"
+        name_bracket = f"{grp_badge}\033[1;33m[分组: {name}]\033[0m" if is_zh else f"{grp_badge}\033[1;33m[Group: {name}]\033[0m"
 
         hint_pill = f" \033[0;90m[Tab折叠]\033[0m" if is_expanded else f" \033[0;90m[Tab展开]\033[0m"
         if not is_zh:
@@ -399,9 +422,10 @@ def main():
                 tree_branch = "  └── " if is_last else "  ├── "
                 
                 s_name_display, s_desc_display = get_skill_info(skill, skills_dir, is_zh, user_translations)
+                mount_badge = get_mount_badge(skill)
                 
                 child_id_display = f"\033[0;90m{tree_branch}\033[0;32m{skill}\033[0m"
-                child_name_bracket = f"\033[1;37m[{s_name_display}]\033[0m"
+                child_name_bracket = f"{mount_badge}\033[1;37m[{s_name_display}]\033[0m"
                 child_desc = f"\033[0;90m{s_desc_display}\033[0m" if s_desc_display else ""
 
                 items.append({
@@ -414,9 +438,10 @@ def main():
     ungrouped_skills = [s for s in all_skills if s not in skills_in_groups]
     for skill in ungrouped_skills:
         s_name_display, s_desc_display = get_skill_info(skill, skills_dir, is_zh, user_translations)
+        mount_badge = get_mount_badge(skill)
         
         standalone_id_display = f"\033[0;90m  \033[0;32m{skill}\033[0m"
-        standalone_name_bracket = f"\033[1;37m[{s_name_display}]\033[0m"
+        standalone_name_bracket = f"{mount_badge}\033[1;37m[{s_name_display}]\033[0m"
         standalone_desc = f"\033[0;90m{s_desc_display}\033[0m" if s_desc_display else ""
 
         items.append({

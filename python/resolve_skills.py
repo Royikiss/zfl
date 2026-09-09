@@ -111,12 +111,14 @@ def load_groups():
 
 def save_groups(groups):
     """
-    Save group configurations back to ~/.cache/zsh/skills_groups.json.
+    Save group configurations back to skills_groups.json atomically.
     """
     try:
         os.makedirs(os.path.dirname(GROUPS_FILE), exist_ok=True)
-        with open(GROUPS_FILE, "w", encoding="utf-8") as f:
+        tmp_file = f"{GROUPS_FILE}.tmp.{os.getpid()}"
+        with open(tmp_file, "w", encoding="utf-8") as f:
             json.dump(groups, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_file, GROUPS_FILE)
         return True
     except Exception:
         return False
@@ -446,49 +448,161 @@ def view_connected():
     GREY = "\033[0;90m"
     RESET = "\033[0m"
 
-    print(f"{CYAN}╭──────────────────── 🔗 项目已连接技能仪表盘 (Connected Skills) ────────────────────╮{RESET}")
-    if IS_ZH:
-        stat_line = f"  总计: {WHITE}{len(skills)}{RESET} 个  │  {BLUE}🔗 软链接: {symlink_count} 个{RESET}  │  {MAGENTA}📁 实体副本: {copy_count} 个{RESET}"
-    else:
-        stat_line = f"  Total: {WHITE}{len(skills)}{RESET}  │  {BLUE}🔗 Symlinks: {symlink_count}{RESET}  │  {MAGENTA}📁 Copies: {copy_count}{RESET}"
-    print(f"{CYAN}│{RESET}{stat_line}")
-    print(f"{CYAN}├──────────────────────────────────────────────────────────────────────────────────┤{RESET}")
+ANSI_REGEX = re.compile(r'\033\[[0-9;]*[a-zA-Z]')
 
-    for idx, skill in enumerate(skills, 1):
+def strip_ansi(s):
+    return ANSI_REGEX.sub('', s)
+
+def get_display_width(s):
+    s_clean = strip_ansi(s)
+    w = 0
+    for ch in s_clean:
+        status = unicodedata.east_asian_width(ch)
+        if status in ('F', 'W'):
+            w += 2
+        else:
+            w += 1
+    return w
+
+def pad_display(s, target_width, align='left'):
+    curr_w = get_display_width(s)
+    pad_len = max(0, target_width - curr_w)
+    if align == 'right':
+        return " " * pad_len + s
+    elif align == 'center':
+        left = pad_len // 2
+        right = pad_len - left
+        return " " * left + s + " " * right
+    else:
+        return s + " " * pad_len
+
+def truncate_display(s, max_w, suffix="…"):
+    curr_w = get_display_width(s)
+    if curr_w <= max_w:
+        return s
+    suffix_w = get_display_width(suffix)
+    target = max_w - suffix_w
+    if target <= 0:
+        return suffix[:max_w]
+    res = []
+    w = 0
+    for ch in s:
+        cw = 2 if unicodedata.east_asian_width(ch) in ('F', 'W') else 1
+        if w + cw > target:
+            break
+        res.append(ch)
+        w += cw
+    return "".join(res) + suffix
+
+def list_connected_skills():
+    """Display skills currently connected in project with sleek modern streamlined layout."""
+    connected_dir = os.path.join(os.getcwd(), ".agents", "skills")
+    if not os.path.exists(connected_dir):
+        if IS_ZH:
+            print("[mskill] 当前项目下未检测到已连接的技能目录 (.agents/skills)。")
+            print("\033[0;90m💡 提示: 在项目根目录下运行 'mskill' 即可选择并引入所需技能。\033[0m\n")
+        else:
+            print("[mskill] No connected skills found in current project (.agents/skills).")
+            print("\033[0;90m💡 Tip: Run 'mskill' in project root to select and connect skills.\033[0m\n")
+        return
+
+    skills = sorted(os.listdir(connected_dir))
+    if not skills:
+        if IS_ZH:
+            print("[mskill] 当前项目已连接技能目录为空。")
+        else:
+            print("[mskill] Project .agents/skills directory is currently empty.")
+        return
+
+    # Load translations if available
+    translations = {}
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import preview_skill
+        translations = preview_skill.load_user_translations()
+    except Exception:
+        pass
+
+    # Count symlinks vs copies
+    symlink_count = sum(1 for s in skills if os.path.islink(os.path.join(connected_dir, s)))
+    copy_count = len(skills) - symlink_count
+
+    # ANSI Palette
+    CYAN = "\033[1;36m"
+    GREEN = "\033[1;32m"
+    BLUE = "\033[1;34m"
+    MAGENTA = "\033[1;35m"
+    WHITE = "\033[1;37m"
+    GREY = "\033[0;90m"
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+
+    import shutil
+    term_width = shutil.get_terminal_size((100, 24)).columns
+
+    # Header badge bar
+    if IS_ZH:
+        print(f"\n  {BOLD}{WHITE}🔗 项目已挂载技能清单 (Connected Skills){RESET}  "
+              f"{CYAN}[总计: {WHITE}{len(skills)}{CYAN}]{RESET}  "
+              f"{BLUE}[🔗 软链接: {WHITE}{symlink_count}{BLUE}]{RESET}  "
+              f"{MAGENTA}[📁 实体副本: {WHITE}{copy_count}{MAGENTA}]{RESET}\n")
+    else:
+        print(f"\n  {BOLD}{WHITE}🔗 Connected Project Skills{RESET}  "
+              f"{CYAN}[Total: {WHITE}{len(skills)}{CYAN}]{RESET}  "
+              f"{BLUE}[🔗 Symlinks: {WHITE}{symlink_count}{BLUE}]{RESET}  "
+              f"{MAGENTA}[📁 Copies: {WHITE}{copy_count}{MAGENTA}]{RESET}\n")
+
+    header_name = "技能名称 (Skill Name)" if IS_ZH else "Skill Name"
+    header_mode = "挂载方式" if IS_ZH else "Mount Mode"
+    header_desc = "说明 / 中文描述" if IS_ZH else "Description"
+
+    max_name_len = max((len(s) for s in skills), default=20)
+    col_name_w = max(get_display_width(header_name), min(max_name_len, 32))
+    col_mode_w = 14
+
+    h_name = pad_display(f"{BOLD}{WHITE}{header_name}{RESET}", col_name_w)
+    h_mode = pad_display(f"{BOLD}{WHITE}{header_mode}{RESET}", col_mode_w)
+    h_desc = f"{BOLD}{WHITE}{header_desc}{RESET}"
+
+    divider_w = min(term_width - 4, col_name_w + col_mode_w + 45)
+    print(f"  {h_name}  {h_mode}  {h_desc}")
+    print(f"  {GREY}{'─' * divider_w}{RESET}")
+
+    for skill in skills:
         full_path = os.path.join(connected_dir, skill)
         is_link = os.path.islink(full_path)
-        icon = "🔗" if is_link else "📁"
-        badge = f"{BLUE}[软链接]{RESET}" if is_link else f"{MAGENTA}[实体副本]{RESET}" if IS_ZH else (f"{BLUE}[symlink]{RESET}" if is_link else f"{MAGENTA}[copied entity]{RESET}")
+        badge = f"{BLUE}🔗 软链接{RESET}" if is_link else f"{MAGENTA}📁 实体副本{RESET}" if IS_ZH else (f"{BLUE}🔗 Symlink{RESET}" if is_link else f"{MAGENTA}📁 Physical Copy{RESET}")
 
-        name_zh = ""
-        desc_zh = ""
-        if skill in translations:
-            name_zh = translations[skill].get("name_zh")
-            desc_zh = translations[skill].get("desc_zh")
+        name_zh = translations.get(skill, {}).get("name_zh", "")
+        desc_zh = translations.get(skill, {}).get("desc_zh", "")
 
-        title_display = f" {WHITE}({name_zh}){RESET}" if name_zh else ""
-        print(f"{CYAN}│{RESET}  {icon} {GREEN}{skill:<26}{RESET} {badge}{title_display}")
-        
+        c_name = pad_display(f"{GREEN}{skill}{RESET}", col_name_w)
+        c_mode = pad_display(badge, col_mode_w)
+        c_desc = f"{WHITE}{name_zh}{RESET}" if name_zh else f"{GREY}—{RESET}"
+
+        print(f"  {c_name}  {c_mode}  {c_desc}")
         if desc_zh:
             desc_single = " ".join([l.strip() for l in desc_zh.split("\n") if l.strip()])
-            if len(desc_single) > 65:
-                desc_single = desc_single[:62] + "..."
-            print(f"{CYAN}│{RESET}     {GREY}↳ {desc_single}{RESET}")
+            desc_cut = truncate_display(desc_single, term_width - 8)
+            print(f"    {GREY}↳ {desc_cut}{RESET}")
 
-    print(f"{CYAN}╰──────────────────────────────────────────────────────────────────────────────────╯{RESET}")
+    print(f"  {GREY}{'─' * divider_w}{RESET}")
     if IS_ZH:
-        print(f"{GREY}💡 快捷指令: 'mskill <名称>' 软链接 | 'mskill -c <名称>' 实体拷贝 | 'mskill' 打开 FZF{RESET}\n")
+        print(f"  {GREY}💡 快捷指令: 'mskill <名称>' 软链接 | 'mskill -c <名称>' 实体拷贝 | 'mskill' 打开 FZF{RESET}\n")
     else:
-        print(f"{GREY}💡 Shortcuts: 'mskill <name>' symlink | 'mskill -c <name>' copy | 'mskill' open FZF{RESET}\n")
+        print(f"  {GREY}💡 Shortcuts: 'mskill <name>' symlink | 'mskill -c <name>' copy | 'mskill' open FZF{RESET}\n")
 
 def list_groups_detailed():
     groups = load_groups()
     if not groups:
         if IS_ZH:
-            print("\033[1;33m没有定义任何技能分组。\033[0m")
+            print("\n  \033[1;33m没有定义任何技能分组。\033[0m\n")
         else:
-            print("\033[1;33mNo skill groups defined.\033[0m")
+            print("\n  \033[1;33mNo skill groups defined.\033[0m\n")
         return
+
+    import shutil
+    term_width = shutil.get_terminal_size((100, 24)).columns
 
     GREEN = "\033[1;32m"
     CYAN = "\033[1;36m"
@@ -497,6 +611,7 @@ def list_groups_detailed():
     WHITE = "\033[1;37m"
     GREY = "\033[0;90m"
     RESET = "\033[0m"
+    BOLD = "\033[1m"
 
     translations = {}
     try:
@@ -507,9 +622,9 @@ def list_groups_detailed():
         pass
 
     if IS_ZH:
-        print(f"{CYAN}╭──────────────────────── 📂 AI Agent 技能分组清单 ────────────────────────╮{RESET}")
+        print(f"\n  {BOLD}{WHITE}📂 AI Agent 技能分组清单{RESET}  {CYAN}[共 {len(groups)} 个分组]{RESET}\n")
     else:
-        print(f"{CYAN}╭──────────────────────── 📂 AI Agent Skill Groups ────────────────────────╮{RESET}")
+        print(f"\n  {BOLD}{WHITE}📂 AI Agent Skill Groups{RESET}  {CYAN}[Total: {len(groups)} groups]{RESET}\n")
 
     for gid, info in sorted(groups.items()):
         if isinstance(info, dict):
@@ -523,11 +638,13 @@ def list_groups_detailed():
 
         ordered_badge = f"{YELLOW}[⚑ 推荐调用顺序 · 有序]{RESET}" if is_ordered else f"{MAGENTA}[⚡ 组合集合 · 无序]{RESET}"
         if not IS_ZH:
-            ordered_badge = f"{YELLOW}[⚑ Recommended Order · Ordered]{RESET}" if is_ordered else f"{MAGENTA}[⚡ Skill Set · Unordered]{RESET}"
+            ordered_badge = f"{YELLOW}[⚑ Ordered Workflow]{RESET}" if is_ordered else f"{MAGENTA}[⚡ Unordered Skill Set]{RESET}"
 
-        print(f"{CYAN}├──────────────────────────────────────────────────────────────────────────┤{RESET}")
-        print(f"{CYAN}│{RESET}  📂 分组: {GREEN}{gid}{RESET} {WHITE}({name}){RESET}  {ordered_badge}")
-        print(f"{CYAN}│{RESET}  {GREY}包含技能 ({len(skills)} 个):{RESET}")
+        display_header = f"  📂 {GREEN}{gid}{RESET} {WHITE}({name}){RESET}  {ordered_badge}  {GREY}({len(skills)} 个技能){RESET}" if IS_ZH else f"  📂 {GREEN}{gid}{RESET} {WHITE}({name}){RESET}  {ordered_badge}  {GREY}({len(skills)} skills){RESET}"
+        print(display_header)
+        divider_w = min(term_width - 4, get_display_width(display_header) + 4)
+        divider_w = max(divider_w, 48)
+        print(f"  {GREY}{'─' * divider_w}{RESET}")
 
         for idx, s in enumerate(skills, 1):
             s_zh = translations.get(s, {}).get("name_zh", "")
@@ -536,14 +653,13 @@ def list_groups_detailed():
                 prefix = f"{YELLOW}{circled_num(idx)}{RESET}"
             else:
                 prefix = f"{GREEN}•{RESET}"
-            print(f"{CYAN}│{RESET}    {prefix} {WHITE}{s}{RESET}{s_title}")
+            print(f"    {prefix} {WHITE}{s}{RESET}{s_title}")
 
         if IS_ZH:
-            print(f"{CYAN}│{RESET}  {GREY}一键引用: mskill {gid} (软链接) │ mskill -c {gid} (实体拷贝){RESET}")
+            print(f"    {GREY}↳ 一键引用: mskill {gid} (软链接) │ mskill -c {gid} (实体拷贝){RESET}")
         else:
-            print(f"{CYAN}│{RESET}  {GREY}Quick link: mskill {gid} (symlink) │ mskill -c {gid} (copy entity){RESET}")
-
-    print(f"{CYAN}╰──────────────────────────────────────────────────────────────────────────╯{RESET}\n")
+            print(f"    {GREY}↳ Quick link: mskill {gid} (symlink) │ mskill -c {gid} (copy entity){RESET}")
+        print()
 
 def print_help():
     print("Usage: resolve_skills.py [options] [inputs...]")

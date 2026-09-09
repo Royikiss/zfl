@@ -1,28 +1,44 @@
 # mskill
 
-`mskill` (Manage Skill) 是针对 AI Agent 技能（Skills）的全生命周期管理工具，集成了**自动识别与打包下载、版本追溯与一键更新、软链接引入项目、技能分组管理与中英文双语 FZF 交互预览**。
+`mskill` (Manage Skill) 是针对 AI Agent 技能（Skills）的全生命周期管理与工程化协作中枢，集成了**自动识别与打包下载、本地目录导入、版本追溯与平滑更新、软链接引入与原地脱壳、声明式依赖同步、健康巡检诊断、脚手架生成、项目挂载状态感知与全功能 FZF 交互控制台**。
 
 ---
 
 ## ✨ 核心特性
 
-1. **精准识别与自包含完整打包**：
-   - 无论远程 GitHub 仓库是单 Skill 仓库、Monorepo 大仓库还是深层嵌套目录，均以 `SKILL.md` 所在目录为边界。
-   - 将其伴生依赖（如 `scripts/` 脚本、`references/` 知识库文档、`examples/` 示例配置等）完整自包含打包下载至 `~/.agents/skills/<skill_name>/`。
-   - **多技能自动分组引导**：若数据包包含多个技能，安装完成后自动提示快速创建技能分组（支持默认命名与有序标记），便于日后一键批量引用。
-2. **版本追踪与平滑更新**：
+1. **精准识别、自包含打包与本地导入**：
+   - 无论远程 GitHub 仓库是单 Skill 仓库、Monorepo 还是深层嵌套目录，均以 `SKILL.md` 为锚点完整打包其附属脚本（`scripts/`）、领域文档（`references/`）等。
+   - **支持本地目录直导**：运行 `mskill -i /path/to/local-dir` 直接自包含打包导入本地自建技能。
+   - **支持分支与版本定位**：支持 `owner/repo@v1.0.0` 或 `owner/repo#branch` 精确拉取。
+   - **多技能自动分组引导**：多技能包安装完成后，自动提示快速创建技能分组。
+2. **版本追踪与原子持久化**：
    - 在 `~/.local/share/zfl/skills_manifest.json` 中跟踪远程仓库源、分支、Commit Hash 及子路径。
-   - 执行更新（`mskill -u` / `mskill --update-all`）时，自动拉取远程最新变更并增量同步。
-   - **分组结构 100% 保持不变**：更新技能只变更代码和版本元数据，绝不破坏任何已有的分组配置（`~/.local/share/zfl/skills_groups.json`）。
-3. **极速软链接与实时生效**：
-   - 将全局技能以符号链接（`ln -s`）形式引入当前项目的 `.agents/skills/` 中。
-   - 全局更新后，所有关联项目瞬间自动获得最新版本，无需重新链接。
-4. **全功能 FZF 交互控制台**：
-   - 终端直接运行 `mskill` 即可唤起交互式菜单，支持实时中英文预览。
-   - 快捷键支持：展开/折叠组 (`Tab` / `→` / `←`)、全展/全折 (`Ctrl-O`)、多选 (`空格`)、组管理 (`Ctrl-G`)、更新当前项 (`Ctrl-U`)、解绑 Git (`Ctrl-B`)、安装新技能 (`Ctrl-N`)、删除组 (`Ctrl-D`)、重译 (`Ctrl-T`)。
-5. **解绑 Git 仓库（转为本地自建）**：
-   - 针对下游已停止维护或已被本地定制修改的技能，可通过 `mskill -b <技能名>` 或 FZF 快捷键 `Ctrl-B` 解绑远程 Git 追踪。
-   - 本地技能文件与分组配置 100% 完整保留，不再受到远程更新检查或覆盖影响。
+   - 采用临时文件 + `os.replace` 的 **JSON 原子写入（Atomic Write）**，杜绝进程意外中断导致元数据损坏。
+   - 分组关系（`skills_groups.json`）在更新或升级时 100% 保持不变。
+3. **极速软链接、原地脱壳与安全解挂**：
+   - **软链接（默认）**：以符号链接（`ln -s`）接入当前项目 `.agents/skills/`，全局更新项目即时生效。
+   - **实体脱壳 (`mskill eject`)**：一键将当前项目中的软链接原地替换为物理独立实体副本，自由定制。
+   - **安全解挂 (`mskill --unlink`)**：安全解除项目中的技能挂载，绝不误删全局技能库。
+4. **团队协作与声明式依赖 (`dump` & `sync`)**：
+   - **`mskill dump`**：将当前项目的技能依赖与挂载模式（软链或实体）导出至 `.skillsrc` 配置文件。
+   - **`mskill sync`**：团队成员克隆项目后一键执行，自动拉取缺失项并完美对齐挂载，体验如 `pnpm install`。
+5. **健康自愈诊断 (`mskill doctor`)**：
+   - 深度扫描当前项目与全局：检测并修复悬空死链（Broken Symlink）、损坏的技能目录、元数据完整度及系统 CLI 依赖可用性。
+6. **标准脚手架生成器 (`mskill new <name>`)**：
+   - 一秒生成符合标准规范的技能骨架，包含标准 `SKILL.md`、双语模板、`scripts/` 与 `references/` 目录。
+7. **全功能 FZF 交互控制台与挂载状态感知**：
+   - **项目挂载状态胶囊**：列表直观高亮 `[🔗软链]`、`[📄拷贝]` 或 `[全组已连]`，告别盲选。
+   - **丰富快捷键操作**：
+     - `Tab` / `→` / `←`：折叠/展开分组
+     - `Ctrl-O`：全展 / 全折
+     - `空格`：多选
+     - `Ctrl-E`：调用 `$EDITOR` 实时修改高亮技能的 `SKILL.md`
+     - `Ctrl-X`：对当前项目进行一键解挂
+     - `Ctrl-G` / `Ctrl-D`：分组设置 / 解散分组
+     - `Ctrl-N` / `Ctrl-U`：安装新技能 / 检查更新
+     - `Ctrl-B`：解绑 Git 关联转为本地自建
+     - `Enter`：软链接到当前项目
+     - `Alt-C`：拷贝实体副本到当前项目
 
 ---
 
@@ -32,24 +48,59 @@
 mskill [选项] [技能名称/分组名称...]
 ```
 
-### 1. 下载与安装技能 (`-i, --install`)
+### 1. 下载、导入与安装技能 (`-i, --install`)
 ```bash
 # 通过 GitHub 简写安装
 mskill -i anthropics/anthropic-quickstarts
 
-# 通过完整 URL 安装
-mskill -i https://github.com/owner/repo
+# 安装指定版本 Tag 或分支
+mskill -i owner/repo@v2.1.0
+mskill -i owner/repo#dev
 
-# 通过具体子目录直链精准安装
-mskill -i https://github.com/owner/repo/tree/main/skills/video-generator
+# 从本地目录直接打包导入
+mskill -i /path/to/my-local-skill
 
 # 终端交互式安装引导
 mskill -i
 ```
 
-### 2. 检查版本与更新 (`-u, --update`, `--update-all`, `--status`)
+### 2. 项目挂载与逆向操作 (软链接 / 脱壳 / 解挂)
 ```bash
-# 查看所有已安装技能的版本 Commit 与远程来源
+# 软链接引入项目 (默认)
+mskill caveman diagnose
+mskill startup                    # 引入整个分组
+
+# 原地脱壳：将软链接转为独立实体副本
+mskill eject video-generator
+mskill eject                      # 脱壳当前项目全部软链接技能
+
+# 从当前项目中安全解挂 (不影响全局)
+mskill --unlink video-generator
+mskill --unlink startup           # 解挂整组
+mskill --unlink-all               # 清空当前项目所有已挂载技能
+```
+
+### 3. 团队协同与声明式依赖 (`dump` / `sync`)
+```bash
+# 导出当前项目技能依赖清单至 .skillsrc (提交至 Git)
+mskill dump
+
+# 团队新成员克隆项目后一键对齐与拉取所有技能依赖
+mskill sync
+```
+
+### 4. 技能脚手架与健康巡检 (`new` / `doctor`)
+```bash
+# 快速创建新技能标准规范骨架
+mskill new my-awesome-skill
+
+# 运行健康巡检：诊断并修复悬空死链、损坏文件与系统依赖
+mskill doctor
+```
+
+### 5. 版本检查与更新 (`-u`, `--update-all`, `--status`, `-b`)
+```bash
+# 查看所有已安装技能的版本 Commit、来源与本地自建状态
 mskill --status
 
 # 检查并更新指定技能
@@ -59,15 +110,14 @@ mskill -u video-generator
 mskill --update-all
 ```
 
-### 3. 解绑 Git 追踪 (`-b, --unbind`)
-```bash
-# 解绑指定技能的远程 Git 关联（转为本地自建技能，保留全部文件）
+# 解绑 Git 追踪（转为纯本地技能，保留文件）
 mskill -b video-generator
 
-# 在 FZF 菜单中直接按 Ctrl-B 解绑当前高亮技能或分组
+# 一键更新全部已追踪的远程技能
+mskill --update-all
 ```
 
-### 4. 技能分组管理 (`-s`, `-r`, `-l`)
+### 6. 技能分组管理 (`-s`, `-r`, `-l`)
 ```bash
 # 创建或修改技能分组
 mskill --group-set dev prototype handoff grill-me
@@ -82,39 +132,12 @@ mskill --group-list
 mskill --group-rm dev
 ```
 
-### 5. 引入技能到当前项目 (软链接 vs 实体拷贝)
-
-`mskill` 支持两种方式将技能引入当前项目的 `.agents/skills/` 目录：
-
-#### A. 软链接模式 (默认 / 实时同步)
-将全局技能以符号链接（`ln -s`）方式接入当前项目。当全局技能更新时，项目内立即同步生效：
+### 7. 中文翻译预热与项目查看 (`-v`, `--translate-all`)
 ```bash
-# 软链接指定技能到当前项目
-mskill caveman diagnose
-
-# 软链接整个分组下的所有技能
-mskill startup
-
-# 交互式选择并软链接 (FZF 菜单按 Enter)
-mskill
-```
-
-#### B. 实体拷贝模式 (`-c, --copy` / 独立副本)
-将技能实体目录完整拷贝（`cp -r`）到当前项目中，摆脱软链接依赖。适合需要为特定项目定制修改 Skill 内容或冻结特定版本的场景：
-```bash
-# 拷贝指定技能实体到当前项目
-mskill -c caveman diagnose
-
-# 拷贝整个分组下的所有技能实体到当前项目
-mskill -c startup
-
-# 交互式选择并拷贝技能实体 (FZF 菜单按 Alt-C 或直接运行 mskill -c 按 Enter)
-mskill -c
-```
-
-### 6. 查看当前项目已引入的技能 (`-v, --view`)
-```bash
+# 查看当前项目已引入的技能状态与中文功能说明
 mskill -v
+
+# 一键批量拉取所有未翻译技能的中文译名与描述 (离线极速浏览)
+mskill --translate-all
 ```
-清晰展示当前项目中已引入的所有技能、区分 **[软链接]** 与 **[实体副本]** 状态，并列出其中文译名与功能描述。
 
