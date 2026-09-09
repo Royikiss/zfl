@@ -384,69 +384,7 @@ def interactive_rm(focused_item):
         safe_input("\nPress Enter to return to FZF...")
 
 def view_connected():
-    """
-    View currently connected skills under the current project's .agents/skills/ directory.
-    Display with rich dashboard cards and Chinese translations.
-    """
-    connected_dir = "./.agents/skills"
-    if not os.path.exists(connected_dir) or not os.path.isdir(connected_dir):
-        if IS_ZH:
-            print(f"\033[1;33m[mskill] 当前项目下未检测到已连接的技能目录 (.agents/skills)。\033[0m")
-            print(f"\033[0;90m💡 提示: 在项目根目录下运行 'mskill' 即可选择并引入所需技能。\033[0m")
-        else:
-            print(f"\033[1;33m[mskill] No connected skills directory found for current project (.agents/skills).\033[0m")
-            print(f"\033[0;90m💡 Tip: Run 'mskill' in project root to select and link skills.\033[0m")
-        return
-
-    skills = []
-    try:
-        for item in sorted(os.listdir(connected_dir)):
-            full_path = os.path.join(connected_dir, item)
-            if os.path.isdir(full_path) or os.path.islink(full_path):
-                skills.append(item)
-    except Exception as e:
-        if IS_ZH:
-            print(f"\033[1;31m[mskill] 读取已连接技能时出错: {e}\033[0m")
-        else:
-            print(f"\033[1;31m[mskill] Error reading connected skills: {e}\033[0m")
-        return
-
-    if not skills:
-        if IS_ZH:
-            print(f"\033[1;33m[mskill] 当前项目未连接任何技能。\033[0m")
-            print(f"\033[0;90m💡 提示: 运行 'mskill' 交互式选择技能或分组。\033[0m")
-        else:
-            print(f"\033[1;33m[mskill] No skills connected to the current project.\033[0m")
-            print(f"\033[0;90m💡 Tip: Run 'mskill' to select skills or groups.\033[0m")
-        return
-
-    translations = {}
-    try:
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        import preview_skill
-        translations = preview_skill.load_user_translations()
-    except Exception:
-        pass
-
-    # Count symlinks vs copies
-    symlink_count = 0
-    copy_count = 0
-    for s in skills:
-        fp = os.path.join(connected_dir, s)
-        if os.path.islink(fp):
-            symlink_count += 1
-        else:
-            copy_count += 1
-
-    # ANSI Palette
-    CYAN = "\033[1;36m"
-    GREEN = "\033[1;32m"
-    YELLOW = "\033[1;33m"
-    BLUE = "\033[1;34m"
-    MAGENTA = "\033[1;35m"
-    WHITE = "\033[1;37m"
-    GREY = "\033[0;90m"
-    RESET = "\033[0m"
+    list_connected_skills()
 
 ANSI_REGEX = re.compile(r'\033\[[0-9;]*[a-zA-Z]')
 
@@ -494,10 +432,62 @@ def truncate_display(s, max_w, suffix="…"):
         w += cw
     return "".join(res) + suffix
 
+def parse_frontmatter(path):
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception:
+        return None
+
+    m = re.match(r"^---\s*\n(.*?)\n---\s*\n", content, re.DOTALL)
+    if m:
+        frontmatter = m.group(1)
+        data = {}
+        current_key = None
+        for line in frontmatter.split("\n"):
+            if not line.strip():
+                continue
+            if line.startswith(" ") or line.startswith("\t"):
+                if current_key:
+                    val = line.strip()
+                    if val.startswith("-"):
+                        data[current_key] += "\n" + val
+                    else:
+                        data[current_key] += " " + val
+            else:
+                if ":" in line:
+                    key, val = line.split(":", 1)
+                    current_key = key.strip()
+                    data[current_key] = val.strip()
+        name = data.get("name", "")
+        desc = data.get("description", "")
+        if desc.startswith(">"):
+            desc = desc[1:]
+        desc = desc.replace("\n> ", "\n").replace("\n>", "\n").strip()
+        return {"name": name, "description": desc}
+    return None
+
+def find_connected_dir():
+    """Find .agents/skills in current directory or parent directories up to git root."""
+    curr = os.path.abspath(os.getcwd())
+    while True:
+        candidate = os.path.join(curr, ".agents", "skills")
+        if os.path.exists(candidate) and os.path.isdir(candidate):
+            return candidate
+        parent = os.path.dirname(curr)
+        if parent == curr:
+            break
+        if os.path.exists(os.path.join(curr, ".git")):
+            break
+        curr = parent
+    return os.path.join(os.getcwd(), ".agents", "skills")
+
 def list_connected_skills():
     """Display skills currently connected in project with sleek modern streamlined layout."""
-    connected_dir = os.path.join(os.getcwd(), ".agents", "skills")
-    if not os.path.exists(connected_dir):
+    connected_dir = find_connected_dir()
+    if not os.path.exists(connected_dir) or not os.path.isdir(connected_dir):
         if IS_ZH:
             print("[mskill] 当前项目下未检测到已连接的技能目录 (.agents/skills)。")
             print("\033[0;90m💡 提示: 在项目根目录下运行 'mskill' 即可选择并引入所需技能。\033[0m\n")
@@ -506,7 +496,10 @@ def list_connected_skills():
             print("\033[0;90m💡 Tip: Run 'mskill' in project root to select and connect skills.\033[0m\n")
         return
 
-    skills = sorted(os.listdir(connected_dir))
+    skills = [
+        s for s in sorted(os.listdir(connected_dir))
+        if not s.startswith(".") and (os.path.isdir(os.path.join(connected_dir, s)) or os.path.islink(os.path.join(connected_dir, s)))
+    ]
     if not skills:
         if IS_ZH:
             print("[mskill] 当前项目已连接技能目录为空。")
@@ -575,6 +568,19 @@ def list_connected_skills():
 
         name_zh = translations.get(skill, {}).get("name_zh", "")
         desc_zh = translations.get(skill, {}).get("desc_zh", "")
+
+        # Fallback to local SKILL.md frontmatter if translation missing
+        if (not name_zh or not desc_zh) and os.path.isdir(full_path):
+            for doc_name in ["SKILL.zh.md", "SKILL.zh-CN.md", "SKILL.md"]:
+                doc_path = os.path.join(full_path, doc_name)
+                if os.path.exists(doc_path):
+                    fm = parse_frontmatter(doc_path)
+                    if fm:
+                        if not name_zh:
+                            name_zh = fm.get("name", "")
+                        if not desc_zh:
+                            desc_zh = fm.get("description", "")
+                        break
 
         c_name = pad_display(f"{GREEN}{skill}{RESET}", col_name_w)
         c_mode = pad_display(badge, col_mode_w)
