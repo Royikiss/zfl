@@ -27,7 +27,8 @@
   - 新增管理工具 [zfl.zsh](file:///home/royi/.config/zsh/functions/zfl.zsh)（支持 list、info、check、lint 子命令及补全）。
 - **[custom_functions/](file:///home/royi/.config/zsh/custom_functions/)**：用户本地私有函数目录。
   - 此目录在 `.gitignore` 中被忽略，用于用户存放个人的自定义非公开脚本，防止 Git 合并冲突。
-- **[python/](file:///home/royi/.config/zsh/python/)**：跨语言辅助脚本，如 [zfl_lint.py](file:///home/royi/.config/zsh/python/zfl_lint.py)（静态代码质检分析）、[aicp_context.py](file:///home/royi/.config/zsh/python/aicp_context.py) 与 [preview_skill.py](file:///home/royi/.config/zsh/python/preview_skill.py)。
+- **[python/](file:///home/royi/.config/zsh/python/)**：跨语言辅助脚本，如 [zfl_lint.py](file:///home/royi/.config/zsh/python/zfl_lint.py)（静态代码质检分析）、[aicp_context.py](file:///home/royi/.config/zsh/python/aicp_context.py) 与技能管理子系统。内置 [skill_engine/](file:///home/royi/.config/zsh/python/skill_engine/) 共享包提供统一技能生命周期、存储与终端排版能力。
+- **[tests/](file:///home/royi/.config/zsh/tests/)**：自动化单元测试套件，通过 pytest 验证终端对齐、Git 解析与数据持久化逻辑。
 - **[docs/](file:///home/royi/.config/zsh/docs/)**：框架核心机制的技术设计与避坑文档。
 - **[automation/](file:///home/royi/.config/zsh/automation/)**：AI 编程自动化检测与同步脚本目录。
   - [sync_readme.py](file:///home/royi/.config/zsh/automation/sync_readme.py)：项目结构树自动同步脚本，用于根据物理目录文件和元数据动态更新 `README.md`。

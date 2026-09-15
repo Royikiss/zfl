@@ -12,5 +12,8 @@ custom_functions/
 
 # User local configuration
 core/usr.zsh
+# Test cache
+.pytest_cache/
 
-
+# Project local skills
+.agents/

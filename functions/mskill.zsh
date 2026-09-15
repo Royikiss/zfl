@@ -316,8 +316,10 @@ mskill() {
     local opt_new=0 opt_doctor=0 opt_eject=0 opt_unlink=0 opt_unlink_all=0 opt_dump=0 opt_sync=0 opt_translate_all=0
     local group_name target_repo uninstall_target line dest_dir skill src dest new_skill_name
     local -a update_targets=() install_args=() unbind_targets=() unlink_targets=() eject_targets=()
+    local in_home_dir=0
 
     available_skills=( $HOME/.agents/skills/*(/N:t) )
+    [[ "$PWD" == "$HOME" ]] && in_home_dir=1
 
     while (( $# > 0 )); do
         case "$1" in
@@ -508,6 +510,47 @@ mskill() {
         esac
     done
 
+    # Smart auto-detection: If no action flag was given and the first argument looks like a repo URL/path/shorthand
+    if (( ! opt_install && ! opt_update && ! opt_update_all && ! opt_status && ! opt_unbind && ! opt_uninstall && ! opt_new && ! opt_doctor && ! opt_eject && ! opt_unlink && ! opt_unlink_all && ! opt_dump && ! opt_sync && ! opt_translate_all && ! opt_list && ! opt_rm && ! opt_set && ! opt_view && ! opt_copy )); then
+        if (( ${#skills_to_link[@]} > 0 )); then
+            local first_candidate="${skills_to_link[1]}"
+            if [[ "$first_candidate" == *"://"* || "$first_candidate" == git@* || "$first_candidate" == github.com/* || "$first_candidate" == *.git || ( "$first_candidate" == */* && ! -d "$HOME/.agents/skills/$first_candidate" ) ]]; then
+                opt_install=1
+                target_repo="$first_candidate"
+                install_args=( "${(@)skills_to_link[2,-1]}" )
+                skills_to_link=()
+            fi
+        fi
+    fi
+
+    # Home directory protection: block project-level mount operations when in $HOME
+    # (link, copy, unlink, eject, dump, sync are project-level operations that have
+    #  no meaningful semantics in the home directory and risk corrupting global state)
+    if (( in_home_dir )); then
+        local _blocked=0
+        if (( opt_copy || opt_unlink || opt_unlink_all || opt_eject || opt_dump || opt_sync )); then
+            _blocked=1
+        elif (( ! opt_install && ! opt_update && ! opt_update_all && ! opt_status \
+            && ! opt_unbind && ! opt_uninstall && ! opt_new && ! opt_doctor \
+            && ! opt_translate_all && ! opt_list && ! opt_rm && ! opt_set && ! opt_view \
+            && ${#skills_to_link[@]} > 0 )); then
+            # Positional args that would trigger a link in a project dir
+            _blocked=1
+        fi
+        if (( _blocked )); then
+            if [[ "$lang" == zh* ]]; then
+                echo -e "${YELLOW}[mskill] 家目录保护：链接/拷贝/解挂等操作仅在项目目录下有效。${RESET}" >&2
+                echo -e "  在家目录下，请使用全局管理操作（如 ${CYAN}mskill -i/-u/-d/--status/--doctor${RESET} 等）。" >&2
+                echo -e "  如需管理技能分组或查看已安装技能，请使用 ${CYAN}mskill -l / --status${RESET}。" >&2
+            else
+                echo -e "${YELLOW}[mskill] Home dir protection: link/copy/unlink/eject/dump/sync are project-level operations.${RESET}" >&2
+                echo -e "  In the home directory, use global management commands (e.g. ${CYAN}mskill -i/-u/-d/--status/--doctor${RESET})." >&2
+                echo -e "  To manage skill groups or view installed skills, use ${CYAN}mskill -l / --status${RESET}." >&2
+            fi
+            return 1
+        fi
+    fi
+
     # 1. Manage Skills Operations
     if (( opt_install )); then
         python3 "$ZFL_HOME/python/manage_skills.py" --install "$target_repo" "${install_args[@]}"
@@ -613,7 +656,10 @@ mskill() {
         if (( $+commands[fzf] )); then
             local prompt_msg header_msg
             if [[ "$lang" == zh* ]]; then
-                if (( opt_copy )); then
+                if (( in_home_dir )); then
+                    header_msg=$'🏠 全局管理模式（家目录保护已激活，链接/拷贝操作不可用）\n🌿 浏览: Tab/方向键 折叠展开  │  Ctrl-O 全展/全折  │  空格 多选\n⚡ 管理: Ctrl-G 分组  │  Ctrl-N 安装  │  Ctrl-U 更新  │  Ctrl-E 编辑  │  Ctrl-B 解绑'
+                    prompt_msg="Skill Manage > "
+                elif (( opt_copy )); then
                     header_msg=$'🌿 浏览: Tab/方向键 折叠展开  │  Ctrl-O 全展/全折  │  空格 多选\n⚡ 管理: Ctrl-G 分组  │  Ctrl-N 安装  │  Ctrl-U 更新  │  Ctrl-E 编辑\n🚀 执行: Enter 拷贝实体  │  Ctrl-X 解挂  │  Ctrl-B 解绑Git'
                     prompt_msg="Skill Copy > "
                 else
@@ -621,7 +667,10 @@ mskill() {
                     prompt_msg="Skill Search > "
                 fi
             else
-                if (( opt_copy )); then
+                if (( in_home_dir )); then
+                    header_msg=$'🏠 Global Manage Mode (home dir protection active — link/copy ops disabled)\n🌿 Browse: Tab/Arrows Toggle  │  Ctrl-O Toggle All  │  Space Multi\n⚡ Manage: Ctrl-G Groups  │  Ctrl-N Install  │  Ctrl-U Update  │  Ctrl-E Edit  │  Ctrl-B Unbind'
+                    prompt_msg="Skill Manage > "
+                elif (( opt_copy )); then
                     header_msg=$'🌿 Browse: Tab/Arrows Toggle  │  Ctrl-O Toggle All  │  Space Multi\n⚡ Manage: Ctrl-G Groups  │  Ctrl-N Install  │  Ctrl-U Update  │  Ctrl-E Edit\n🚀 Action: Enter Copy Entity  │  Ctrl-X Unlink  │  Ctrl-B Unbind Git'
                     prompt_msg="Skill Copy > "
                 else
@@ -693,122 +742,13 @@ mskill() {
         fi
     fi
 
-    # 4. Resolve Groups and Skill Names
-    local -a resolved_skills
-    resolved_skills=( ${(f)"$(python3 "$ZFL_HOME/python/resolve_skills.py" "${skills_to_link[@]}")"} )
-
-    if (( ${#resolved_skills[@]} == 0 )); then
-        local no_action_msg
-        if (( opt_copy )); then
-            no_action_msg=$([[ "$lang" == zh* ]] && echo "没有需要拷贝的有效技能。" || echo "No valid skills to copy.")
-        else
-            no_action_msg=$([[ "$lang" == zh* ]] && echo "没有需要链接的有效技能。" || echo "No valid skills to link.")
-        fi
-        echo -e "${YELLOW}[mskill] ${no_action_msg}${RESET}"
-        return 0
+    # 4. Mount Skills (Symlink or Copy Entity)
+    if (( opt_copy )); then
+        python3 "$ZFL_HOME/python/manage_skills.py" --copy "${skills_to_link[@]}"
+        return $?
+    else
+        python3 "$ZFL_HOME/python/manage_skills.py" --link "${skills_to_link[@]}"
+        return $?
     fi
-
-    # 5. Create Symlinks or Copy Entities into Current Project Directory
-    dest_dir=".agents/skills"
-    mkdir -p "$dest_dir"
-
-    local -a success_skills failed_skills
-    for skill in "${resolved_skills[@]}"; do
-        [[ -z "$skill" ]] && continue
-        src="$HOME/.agents/skills/$skill"
-        dest="$dest_dir/$skill"
-
-        if [[ ! -d "$src" ]]; then
-            if [[ "$lang" == zh* ]]; then
-                echo -e "${RED}[mskill] 错误: 全局技能 '$skill' 不存在于 ~/.agents/skills/ 中。${RESET}" >&2
-            else
-                echo -e "${RED}[mskill] Error: Global skill '$skill' does not exist in ~/.agents/skills/.${RESET}" >&2
-            fi
-            failed_skills+=("$skill")
-            continue
-        fi
-
-        if [[ -e "$dest" || -L "$dest" ]]; then
-            rm -rf "$dest"
-        fi
-
-        if (( opt_copy )); then
-            if cp -r "$src" "$dest"; then
-                success_skills+=("$skill")
-            else
-                failed_skills+=("$skill")
-            fi
-        else
-            if ln -s "$src" "$dest"; then
-                success_skills+=("$skill")
-            else
-                failed_skills+=("$skill")
-            fi
-        fi
-    done
-
-    # 6. Report Execution Summary
-    if (( ${#success_skills[@]} > 0 )); then
-        if (( opt_copy )); then
-            if [[ "$lang" == zh* ]]; then
-                echo -e "\n  ${GREEN}✓ 技能实体拷贝成功${RESET} (共 ${#success_skills[@]} 个实体已拷贝至 ${CYAN}$dest_dir/${RESET})"
-                echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}"
-                for skill in "${success_skills[@]}"; do
-                    echo -e "    ${GREEN}•${RESET} $skill -> $dest_dir/$skill (实体副本)"
-                done
-                echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}\n"
-            else
-                echo -e "\n  ${GREEN}✓ Skill Entities Copied${RESET} (${#success_skills[@]} entities copied to ${CYAN}$dest_dir/${RESET})"
-                echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}"
-                for skill in "${success_skills[@]}"; do
-                    echo -e "    ${GREEN}•${RESET} $skill -> $dest_dir/$skill (copied entity)"
-                done
-                echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}\n"
-            fi
-        else
-            if [[ "$lang" == zh* ]]; then
-                echo -e "\n  ${GREEN}✓ 技能软链接挂载成功${RESET} (共 ${#success_skills[@]} 个技能已挂载至 ${CYAN}$dest_dir/${RESET})"
-                echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}"
-                for skill in "${success_skills[@]}"; do
-                    echo -e "    ${GREEN}•${RESET} $skill -> $dest_dir/$skill (软链接)"
-                done
-                echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}\n"
-            else
-                echo -e "\n  ${GREEN}✓ Skills Symlinked${RESET} (${#success_skills[@]} skills mounted to ${CYAN}$dest_dir/${RESET})"
-                echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}"
-                for skill in "${success_skills[@]}"; do
-                    echo -e "    ${GREEN}•${RESET} $skill -> $dest_dir/$skill (symlink)"
-                done
-                echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}\n"
-            fi
-        fi
-    fi
-
-    if (( ${#failed_skills[@]} > 0 )); then
-        local action_str
-        if (( opt_copy )); then
-            action_str=$([[ "$lang" == zh* ]] && echo "拷贝" || echo "copy")
-        else
-            action_str=$([[ "$lang" == zh* ]] && echo "软链接" || echo "link")
-        fi
-        if [[ "$lang" == zh* ]]; then
-            echo -e "\n  ${RED}✗ 操作部分失败${RESET} (以下技能${action_str}失败):" >&2
-            echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}" >&2
-            for skill in "${failed_skills[@]}"; do
-                echo -e "    ${RED}✗${RESET} $skill" >&2
-            done
-            echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}\n" >&2
-        else
-            echo -e "\n  ${RED}✗ Operation Failed${RESET} (Failed to ${action_str} following skills):" >&2
-            echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}" >&2
-            for skill in "${failed_skills[@]}"; do
-                echo -e "    ${RED}✗${RESET} $skill" >&2
-            done
-            echo -e "  ${BRIGHT_BLACK}────────────────────────────────────────────────────────────${RESET}\n" >&2
-        fi
-        return 1
-    fi
-
-    return 0
 }
 

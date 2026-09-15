@@ -10,319 +10,28 @@ import shutil
 import subprocess
 import urllib.parse
 import unicodedata
+from collections import Counter
 from datetime import datetime
 
-# Environment & Language
-LANG = os.environ.get("ZFL_LANG") or os.environ.get("LANG", "en")
-IS_ZH = LANG.startswith("zh")
+# Ensure skill_engine can be imported
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+if _current_dir not in sys.path:
+    sys.path.insert(0, _current_dir)
 
-SKILLS_DIR = os.path.expanduser("~/.agents/skills")
-
-def get_zfl_data_dir():
-    xdg_data = os.environ.get("XDG_DATA_HOME")
-    if xdg_data:
-        base = os.path.join(xdg_data, "zfl")
-    else:
-        base = os.path.expanduser("~/.local/share/zfl")
-    os.makedirs(base, exist_ok=True)
-    
-    # Auto-migration from legacy ~/.cache/zsh
-    legacy_cache = os.path.expanduser("~/.cache/zsh")
-    if os.path.exists(legacy_cache):
-        for item in ["skills_groups.json", "skills_zh.json", "skills_manifest.json", "skill_sources"]:
-            old_p = os.path.join(legacy_cache, item)
-            new_p = os.path.join(base, item)
-            if os.path.exists(old_p) and not os.path.exists(new_p):
-                try:
-                    if os.path.isdir(old_p):
-                        shutil.copytree(old_p, new_p)
-                    else:
-                        shutil.copy2(old_p, new_p)
-                except Exception:
-                    pass
-    return base
-
-DATA_DIR = get_zfl_data_dir()
-SOURCES_DIR = os.path.join(DATA_DIR, "skill_sources")
-MANIFEST_FILE = os.path.join(DATA_DIR, "skills_manifest.json")
-GROUPS_FILE = os.path.join(DATA_DIR, "skills_groups.json")
-
-def c_print(color_code, msg, file=sys.stdout):
-    """Print message with ANSI color codes."""
-    if hasattr(file, 'isatty') and file.isatty():
-        file.write(f"\033[{color_code}m{msg}\033[0m\n")
-    else:
-        file.write(f"{msg}\n")
-    file.flush()
-
-def safe_input(prompt_msg=""):
-    """Safely print prompt and read input avoiding readline backspace glitches."""
-    if prompt_msg:
-        sys.stdout.write(f"{prompt_msg}\n")
-        sys.stdout.flush()
-    try:
-        return input("> ").strip()
-    except (EOFError, KeyboardInterrupt):
-        return ""
-
-def atomic_save_json(file_path, data):
-    """Atomically save data as JSON using a temporary file and os.replace."""
-    try:
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        tmp_path = f"{file_path}.tmp.{os.getpid()}"
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        os.replace(tmp_path, file_path)
-        return True
-    except Exception as e:
-        c_print("1;31", f"Error saving {file_path}: {e}", file=sys.stderr)
-        return False
-
-def load_manifest():
-    """Load skills manifest mapping skill_name to repository metadata."""
-    if not os.path.exists(MANIFEST_FILE):
-        return {}
-    try:
-        with open(MANIFEST_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
-
-def save_manifest(manifest):
-    """Save skills manifest atomically."""
-    return atomic_save_json(MANIFEST_FILE, manifest)
-
-def load_groups():
-    """Load group configurations from skills_groups.json."""
-    if not os.path.exists(GROUPS_FILE):
-        return {}
-    try:
-        with open(GROUPS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
-
-def save_groups(groups):
-    """Save group configurations to skills_groups.json atomically."""
-    return atomic_save_json(GROUPS_FILE, groups)
-
-
-def parse_yaml_frontmatter(file_path):
-    """Extract frontmatter dictionary from SKILL.md."""
-    if not os.path.isfile(file_path):
-        return {}
-    try:
-        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read(4096)
-    except Exception:
-        return {}
-
-    match = re.match(r"^---\s*\n(.*?)\n---\s*\n", content, re.DOTALL)
-    if not match:
-        return {}
-    
-    meta = {}
-    for line in match.group(1).splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if ":" in line:
-            k, v = line.split(":", 1)
-            k = k.strip()
-            v = v.strip().strip("'\"")
-            if k:
-                meta[k] = v
-    return meta
-
-def parse_repo_target(raw_input):
-    """
-    Parse various GitHub / Git URL formats or local directory paths into target metadata.
-    Examples:
-    - /path/to/local/dir -> local import
-    - owner/repo@v1.0.0 or owner/repo#branch -> specific branch/tag
-    - owner/repo -> https://github.com/owner/repo.git
-    - https://github.com/owner/repo/tree/main/skills/my-skill
-    - git@github.com:owner/repo.git
-    """
-    raw = raw_input.strip()
-    if not raw:
-        return None
-
-    # Check if input is an existing local directory
-    expanded_path = os.path.abspath(os.path.expanduser(raw))
-    if os.path.isdir(expanded_path):
-        base_name = os.path.basename(expanded_path.rstrip(os.sep))
-        return {
-            "is_local": True,
-            "local_path": expanded_path,
-            "repo_url": "local",
-            "owner": "local",
-            "repo": base_name,
-            "branch": None,
-            "subpath": "",
-            "cache_name": f"local__{base_name}"
-        }
-
-    # Extract tag/branch override via @tag or #branch
-    branch_override = None
-    if "#" in raw:
-        raw, branch_override = raw.split("#", 1)
-    elif "@" in raw and not raw.startswith("git@"):
-        raw, branch_override = raw.rsplit("@", 1)
-
-    # Case 1: https://github.com/owner/repo/tree/branch/subpath...
-    tree_match = re.match(r"^https?://github\.com/([^/]+)/([^/]+)/tree/([^/]+)/?(.*)$", raw)
-    if tree_match:
-        owner, repo, branch, subpath = tree_match.groups()
-        repo = repo.removesuffix(".git")
-        repo_url = f"https://github.com/{owner}/{repo}.git"
-        cache_name = f"{owner}__{repo}"
-        return {
-            "repo_url": repo_url,
-            "owner": owner,
-            "repo": repo,
-            "branch": branch_override or branch,
-            "subpath": subpath.rstrip("/"),
-            "cache_name": cache_name
-        }
-
-    # Case 2: Standard GitHub HTTPS or SSH
-    http_match = re.match(r"^https?://github\.com/([^/]+)/([^/]+?)(?:\.git|/)?$", raw)
-    if http_match:
-        owner, repo = http_match.groups()
-        repo = repo.removesuffix(".git")
-        return {
-            "repo_url": f"https://github.com/{owner}/{repo}.git",
-            "owner": owner,
-            "repo": repo,
-            "branch": branch_override,
-            "subpath": "",
-            "cache_name": f"{owner}__{repo}"
-        }
-
-    ssh_match = re.match(r"^git@github\.com:([^/]+)/([^/]+?)(?:\.git)?$", raw)
-    if ssh_match:
-        owner, repo = ssh_match.groups()
-        return {
-            "repo_url": f"git@github.com:{owner}/{repo}.git",
-            "owner": owner,
-            "repo": repo,
-            "branch": branch_override,
-            "subpath": "",
-            "cache_name": f"{owner}__{repo}"
-        }
-
-    # Case 3: Shorthand owner/repo
-    shorthand_match = re.match(r"^([a-zA-Z0-9_\-\.]+)/([a-zA-Z0-9_\-\.]+)$", raw)
-    if shorthand_match:
-        owner, repo = shorthand_match.groups()
-        repo = repo.removesuffix(".git")
-        return {
-            "repo_url": f"https://github.com/{owner}/{repo}.git",
-            "owner": owner,
-            "repo": repo,
-            "branch": branch_override,
-            "subpath": "",
-            "cache_name": f"{owner}__{repo}"
-        }
-
-    # Fallback generic Git URL
-    safe_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", raw)
-    return {
-        "repo_url": raw,
-        "owner": "custom",
-        "repo": safe_name,
-        "branch": branch_override,
-        "subpath": "",
-        "cache_name": safe_name
-    }
-
-def clone_or_fetch_repo(target_info):
-    """
-    Clone or fetch remote repository into ~/.local/share/zfl/skill_sources/<cache_name>.
-    Supports local paths, GitHub mirrors, and timeout protection.
-    Returns the local repository directory path or None on failure.
-    """
-    if target_info.get("is_local"):
-        return target_info["local_path"]
-
-    os.makedirs(SOURCES_DIR, exist_ok=True)
-    cache_dir = os.path.join(SOURCES_DIR, target_info["cache_name"])
-    repo_url = target_info["repo_url"]
-    branch = target_info.get("branch")
-
-    # Apply GitHub mirror if configured
-    github_mirror = os.environ.get("ZFL_GITHUB_MIRROR", "").strip().rstrip("/")
-    if github_mirror and repo_url.startswith("https://github.com/"):
-        repo_url = f"{github_mirror}/{repo_url}"
-
-    git_timeout = int(os.environ.get("ZFL_GIT_TIMEOUT", "35"))
-
-    if not os.path.exists(os.path.join(cache_dir, ".git")):
-        if IS_ZH:
-            c_print("1;34", f"==> 正在克隆源仓库: {repo_url} ...")
-        else:
-            c_print("1;34", f"==> Cloning source repository: {repo_url} ...")
-        
-        cmd = ["git", "clone", "--depth", "1"]
-        if branch:
-            cmd.extend(["-b", branch])
-        cmd.extend([repo_url, cache_dir])
-
-        try:
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=git_timeout)
-            if res.returncode != 0:
-                c_print("1;31", f"Git clone failed:\n{res.stderr.strip()}", file=sys.stderr)
-                if IS_ZH:
-                    c_print("0;33", "提示: 若因网络超时失败，可设置镜像环境变量 ZFL_GITHUB_MIRROR (如 https://ghproxy.net)")
-                return None
-        except subprocess.TimeoutExpired:
-            c_print("1;31", f"Git clone timed out after {git_timeout}s.", file=sys.stderr)
-            if IS_ZH:
-                c_print("0;33", "提示: 连接 GitHub 超时，建议配置代理或设置 ZFL_GITHUB_MIRROR 镜像加速。")
-            return None
-    else:
-        if IS_ZH:
-            c_print("1;34", f"==> 正在拉取源仓库最新变更: {target_info['cache_name']} ...")
-        else:
-            c_print("1;34", f"==> Fetching latest changes for: {target_info['cache_name']} ...")
-        
-        # Reset any local state in cache
-        subprocess.run(["git", "-C", cache_dir, "reset", "--hard", "HEAD"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        cmd = ["git", "-C", cache_dir, "pull", "--ff-only"]
-        try:
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=git_timeout)
-            if res.returncode != 0:
-                # Fallback to fetch origin
-                subprocess.run(["git", "-C", cache_dir, "fetch", "--depth", "1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=git_timeout)
-        except subprocess.TimeoutExpired:
-            c_print("1;33", f"Git pull timed out after {git_timeout}s, using cached revision.", file=sys.stderr)
-
-    return cache_dir
-
-def get_repo_head_commit(repo_dir):
-    """Get the current HEAD commit hash of a git repository."""
-    try:
-        res = subprocess.run(["git", "-C", repo_dir, "rev-parse", "HEAD"],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-        return res.stdout.strip()
-    except Exception:
-        return "unknown"
-
-def get_repo_remote_commit(repo_dir, branch="HEAD"):
-    """Get remote latest commit hash."""
-    try:
-        res = subprocess.run(["git", "-C", repo_dir, "rev-parse", f"origin/{branch}"],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if res.returncode == 0 and res.stdout.strip():
-            return res.stdout.strip()
-        # Fallback to HEAD
-        return get_repo_head_commit(repo_dir)
-    except Exception:
-        return "unknown"
+from skill_engine._display import (
+    IS_ZH, LANG, c_print, strip_ansi, clean_item_id,
+    get_display_width, pad_display, truncate_display
+)
+from skill_engine._store import (
+    SKILLS_DIR, DATA_DIR, SOURCES_DIR, MANIFEST_FILE, GROUPS_FILE,
+    get_zfl_data_dir, safe_input, atomic_save_json,
+    load_manifest, save_manifest, load_groups, save_groups
+)
+from skill_engine._frontmatter import parse_yaml_frontmatter
+from skill_engine._repo import (
+    parse_repo_target, clone_or_fetch_repo,
+    get_repo_head_commit, get_repo_remote_commit
+)
 
 def scan_skills_in_dir(root_dir, limit_subpath=""):
     """
@@ -376,6 +85,21 @@ def scan_skills_in_dir(root_dir, limit_subpath=""):
                 "has_scripts": has_scripts,
                 "has_refs": has_refs
             })
+
+    # Disambiguate duplicate skill names within the same repository
+    name_counts = Counter(d["name"] for d in discovered)
+    generic_dirs = {"skills", "skill", "plugins", "plugin", "src", "packages", "extensions", "tools", "agents", "agent", ".agents"}
+
+    for d in discovered:
+        if name_counts[d["name"]] > 1:
+            # Find distinctive directory segments from rel_subpath
+            parts = [p.lower() for p in re.split(r"[/\\_]", d["rel_subpath"]) if p]
+            distinctive = [p for p in parts if p not in generic_dirs and p != d["name"]]
+            if distinctive:
+                suffix = "-".join(distinctive)
+                suffix = re.sub(r"[^a-zA-Z0-9_\-]", "-", suffix).strip("-")
+                if suffix:
+                    d["name"] = f"{d['name']}-{suffix}"
 
     # Sort by subpath depth and name
     discovered.sort(key=lambda x: (x["rel_subpath"].count(os.sep), x["name"]))
@@ -492,7 +216,7 @@ def install_skills_workflow(repo_input, specific_skills=None, branch=None, force
     if branch:
         target_info["branch"] = branch
 
-    cache_dir = clone_or_fetch_repo(target_info)
+    cache_dir = clone_or_fetch_repo(target_info, update_if_exists=force)
     if not cache_dir:
         return 1
 
@@ -505,6 +229,9 @@ def install_skills_workflow(repo_input, specific_skills=None, branch=None, force
         else:
             c_print("1;31", f"Error: No valid skill packages with SKILL.md found in repository!", file=sys.stderr)
         return 1
+
+    manifest = load_manifest()
+    os.makedirs(SKILLS_DIR, exist_ok=True)
 
     selected_skills = []
     if specific_skills:
@@ -524,10 +251,18 @@ def install_skills_workflow(repo_input, specific_skills=None, branch=None, force
                         c_print("1;33", f"警告: 仓库中未找到技能 '{req}'，已跳过。")
                     else:
                         c_print("1;33", f"Warning: Skill '{req}' not found in repository, skipped.")
+    elif target_info.get("subpath"):
+        # Target specified a specific subpath: if exact match exists, pick it directly
+        exact_subpath_matches = [item for item in discovered if item["rel_subpath"] == target_info["subpath"]]
+        if len(exact_subpath_matches) == 1:
+            selected_skills = exact_subpath_matches
+        elif len(discovered) == 1:
+            selected_skills = [discovered[0]]
     elif len(discovered) == 1:
         # Single skill repository -> install directly
         selected_skills = [discovered[0]]
-    else:
+
+    if not selected_skills:
         # Multi-skill repository -> interactive selection
         if IS_ZH:
             print("\033[1;36m" + "=" * 60 + "\033[0m")
@@ -540,9 +275,12 @@ def install_skills_workflow(repo_input, specific_skills=None, branch=None, force
             scripts_flag = " [scripts]" if item["has_scripts"] else ""
             refs_flag = " [refs]" if item["has_refs"] else ""
             desc = item["description"]
-            if len(desc) > 40:
-                desc = desc[:37] + "..."
-            print(f"  {idx}) \033[1;33m{item['name']}\033[0m ({item['file_count']} files{scripts_flag}{refs_flag}) - {desc}")
+            if len(desc) > 35:
+                desc = desc[:32] + "..."
+            is_installed = os.path.exists(os.path.join(SKILLS_DIR, item["name"]))
+            status_tag = " \033[0;32m[已安装]\033[0m" if (is_installed and IS_ZH) else (" \033[0;32m[installed]\033[0m" if is_installed else "")
+            path_hint = f" \033[0;90m[{item['rel_subpath']}]\033[0m" if item.get("rel_subpath") else ""
+            print(f"  {idx}) \033[1;33m{item['name']}\033[0m{path_hint} ({item['file_count']} files{scripts_flag}{refs_flag}){status_tag} - {desc}")
         print("\033[1;36m" + "=" * 60 + "\033[0m")
 
         if IS_ZH:
@@ -573,19 +311,26 @@ def install_skills_workflow(repo_input, specific_skills=None, branch=None, force
         c_print("1;33", "No skills selected for installation.")
         return 0
 
-    manifest = load_manifest()
-    os.makedirs(SKILLS_DIR, exist_ok=True)
-
     installed_count = 0
+    skipped_count = 0
     for skill_info in selected_skills:
         s_name = skill_info["name"]
         dest_path = os.path.join(SKILLS_DIR, s_name)
+        existing_meta = manifest.get(s_name)
 
         if os.path.exists(dest_path) and not force:
-            if IS_ZH:
-                c_print("1;33", f"[*] 技能 '{s_name}' 已存在于 ~/.agents/skills/，正在覆盖更新...")
+            if existing_meta and existing_meta.get("commit_hash") == commit_hash and commit_hash != "unknown":
+                if IS_ZH:
+                    c_print("0;32", f"[=] 技能 '{s_name}' 已安装且为最新版本 ({commit_hash[:7]})，跳过重复写入。")
+                else:
+                    c_print("0;32", f"[=] Skill '{s_name}' is already installed and up-to-date ({commit_hash[:7]}), skipping redundant write.")
+                skipped_count += 1
+                continue
             else:
-                c_print("1;33", f"[*] Skill '{s_name}' already exists in ~/.agents/skills/, updating...")
+                if IS_ZH:
+                    c_print("1;33", f"[*] 技能 '{s_name}' 已存在于 ~/.agents/skills/，正在覆盖更新...")
+                else:
+                    c_print("1;33", f"[*] Skill '{s_name}' already exists in ~/.agents/skills/, updating...")
 
         copy_skill_bundle(skill_info["dir_path"], dest_path)
 
@@ -623,14 +368,20 @@ def install_skills_workflow(repo_input, specific_skills=None, branch=None, force
         else:
             c_print("1;32", f"[✓] Successfully installed: {s_name}{extras_str} -> ~/.agents/skills/{s_name}")
 
-    save_manifest(manifest)
-    if IS_ZH:
-        c_print("1;32", f"\n完成！已成功安装/更新 {installed_count} 个技能。")
-    else:
-        c_print("1;32", f"\nDone! Successfully installed/updated {installed_count} skill(s).")
+    if installed_count > 0:
+        save_manifest(manifest)
+        if IS_ZH:
+            c_print("1;32", f"\n完成！已成功安装/更新 {installed_count} 个技能。")
+        else:
+            c_print("1;32", f"\nDone! Successfully installed/updated {installed_count} skill(s).")
+    elif skipped_count > 0:
+        if IS_ZH:
+            c_print("0;32", f"\n所有选定技能均已是最新版本，无需重复操作。")
+        else:
+            c_print("0;32", f"\nAll selected skills are already up-to-date, nothing to do.")
 
     # Prompt auto-grouping if multiple skills were installed
-    if len(selected_skills) > 1:
+    if len(selected_skills) > 1 and installed_count > 0:
         installed_names = [s["name"] for s in selected_skills]
         prompt_auto_group_skills(installed_names, target_info)
 
@@ -746,70 +497,6 @@ def update_skills_workflow(target_skills=None, update_all=False):
         c_print("0;33", "Notice: All skill groups preserved intact, symlinks updated automatically.")
     return 0
 
-def strip_ansi(s):
-    return re.sub(r'\x1b\[[0-9;]*m', '', s)
-
-def clean_item_id(s):
-    if not s:
-        return ""
-    s_clean = strip_ansi(s)
-    # Strip tree prefixes, icons, whitespace
-    s_clean = re.sub(r'^[ \t│├└─\-\+📦📁📂•▶▼\s]+', '', s_clean).strip()
-    parts = s_clean.split()
-    if not parts:
-        return ""
-    token = parts[0].strip("[](),:;")
-    if "group:" in s_clean and not token.startswith("group:"):
-        m = re.search(r'group:[^\s\[\]()]+', s_clean)
-        if m:
-            return m.group(0).strip("[](),:;")
-    return token
-
-ANSI_REGEX = re.compile(r'\033\[[0-9;]*[a-zA-Z]')
-
-def strip_ansi(s):
-    return ANSI_REGEX.sub('', s)
-
-def get_display_width(s):
-    s_clean = strip_ansi(s)
-    w = 0
-    for ch in s_clean:
-        status = unicodedata.east_asian_width(ch)
-        if status in ('F', 'W'):
-            w += 2
-        else:
-            w += 1
-    return w
-
-def pad_display(s, target_width, align='left'):
-    curr_w = get_display_width(s)
-    pad_len = max(0, target_width - curr_w)
-    if align == 'right':
-        return " " * pad_len + s
-    elif align == 'center':
-        left = pad_len // 2
-        right = pad_len - left
-        return " " * left + s + " " * right
-    else:
-        return s + " " * pad_len
-
-def truncate_display(s, max_w, suffix="…"):
-    curr_w = get_display_width(s)
-    if curr_w <= max_w:
-        return s
-    suffix_w = get_display_width(suffix)
-    target = max_w - suffix_w
-    if target <= 0:
-        return suffix[:max_w]
-    res = []
-    w = 0
-    for ch in s:
-        cw = 2 if unicodedata.east_asian_width(ch) in ('F', 'W') else 1
-        if w + cw > target:
-            break
-        res.append(ch)
-        w += cw
-    return "".join(res) + suffix
 
 def list_skills_status():
     """Display installation and version status of all skills in a modern streamlined table."""
@@ -1351,6 +1038,128 @@ def doctor_workflow():
         c_print("1;32", "  🎉 恭喜！未检测到任何健康隐患，所有技能与环境均处于完美状态！\n" if IS_ZH else "  🎉 All clean! No health issues found.\n")
     else:
         c_print("1;33", f"  诊断完毕：共发现 {issues_found} 处隐患/异常，已自动修复 {fixed_count} 处。\n" if IS_ZH else f"  Diagnosis done: {issues_found} issue(s) detected, {fixed_count} fixed.\n")
+def mount_project_skills(target_skills, copy_entity=False):
+    """
+    Mount (symlink or copy) global skills into current project directory (.agents/skills/).
+    Supports skill names and group names (auto-expanded).
+    """
+    if not target_skills:
+        c_print("1;33", "提示: 未指定需要挂载的技能或分组名称。" if IS_ZH else "Notice: No skills or groups specified to mount.")
+        return 0
+
+    # Home directory protection: refuse to mount skills in ~
+    cwd = os.path.abspath(os.getcwd())
+    home = os.path.abspath(os.path.expanduser("~"))
+    if cwd == home:
+        if IS_ZH:
+            c_print("1;33", "[mskill] 家目录保护：无法在家目录下执行链接/拷贝操作。")
+            c_print("0;36", "  请 cd 到你的项目目录后再运行此操作。")
+        else:
+            c_print("1;33", "[mskill] Home dir protection: cannot link/copy skills in home directory.")
+            c_print("0;36", "  Please cd to your project directory first.")
+        return 1
+
+    # Resolve groups and skill names
+    groups = load_groups()
+    resolved = []
+    for item_raw in target_skills:
+        item = clean_item_id(item_raw)
+        if not item or item.startswith("-"):
+            continue
+        gkey = item[6:] if item.startswith("group:") else item
+        if gkey in groups:
+            ginfo = groups[gkey]
+            gskills = ginfo.get("skills", []) if isinstance(ginfo, dict) else ginfo
+            for s in gskills:
+                if s not in resolved:
+                    resolved.append(s)
+        else:
+            if item not in resolved:
+                resolved.append(item)
+
+    if not resolved:
+        no_action = "没有需要拷贝的有效技能。" if copy_entity else "没有需要链接的有效技能。"
+        no_action_en = "No valid skills to copy." if copy_entity else "No valid skills to link."
+        c_print("1;33", f"[mskill] {no_action if IS_ZH else no_action_en}")
+        return 0
+
+    dest_dir = os.path.join(cwd, ".agents", "skills")
+    os.makedirs(dest_dir, exist_ok=True)
+
+    success_skills = []
+    failed_skills = []
+
+    for skill in resolved:
+        src = os.path.join(SKILLS_DIR, skill)
+        dest = os.path.join(dest_dir, skill)
+
+        if not os.path.isdir(src):
+            if IS_ZH:
+                c_print("1;31", f"[mskill] 错误: 全局技能 '{skill}' 不存在于 ~/.agents/skills/ 中。", file=sys.stderr)
+            else:
+                c_print("1;31", f"[mskill] Error: Global skill '{skill}' does not exist in ~/.agents/skills/.", file=sys.stderr)
+            failed_skills.append(skill)
+            continue
+
+        if os.path.lexists(dest):
+            if os.path.islink(dest) or os.path.isfile(dest):
+                os.unlink(dest)
+            elif os.path.isdir(dest):
+                shutil.rmtree(dest)
+
+        try:
+            if copy_entity:
+                shutil.copytree(src, dest, symlinks=True)
+            else:
+                os.symlink(src, dest)
+            success_skills.append(skill)
+        except Exception as e:
+            c_print("1;31", f"[mskill] 操作失败 '{skill}': {e}", file=sys.stderr)
+            failed_skills.append(skill)
+
+    # Report execution summary
+    GREEN = "\033[1;32m"
+    CYAN = "\033[1;36m"
+    RED = "\033[1;31m"
+    GREY = "\033[0;90m"
+    RESET = "\033[0m"
+
+    if success_skills:
+        action_name = "实体拷贝" if copy_entity else "软链接挂载"
+        action_type = "实体副本" if copy_entity else "软链接"
+        action_name_en = "Skill Entities Copied" if copy_entity else "Skills Symlinked"
+        action_type_en = "copied entity" if copy_entity else "symlink"
+
+        if IS_ZH:
+            print(f"\n  {GREEN}✓ 技能{action_name}成功{RESET} (共 {len(success_skills)} 个技能已挂载至 {CYAN}.agents/skills/{RESET})")
+            print(f"  {GREY}{'─' * 60}{RESET}")
+            for skill in success_skills:
+                print(f"    {GREEN}•{RESET} {skill} -> .agents/skills/{skill} ({action_type})")
+            print(f"  {GREY}{'─' * 60}{RESET}\n")
+        else:
+            print(f"\n  {GREEN}✓ {action_name_en}{RESET} ({len(success_skills)} skills mounted to {CYAN}.agents/skills/{RESET})")
+            print(f"  {GREY}{'─' * 60}{RESET}")
+            for skill in success_skills:
+                print(f"    {GREEN}•{RESET} {skill} -> .agents/skills/{skill} ({action_type_en})")
+            print(f"  {GREY}{'─' * 60}{RESET}\n")
+
+    if failed_skills:
+        action_str = "拷贝" if copy_entity else "软链接"
+        action_str_en = "copy" if copy_entity else "link"
+        if IS_ZH:
+            print(f"\n  {RED}✗ 操作部分失败{RESET} (以下技能{action_str}失败):", file=sys.stderr)
+            print(f"  {GREY}{'─' * 60}{RESET}", file=sys.stderr)
+            for skill in failed_skills:
+                print(f"    {RED}✗{RESET} {skill}", file=sys.stderr)
+            print(f"  {GREY}{'─' * 60}{RESET}\n", file=sys.stderr)
+        else:
+            print(f"\n  {RED}✗ Operation Failed{RESET} (Failed to {action_str_en} following skills):", file=sys.stderr)
+            print(f"  {GREY}{'─' * 60}{RESET}", file=sys.stderr)
+            for skill in failed_skills:
+                print(f"    {RED}✗{RESET} {skill}", file=sys.stderr)
+            print(f"  {GREY}{'─' * 60}{RESET}\n", file=sys.stderr)
+        return 1
+
     return 0
 
 def eject_project_skills(target_skills=None):
@@ -1717,6 +1526,12 @@ def main():
         editor = os.environ.get("EDITOR") or "vim"
         subprocess.run([editor, target_file])
         return 0
+
+    elif cmd in ("--link", "link"):
+        return mount_project_skills(target_skills=args, copy_entity=False)
+
+    elif cmd in ("-c", "--copy", "copy"):
+        return mount_project_skills(target_skills=args, copy_entity=True)
 
     else:
         c_print("1;31", f"Unknown command: {cmd}", file=sys.stderr)

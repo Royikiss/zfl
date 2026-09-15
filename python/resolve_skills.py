@@ -8,65 +8,20 @@ import json
 import re
 import unicodedata
 
-# Detect language
-LANG = os.environ.get("ZFL_LANG") or os.environ.get("LANG", "en")
-IS_ZH = LANG.startswith("zh")
+# Ensure skill_engine can be imported
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+if _current_dir not in sys.path:
+    sys.path.insert(0, _current_dir)
 
-def get_zfl_data_dir():
-    xdg_data = os.environ.get("XDG_DATA_HOME")
-    if xdg_data:
-        base = os.path.join(xdg_data, "zfl")
-    else:
-        base = os.path.expanduser("~/.local/share/zfl")
-    os.makedirs(base, exist_ok=True)
-    legacy_groups = os.path.expanduser("~/.cache/zsh/skills_groups.json")
-    new_groups = os.path.join(base, "skills_groups.json")
-    if os.path.exists(legacy_groups) and not os.path.exists(new_groups):
-        try:
-            import shutil
-            shutil.copy2(legacy_groups, new_groups)
-        except Exception:
-            pass
-    return base
-
-DATA_DIR = get_zfl_data_dir()
-GROUPS_FILE = os.path.join(DATA_DIR, "skills_groups.json")
-
-DEFAULT_GROUPS = {
-    "startup": {
-        "name": "极简创业者" if IS_ZH else "Minimalist Entrepreneur",
-        "ordered": True,
-        "skills": [
-            "validate-idea",
-            "find-community",
-            "first-customers",
-            "marketing-plan",
-            "pricing",
-            "processize",
-            "grow-sustainably",
-            "minimalist-review"
-        ]
-    },
-    "dev": {
-        "name": "日常开发协作" if IS_ZH else "Daily Development Collaboration",
-        "ordered": False,
-        "skills": [
-            "prototype",
-            "improve-codebase-architecture",
-            "gemini-prompt-optimizer",
-            "grill-me",
-            "grill-with-docs",
-            "handoff",
-            "nuwa-skill"
-        ]
-    }
-}
-
-def circled_num(n):
-    """Return a circled number character for n (1-20), else fallback to (n)."""
-    if 1 <= n <= 20:
-        return chr(0x245F + n)  # U+2460 = ①
-    return f"({n})"
+from skill_engine._display import (
+    IS_ZH, LANG, strip_ansi, clean_item_id, circled_num,
+    get_display_width, pad_display, truncate_display
+)
+from skill_engine._store import (
+    get_zfl_data_dir, DATA_DIR, GROUPS_FILE, safe_input, atomic_save_json
+)
+from skill_engine._translations import DEFAULT_GROUPS
+from skill_engine._frontmatter import parse_yaml_frontmatter as parse_frontmatter
 
 def load_groups():
     """
@@ -110,45 +65,8 @@ def load_groups():
     return {}
 
 def save_groups(groups):
-    """
-    Save group configurations back to skills_groups.json atomically.
-    """
-    try:
-        os.makedirs(os.path.dirname(GROUPS_FILE), exist_ok=True)
-        tmp_file = f"{GROUPS_FILE}.tmp.{os.getpid()}"
-        with open(tmp_file, "w", encoding="utf-8") as f:
-            json.dump(groups, f, indent=2, ensure_ascii=False)
-        os.replace(tmp_file, GROUPS_FILE)
-        return True
-    except Exception:
-        return False
-def safe_input(prompt_msg=""):
-    """
-    Safely print prompt and read input using a clean ASCII '> ' prompt.
-    Prevents CJK character backspace alignment bugs in terminal readline.
-    """
-    if prompt_msg:
-        print(prompt_msg)
-    return input("> ").strip()
-
-def strip_ansi(s):
-    return re.sub(r'\x1b\[[0-9;]*m', '', s)
-
-def clean_item_id(s):
-    if not s:
-        return ""
-    s_clean = strip_ansi(s)
-    # Strip tree prefixes, icons, whitespace
-    s_clean = re.sub(r'^[ \t│├└─\-\+📦📁📂•▶▼\s]+', '', s_clean).strip()
-    parts = s_clean.split()
-    if not parts:
-        return ""
-    token = parts[0].strip("[](),:;")
-    if "group:" in s_clean and not token.startswith("group:"):
-        m = re.search(r'group:[^\s\[\]()]+', s_clean)
-        if m:
-            return m.group(0).strip("[](),:;")
-    return token
+    """Save group configurations back to skills_groups.json atomically."""
+    return atomic_save_json(GROUPS_FILE, groups)
 
 def interactive_set(selected_args):
     # Filter out empty arguments or option arguments
@@ -386,88 +304,6 @@ def interactive_rm(focused_item):
 def view_connected():
     list_connected_skills()
 
-ANSI_REGEX = re.compile(r'\033\[[0-9;]*[a-zA-Z]')
-
-def strip_ansi(s):
-    return ANSI_REGEX.sub('', s)
-
-def get_display_width(s):
-    s_clean = strip_ansi(s)
-    w = 0
-    for ch in s_clean:
-        status = unicodedata.east_asian_width(ch)
-        if status in ('F', 'W'):
-            w += 2
-        else:
-            w += 1
-    return w
-
-def pad_display(s, target_width, align='left'):
-    curr_w = get_display_width(s)
-    pad_len = max(0, target_width - curr_w)
-    if align == 'right':
-        return " " * pad_len + s
-    elif align == 'center':
-        left = pad_len // 2
-        right = pad_len - left
-        return " " * left + s + " " * right
-    else:
-        return s + " " * pad_len
-
-def truncate_display(s, max_w, suffix="…"):
-    curr_w = get_display_width(s)
-    if curr_w <= max_w:
-        return s
-    suffix_w = get_display_width(suffix)
-    target = max_w - suffix_w
-    if target <= 0:
-        return suffix[:max_w]
-    res = []
-    w = 0
-    for ch in s:
-        cw = 2 if unicodedata.east_asian_width(ch) in ('F', 'W') else 1
-        if w + cw > target:
-            break
-        res.append(ch)
-        w += cw
-    return "".join(res) + suffix
-
-def parse_frontmatter(path):
-    if not os.path.exists(path):
-        return None
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read()
-    except Exception:
-        return None
-
-    m = re.match(r"^---\s*\n(.*?)\n---\s*\n", content, re.DOTALL)
-    if m:
-        frontmatter = m.group(1)
-        data = {}
-        current_key = None
-        for line in frontmatter.split("\n"):
-            if not line.strip():
-                continue
-            if line.startswith(" ") or line.startswith("\t"):
-                if current_key:
-                    val = line.strip()
-                    if val.startswith("-"):
-                        data[current_key] += "\n" + val
-                    else:
-                        data[current_key] += " " + val
-            else:
-                if ":" in line:
-                    key, val = line.split(":", 1)
-                    current_key = key.strip()
-                    data[current_key] = val.strip()
-        name = data.get("name", "")
-        desc = data.get("description", "")
-        if desc.startswith(">"):
-            desc = desc[1:]
-        desc = desc.replace("\n> ", "\n").replace("\n>", "\n").strip()
-        return {"name": name, "description": desc}
-    return None
 
 def find_connected_dir():
     """Find .agents/skills in current directory or parent directories up to git root."""

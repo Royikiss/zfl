@@ -16,6 +16,7 @@ TOP_LEVEL_ITEMS = [
     'functions/',
     'custom_functions/',
     'python/',
+    'tests/',
     'docs/',
     'automation/'
 ]
@@ -25,7 +26,9 @@ FALLBACK_DESCS = {
     'core/': 'Core dispatch and public modules',
     'functions/': 'Modular function directory (1:1 mapping between file name and function name)',
     'custom_functions/': 'User private local functions directory (ignored by git)',
-    'python/': 'Cross-language helper scripts',
+    'python/': 'Cross-language helper scripts and internal engines',
+    'python/skill_engine/': 'Unified skill lifecycle management internal package',
+    'tests/': 'Automated unit test suite',
     'docs/': 'Technical design, core mechanics, and troubleshooting documentation',
     'automation/': 'AI programming automation verification and sync scripts',
     'base.zsh': 'Framework entry point (exports ZFL_HOME and loads core modules)',
@@ -46,18 +49,20 @@ def extract_zsh_desc(filepath):
     return None
 
 def extract_py_desc(filepath):
-    """Extract metadata description from Python script file header comments"""
+    """Extract metadata description from Python script file header comments or docstrings"""
     if not os.path.exists(filepath):
         return None
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
-            for _ in range(10):
-                line = f.readline()
-                if not line:
-                    break
-                match = re.search(r'#\s*(?:描述|description):\s*(.*)', line, re.IGNORECASE)
-                if match:
-                    return match.group(1).strip()
+            content = f.read(1024)
+            match = re.search(r'#\s*(?:描述|description):\s*(.*)', content, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+            match_doc = re.search(r'^[rub]*"""(.*?)"""', content, re.DOTALL | re.MULTILINE)
+            if match_doc:
+                first_line = match_doc.group(1).strip().splitlines()[0].strip()
+                if first_line:
+                    return first_line
     except Exception:
         pass
     return None
@@ -138,7 +143,8 @@ def get_dir_files(dir_path):
         
     files = []
     for f in os.listdir(full_path):
-        if not os.path.isfile(os.path.join(full_path, f)):
+        item_path = os.path.join(full_path, f)
+        if not (os.path.isfile(item_path) or os.path.isdir(item_path)):
             continue
             
         # 根据目录类型过滤文件
@@ -149,6 +155,11 @@ def get_dir_files(dir_path):
             if f.endswith('.zsh'):
                 files.append(f)
         elif dir_path == 'python':
+            if f.endswith('.py'):
+                files.append(f)
+            elif os.path.isdir(os.path.join(full_path, f)) and not f.startswith('.') and not f.startswith('__'):
+                files.append(f + '/')
+        elif dir_path == 'tests':
             if f.endswith('.py'):
                 files.append(f)
         elif dir_path == 'docs':

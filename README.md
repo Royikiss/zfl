@@ -58,7 +58,13 @@ zsh/
 │   ├── manage_skills.py           # Core management engine for AI Agent skills (Install, Discover, Package, Update, Status)
 │   ├── preview_skill.py
 │   ├── resolve_skills.py          # Parse and expand skill groups and skill names, and provide interfaces to manage groups
+│   ├── skill_engine/              # Unified skill lifecycle management internal package
 │   └── zfl_lint.py
+├── tests/                         # Automated unit test suite
+│   ├── test_display.py            # Unit tests for skill_engine._display utilities.
+│   ├── test_frontmatter.py        # Unit tests for skill_engine._frontmatter.
+│   ├── test_repo.py               # Unit tests for skill_engine._repo.
+│   └── test_store.py              # Unit tests for skill_engine._store.
 ├── docs/                          # Technical design, core mechanics, and troubleshooting documentation
 │   ├── add_task.md                # Non-blocking startup command and schedule scheduler.
 │   ├── aicp.md                    # AI context packaging, token estimation, and interactive `--exec` loop helper.
