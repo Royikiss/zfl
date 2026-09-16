@@ -1,5 +1,6 @@
 export ZFL_HOME="${0:A:h}"
 
+source "$ZFL_HOME/core/metadata.zsh"
 source "$ZFL_HOME/core/func.zsh"
 
 if [[ -f "$ZFL_HOME/core/usr.zsh" ]]; then

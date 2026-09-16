@@ -22,34 +22,9 @@ lazy_load_functions() {
         elif [[ "$ZFL_LAZY_QUIET" == "0" || "$ZFL_LAZY_QUIET" == "false" ]]; then
             is_quiet=0
         fi
-    # Priority 3: Function file header metadata tag (#? quiet: true)
-    elif [[ -f "$func_file" ]]; then
-        local line trimmed content key val
-        while IFS= read -r line; do
-            trimmed="${line##[[:space:]]}"
-            [[ -z "$trimmed" ]] && continue
-            [[ "$trimmed" != "#"* ]] && break
-            if [[ "$trimmed" == "#?"* ]]; then
-                content="${trimmed#\#?}"
-                content="${content##[[:space:]]}"
-                if [[ "$content" == *":"* ]]; then
-                    key="${content%%:*}"
-                    val="${content#*:}"
-                    key="${key##[[:space:]]}"; key="${key%%[[:space:]]}"
-                    val="${val##[[:space:]]}"; val="${val%%[[:space:]]}"
-                    case "$key" in
-                        "quiet"|"lazy_quiet"|"lazy_silent"|"静默"|"免提示")
-                            if [[ "$val" == "true" || "$val" == "1" || "$val" == "yes" ]]; then
-                                is_quiet=1
-                            elif [[ "$val" == "false" || "$val" == "0" || "$val" == "no" ]]; then
-                                is_quiet=0
-                            fi
-                            break
-                            ;;
-                    esac
-                fi
-            fi
-        done < "$func_file"
+    # Priority 3: Function file header metadata tag (#? quiet: true) via metadata engine
+    elif zfl_meta_is_quiet "$func_name" "$func_file"; then
+        is_quiet=1
     fi
 
     if (( ! is_quiet )); then

@@ -18,6 +18,7 @@
 
 - **[core/](file:///home/royi/.config/zsh/core/)**：框架核心调度与公共模块。
   - [colors.zsh](file:///home/royi/.config/zsh/core/colors.zsh)：声明 ANSI 颜色与文本样式变量。
+  - [metadata.zsh](file:///home/royi/.config/zsh/core/metadata.zsh)：框架元数据引擎运行时，提供内存关联数组零延迟查询与缓存保鲜。
   - [func.zsh](file:///home/royi/.config/zsh/core/func.zsh)：核心加载引擎，负责懒加载函数与补全桩的动态注册。使用匿名函数保证初始化环境洁净。
   - [startup_tasks.zsh](file:///home/royi/.config/zsh/core/startup_tasks.zsh) / [startup_task_commands.zsh](file:///home/royi/.config/zsh/core/startup_task_commands.zsh)：非阻塞启动任务调度与白名单列表。
   - [usr.zsh.example](file:///home/royi/.config/zsh/core/usr.zsh.example)：用户配置模板文件。用户需拷贝并创建 `usr.zsh` 来存放个性化配置覆盖层（如环境变量、别名等），该文件已被 `.gitignore` 忽略。
@@ -27,7 +28,7 @@
   - 新增管理工具 [zfl.zsh](file:///home/royi/.config/zsh/functions/zfl.zsh)（支持 list、info、check、lint 子命令及补全）。
 - **[custom_functions/](file:///home/royi/.config/zsh/custom_functions/)**：用户本地私有函数目录。
   - 此目录在 `.gitignore` 中被忽略，用于用户存放个人的自定义非公开脚本，防止 Git 合并冲突。
-- **[python/](file:///home/royi/.config/zsh/python/)**：跨语言辅助脚本，如 [zfl_lint.py](file:///home/royi/.config/zsh/python/zfl_lint.py)（静态代码质检分析）、[aicp_context.py](file:///home/royi/.config/zsh/python/aicp_context.py) 与技能管理子系统。内置 [skill_engine/](file:///home/royi/.config/zsh/python/skill_engine/) 共享包提供统一技能生命周期、存储与终端排版能力。
+- **[python/](file:///home/royi/.config/zsh/python/)**：跨语言辅助脚本，如 [metadata_engine.py](file:///home/royi/.config/zsh/python/metadata_engine.py)（单一真实源元数据引擎）、[zfl_lint.py](file:///home/royi/.config/zsh/python/zfl_lint.py)（静态代码质检分析）、[aicp_context.py](file:///home/royi/.config/zsh/python/aicp_context.py) 与技能管理子系统。内置 [skill_engine/](file:///home/royi/.config/zsh/python/skill_engine/) 共享包提供统一技能生命周期、存储与终端排版能力。
 - **[tests/](file:///home/royi/.config/zsh/tests/)**：自动化单元测试套件，通过 pytest 验证终端对齐、Git 解析与数据持久化逻辑。
 - **[docs/](file:///home/royi/.config/zsh/docs/)**：框架核心机制的技术设计与避坑文档。
 - **[automation/](file:///home/royi/.config/zsh/automation/)**：AI 编程自动化检测与同步脚本目录。

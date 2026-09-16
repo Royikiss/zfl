@@ -3,6 +3,9 @@ import os
 import sys
 import re
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import metadata_engine
+
 # 全局白名单变量，不会触发变量泄漏警告
 GLOBAL_WHITELIST = {
     # Zsh 内建特殊变量
@@ -14,6 +17,11 @@ GLOBAL_WHITELIST = {
     # ZFL 框架自定义全局变量
     "ZFL_HOME", "COLORS", "ZFL_LANG", "ZFL_LAZY_QUIET", "ZFL_STARTUP_LAZY_QUIET",
     "ZFL_STARTUP_VERBOSE", "ZFL_STARTUP_QUIET",
+    # ZFL 元数据引擎全局关联数组
+    "ZFL_META_NAMES", "ZFL_META_DESC", "ZFL_META_AUTHOR", "ZFL_META_VERSION",
+    "ZFL_META_DEPS", "ZFL_META_USAGE", "ZFL_META_EXAMPLE", "ZFL_META_PROTECTED",
+    "ZFL_META_QUIET", "ZFL_META_FILE", "ZFL_META_SOURCE", "ZFL_META_VALID",
+    "ZFL_META_WARNINGS", "ZFL_META_ERRORS",
     # check_update.zsh 相关的全局配置/状态变量
     "CHECK_UPDATE_CACHE_TTL_SECONDS", "CHECK_UPDATE_PROMPT_POLICY",
     "CHECK_UPDATE_APT_CMD", "CHECK_UPDATE_PACMAN_CMD", "CHECK_UPDATE_YAY_CMD",
@@ -301,32 +309,13 @@ def lint_file(file_path):
             else:
                 warnings.append(f"[Missing Metadata] File header lacks #? specification comments (e.g. #? name:, #? description:, #? author:).")
         else:
-            meta_keys = set()
-            for meta_line in metadata:
-                content = meta_line[2:].strip()
-                if ":" in content:
-                    k = content.split(":", 1)[0].strip()
-                    meta_keys.add(k)
-            
-            REQUIRED_FIELDS = [
-                (("name", "名称"), "name/名称"),
-                (("desc", "description", "描述"), "description/描述"),
-                (("author", "作者"), "author/作者"),
-                (("version", "版本"), "version/版本"),
-                (("deps", "dependencies", "依赖"), "deps/依赖"),
-                (("usage", "用法"), "usage/用法"),
-                (("example", "示例"), "example/示例"),
-            ]
-            missing_meta = []
-            for aliases, label in REQUIRED_FIELDS:
-                if not any(k in meta_keys for k in aliases):
-                    missing_meta.append(label)
-                
-            if missing_meta:
-                if is_zh:
-                    warnings.append(f"【元数据不完整】文件头部 #? 规范注释未显式写全，缺少字段: {', '.join(missing_meta)}")
-                else:
-                    warnings.append(f"[Incomplete Metadata] File header #? metadata must be explicitly written in full. Missing: {', '.join(missing_meta)}")
+            val_res = metadata_engine.validate(file_path, is_zh=is_zh)
+            for issue in val_res.warnings:
+                prefix = "【元数据不完整】" if is_zh else "[Incomplete Metadata] "
+                warnings.append(f"{prefix}{issue.message}")
+            for issue in val_res.errors:
+                prefix = "【映射失败】" if is_zh else "[Mapping Failed] "
+                errors.append(f"{prefix}{issue.message}")
 
     # 3. Extract and validate function definitions
     funcs = extract_functions(preprocessed_code)
@@ -375,8 +364,6 @@ def lint_file(file_path):
         leaks = []
         for var in assigned_vars:
             if var.startswith('_') and len(var) > 1:
-                continue
-            if var.startswith('func_meta_'):
                 continue
             if var not in local_vars and var not in GLOBAL_WHITELIST:
                 leaks.append(var)

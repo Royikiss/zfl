@@ -3,11 +3,15 @@
 # description: Automatically synchronize and verify the README.md project structure tree
 
 import os
+import sys
 import re
 
 # 获取项目根目录 (相对于 scripts/automation)
 script_dir = os.path.dirname(os.path.abspath(__file__))
 workspace_root = os.path.dirname(script_dir)
+
+sys.path.insert(0, os.path.join(workspace_root, "python"))
+import metadata_engine
 
 # 预设的顶层项及其展示顺序
 TOP_LEVEL_ITEMS = [
@@ -35,15 +39,12 @@ FALLBACK_DESCS = {
 }
 
 def extract_zsh_desc(filepath):
-    """Extract metadata description from Zsh function file"""
+    """Extract metadata description from Zsh function file via metadata_engine"""
     if not os.path.exists(filepath):
         return None
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            for line in f:
-                match = re.search(r'#\?\s*(?:描述|description):\s*(.*)', line, re.IGNORECASE)
-                if match:
-                    return match.group(1).strip()
+        rec = metadata_engine.load(filepath)
+        return rec.description or None
     except Exception:
         pass
     return None

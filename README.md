@@ -20,7 +20,7 @@ ZFL is a high-performance, modular configuration and function library for Zsh. W
   - Simply run `update` to upgrade system (Pacman/AUR via yay) and Flatpak packages in one go.
 - 🔍 **Static Quality Gates & Management (zfl)**
   - Built-in `zfl` static code checker lints variable/file-descriptor leaks, naming styles, hardcoded colors, and missing documentation. Integrates with GitHub Actions gate checks.
-  - Parses standardized metadata comment headers to auto-generate lists of available tools and verify system CLI dependencies.
+  - Features a unified **Metadata Engine Module** (`python/metadata_engine.py` + `core/metadata.zsh`): single source of truth for parsing `#?` headers, alias canonicalization, and atomic zero-fork cache compilation.
   - Implements immutable core function protection and metadata `#? protected: true` safeguards, preventing built-in tools from accidental deletion.
   - Supports granular lazy loading prompt control via metadata tags (`#? quiet: true`) and environment variables (`ZFL_LAZY_QUIET=1`).
 - 📦 **Universal Decompression & One-Key Compression (extract)**
@@ -37,6 +37,7 @@ zsh/
 ├── core/                          # Core dispatch and public modules
 │   ├── colors.zsh
 │   ├── func.zsh
+│   ├── metadata.zsh
 │   ├── startup_task_commands.zsh
 │   ├── startup_tasks.zsh
 │   ├── usr.zsh
@@ -56,6 +57,7 @@ zsh/
 │   ├── aicp_context.py
 │   ├── list_skills_fzf.py
 │   ├── manage_skills.py           # Core management engine for AI Agent skills (Install, Discover, Package, Update, Status)
+│   ├── metadata_engine.py         # ZFL Metadata Engine Module — Single Source of Truth for #? function metadata.
 │   ├── preview_skill.py
 │   ├── resolve_skills.py          # Parse and expand skill groups and skill names, and provide interfaces to manage groups
 │   ├── skill_engine/              # Unified skill lifecycle management internal package
@@ -63,6 +65,7 @@ zsh/
 ├── tests/                         # Automated unit test suite
 │   ├── test_display.py            # Unit tests for skill_engine._display utilities.
 │   ├── test_frontmatter.py        # Unit tests for skill_engine._frontmatter.
+│   ├── test_metadata_engine.py    # Unit tests for the ZFL Metadata Engine Module.
 │   ├── test_repo.py               # Unit tests for skill_engine._repo.
 │   └── test_store.py              # Unit tests for skill_engine._store.
 ├── docs/                          # Technical design, core mechanics, and troubleshooting documentation

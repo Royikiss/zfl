@@ -111,6 +111,21 @@ fi
 
 ---
 
+## 🧠 统一元数据引擎架构 (Metadata Engine)
+
+为了彻底消除跨语言工具与运行时之间的规范语义漂移，ZFL 实现了**单一真实源 (Source of Truth)** 的元数据引擎体系：
+
+1. **Python 核心自省引擎 (`python/metadata_engine.py`)**：
+   - 统一管理所有字段的中英文别名归一化、类型转换与必填字段强校验；
+   - 驱动静态分析门禁（`zfl lint`）、README 结构树自动同步（`sync_readme.py`）与独立 CLI；
+   - 支持通过 `python3 python/metadata_engine.py compile/validate/info/list` 进行脱机调试与自省。
+2. **0-Fork Shell 极速运行时缝位 (`core/metadata.zsh`)**：
+   - 将函数元数据原子编译为本地缓存文件 `~/.cache/zsh/metadata.zsh`，声明原生 Zsh 关联数组（`ZFL_META_*`）；
+   - 在终端启动、懒加载（`lazy_load_functions`）和 `zfl list/info` 时，直接从内存关联数组读取，达成 **0 次子进程 Fork、0 次磁盘文本扫描、微秒级响应**；
+   - 包含文件时间戳（`mtime`）自动检测与 `zfl addfunc`/`zfl remove` 生命周期即时保鲜机制。
+
+---
+
 ## 🛡️ 依赖声明助手 (`zfl_require`)
 
 在编写需要特定第三方命令行工具（如 `fzf`、`jq` 等）的函数时，推荐在函数入口处调用框架的 `zfl_require` 进行依赖断言。

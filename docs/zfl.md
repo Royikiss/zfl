@@ -116,6 +116,21 @@ To enable `zfl` to parse and display function information, it is recommended to 
 
 ---
 
+## 🧠 Unified Metadata Engine Architecture
+
+To eliminate specification drift across cross-language tooling and shell runtimes, ZFL implements a **Single Source of Truth** metadata architecture:
+
+1. **Python Core Engine (`python/metadata_engine.py`)**:
+   - Single Source of Truth for multilingual alias normalization, type coercion, and 7 standard mandatory fields validation;
+   - Powers static analysis gates (`zfl lint`), README structure sync (`sync_readme.py`), and a standalone CLI;
+   - Supports offline inspection and debugging via `python3 python/metadata_engine.py compile/validate/info/list`.
+2. **0-Fork Shell Runtime Seam (`core/metadata.zsh`)**:
+   - Atomically compiles function metadata into `~/.cache/zsh/metadata.zsh`, declaring native Zsh associative arrays (`ZFL_META_*`);
+   - Reads directly from in-memory associative arrays during startup, lazy-loading (`lazy_load_functions`), and `zfl list/info`, delivering **0 forks, 0 file scans, and microsecond responsiveness**;
+   - Includes automatic directory `mtime` staleness detection and instant cache invalidation during `zfl addfunc` and `zfl remove`.
+
+---
+
 ## 🛡️ Dependency Check Assertions (`zfl_require`)
 
 When writing functions that depend on third-party commands (e.g. `fzf`, `jq`), it is recommended to invoke `zfl_require` at the beginning of the main function entry.
