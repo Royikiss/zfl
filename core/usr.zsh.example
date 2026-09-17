@@ -22,4 +22,5 @@
 # Set to 1 to display [Startup] Start / Completed timing logs on shell launch:
 # export ZFL_STARTUP_VERBOSE=1
 
-
+# check_update reminder interval in days (default: 1):
+# export ZFL_CHECK_UPDATE_INTERVAL=3

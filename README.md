@@ -16,7 +16,7 @@ ZFL is a high-performance, modular configuration and function library for Zsh. W
   - Built-in `aicp` tool packages codebase context under token budgets (`fast`/`balanced`/`deep`/`full` levels) and multi-dimensional filters.
   - Interactive `--exec` mode handles tool execution via XML tags, displaying source ranges and interactively applying unified diff patches upon user confirmation.
 - **🔄 Lightweight Update Checks & One-Click Upgrade (check_update / update)**
-  - `check_update` performs zero-latency check of the last update date on shell startup and prompts if at least one day has passed, completely non-blocking and free of background scans.
+  - `check_update` performs zero-latency check of the last update date on shell startup and prompts if the reminder interval (customizable, default: 1 day) has passed, completely non-blocking and free of background scans.
   - Simply run `update` to upgrade system (Pacman/AUR via yay) and Flatpak packages in one go.
 - 🔍 **Static Quality Gates & Management (zfl)**
   - Built-in `zfl` static code checker lints variable/file-descriptor leaks, naming styles, hardcoded colors, and missing documentation. Integrates with GitHub Actions gate checks.

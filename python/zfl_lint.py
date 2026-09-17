@@ -25,6 +25,7 @@ GLOBAL_WHITELIST = {
     # check_update.zsh 相关的全局配置/状态变量
     "CHECK_UPDATE_CACHE_TTL_SECONDS", "CHECK_UPDATE_PROMPT_POLICY",
     "CHECK_UPDATE_APT_CMD", "CHECK_UPDATE_PACMAN_CMD", "CHECK_UPDATE_YAY_CMD",
+    "ZFL_CHECK_UPDATE_INTERVAL",
     # zfl.zsh 相关的全局诊断变量
     "diag_errors", "diag_warnings",
 }
