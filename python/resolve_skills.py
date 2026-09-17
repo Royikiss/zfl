@@ -533,6 +533,23 @@ def main():
             print(gid)
         sys.exit(0)
 
+    elif arg1 == "--list-groups-completion":
+        for gid in sorted(groups.keys()):
+            info = groups[gid]
+            if isinstance(info, dict):
+                name = info.get("name") or gid
+                count = len(info.get("skills", []))
+            else:
+                name = gid
+                count = len(info) if isinstance(info, list) else 0
+            count_str = f"{count} 个技能" if IS_ZH else f"{count} skills"
+            clean_name = name.replace(":", "\\:").strip()
+            if clean_name and clean_name != gid:
+                print(f"{gid}:{clean_name} ({count_str})")
+            else:
+                print(f"{gid}:({count_str})")
+        sys.exit(0)
+
     elif arg1 == "--list-groups-detailed":
         list_groups_detailed()
         sys.exit(0)

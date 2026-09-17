@@ -154,7 +154,7 @@ def prompt_auto_group_skills(installed_skill_names, target_info):
 
     # Derive default group name
     raw_default = target_info.get("repo") or target_info.get("cache_name") or ""
-    default_gname = re.sub(r"[^a-zA-Z0-9_\-]", "-", raw_default.strip()).strip("-").lower()
+    default_gname = re.sub(r"[^\w\-]", "-", raw_default.strip()).strip("-").lower()
     if not default_gname:
         default_gname = "my-group"
 
@@ -163,13 +163,14 @@ def prompt_auto_group_skills(installed_skill_names, target_info):
     else:
         gname_prompt = f"Please enter group name (Press Enter for default: '{default_gname}', or 'q' to cancel):"
 
-    gname = safe_input(gname_prompt)
-    if gname.lower() == 'q':
+    user_input = safe_input(gname_prompt).strip()
+    if user_input.lower() == 'q':
         return
-    if not gname:
-        gname = default_gname
+    if not user_input:
+        user_input = default_gname
 
-    gname = re.sub(r"[^a-zA-Z0-9_\-]", "-", gname.strip()).strip("-").lower()
+    # Support Chinese and Unicode group names; replace spaces and invalid punctuation with hyphens
+    gname = re.sub(r"[^\w\-]", "-", user_input).strip("-")
     if not gname:
         gname = default_gname
 
@@ -180,8 +181,8 @@ def prompt_auto_group_skills(installed_skill_names, target_info):
     is_ordered = ordered_ans in ("y", "yes")
 
     groups = load_groups()
-    disp_name = gname
-    if gname in groups and isinstance(groups[gname], dict):
+    disp_name = user_input
+    if gname in groups and isinstance(groups[gname], dict) and user_input == default_gname:
         disp_name = groups[gname].get("name", gname)
 
     groups[gname] = {
@@ -192,11 +193,12 @@ def prompt_auto_group_skills(installed_skill_names, target_info):
 
     if save_groups(groups):
         ordered_label = ("有序" if IS_ZH else "ordered") if is_ordered else ("无序" if IS_ZH else "unordered")
+        name_desc = f"'{gname}' ({disp_name})" if gname != disp_name else f"'{gname}'"
         if IS_ZH:
-            c_print("1;32", f"\n[✓] 成功创建/更新{ordered_label}技能分组 '{gname}' (包含 {len(installed_skill_names)} 个技能)！")
+            c_print("1;32", f"\n[✓] 成功创建/更新{ordered_label}技能分组 {name_desc} (包含 {len(installed_skill_names)} 个技能)！")
             c_print("0;33", f"💡 提示: 下次在任何项目根目录下直接运行 'mskill {gname}' 即可一键链接整组技能。")
         else:
-            c_print("1;32", f"\n[✓] Successfully saved {ordered_label} skill group '{gname}' ({len(installed_skill_names)} skills)!")
+            c_print("1;32", f"\n[✓] Successfully saved {ordered_label} skill group {name_desc} ({len(installed_skill_names)} skills)!")
             c_print("0;33", f"💡 Tip: Run 'mskill {gname}' in any project root to link all skills in this group at once.")
     else:
         if IS_ZH:

@@ -241,7 +241,7 @@ def main():
             numbered = " ".join(f"{_cn(i+1)}{s}" for i, s in enumerate(gskills))
             desc_single = f"\033[0;35m⚑ 有序 · {len(gskills)} 个技能 ({numbered})\033[0m{hint_pill}" if is_zh else f"\033[0;35m⚑ Ordered · {len(gskills)} skills ({numbered})\033[0m{hint_pill}"
         else:
-            gskills_summary = ", ".join(gskills[:5]) + ("..." if len(gskills) > 5 else "")
+            gskills_summary = ", ".join(gskills[:8]) + ("..." if len(gskills) > 8 else "")
             desc_single = f"\033[0;36m📂 包含 {len(gskills)} 个技能 ({gskills_summary})\033[0m{hint_pill}" if is_zh else f"\033[0;36m📂 Contains {len(gskills)} skills ({gskills_summary})\033[0m{hint_pill}"
 
         items.append({

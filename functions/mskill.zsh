@@ -156,7 +156,7 @@ _mskill() {
     local lang=${ZFL_LANG:-${LANG%%.*}}
 
     if (( $+commands[python3] )); then
-        available_groups=( ${(f)"$(python3 "$ZFL_HOME/python/resolve_skills.py" --list-groups 2>/dev/null)"} )
+        available_groups=( ${(f)"$(python3 "$ZFL_HOME/python/resolve_skills.py" --list-groups-completion 2>/dev/null)"} )
     fi
 
     if [[ "$lang" == zh* ]]; then

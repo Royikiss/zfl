@@ -30,3 +30,22 @@ def test_get_zfl_data_dir_xdg_env(monkeypatch):
         d = get_zfl_data_dir()
         assert d == os.path.join(tmpdir, "zfl")
         assert os.path.isdir(d)
+
+
+def test_groups_unicode_support():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        groups_file = os.path.join(tmpdir, "skills_groups.json")
+        groups_data = {
+            "官方技能": {
+                "name": "Anthropic 官方技能",
+                "ordered": False,
+                "skills": ["template-skill", "docx", "pdf"]
+            }
+        }
+        assert atomic_save_json(groups_file, groups_data) is True
+        with open(groups_file, "r", encoding="utf-8") as f:
+            loaded = json.load(f)
+        assert "官方技能" in loaded
+        assert loaded["官方技能"]["name"] == "Anthropic 官方技能"
+        assert loaded["官方技能"]["skills"] == ["template-skill", "docx", "pdf"]
+
