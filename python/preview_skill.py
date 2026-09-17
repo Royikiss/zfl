@@ -72,18 +72,26 @@ def translate_text(text, to_lang='zh-CN'):
     so MyMemory can handle them, then rejoins the results.
     Returns translated string, or None if all backends fail.
     """
-    if not text or not text.strip():
-        return None
-
+    raw_text = text.strip()
     # --- Try Google first (handles any length) ---
-    result = translate_via_google(text, to_lang)
-    if result:
-        return result
+    result = translate_via_google(raw_text, to_lang)
+    if result and result.strip():
+        if result.strip().lower() != raw_text.lower():
+            return result.strip()
 
     # --- Fallback: MyMemory with chunking for long texts ---
     CHUNK_LIMIT = 450
-    if len(text) <= CHUNK_LIMIT:
-        return translate_via_mymemory(text, to_lang)
+    if len(raw_text) <= CHUNK_LIMIT:
+        res = translate_via_mymemory(raw_text, to_lang)
+        if res and res.strip():
+            return res.strip()
+
+    # If it is a hyphenated/underscored identifier (e.g. template-skill), try replacing with spaces
+    if ("-" in raw_text or "_" in raw_text) and " " not in raw_text:
+        cleaned = raw_text.replace("-", " ").replace("_", " ")
+        res = translate_via_google(cleaned, to_lang) or translate_via_mymemory(cleaned, to_lang)
+        if res and res.strip():
+            return res.strip()
 
     # Split into sentences at '. ', '! ', '? ', '; ' boundaries
     import re as _re
@@ -225,7 +233,10 @@ def translate_all_workflow(is_zh):
     user_translations = load_user_translations()
     all_skills = [d for d in sorted(os.listdir(skills_dir)) if os.path.isdir(os.path.join(skills_dir, d))]
     
-    untranslated = [s for s in all_skills if s not in user_translations]
+    untranslated = [
+        s for s in all_skills 
+        if (s not in user_translations or user_translations[s].get("name_zh") in (None, "", s) or not user_translations[s].get("desc_zh"))
+    ]
     if not untranslated:
         print("\033[1;32m[✓] 所有本地技能均已具备中文翻译缓存！\033[0m" if is_zh else "\033[1;32m[✓] All skills already translated!\033[0m")
         return 0
@@ -254,6 +265,36 @@ def translate_all_workflow(is_zh):
     atomic_save_json(cache_path, user_translations)
     print(f"\033[1;32m\n批量翻译完成！已成功入库 {success}/{len(untranslated)} 个技能。\033[0m" if is_zh else f"\033[1;32m\nTranslation complete! {success}/{len(untranslated)} translated.\033[0m")
     return 0
+
+def prefetch_translations(skill_names, is_zh=True):
+    """Prefetch translations for specified skills."""
+    if not skill_names or not is_zh:
+        return
+    skills_dir = os.path.expanduser("~/.agents/skills")
+    cache_path = os.path.join(DATA_DIR, "skills_zh.json")
+    user_translations = load_user_translations()
+    changed = False
+    for s in skill_names:
+        if s in user_translations and user_translations[s].get("name_zh") and user_translations[s].get("name_zh") != s:
+            continue
+        en_path = os.path.join(skills_dir, s, "SKILL.md")
+        if not os.path.exists(en_path):
+            continue
+        en_meta, _ = parse_md_content(en_path)
+        if not en_meta:
+            continue
+        en_name = en_meta.get("name") or s
+        en_desc = en_meta.get("description") or ""
+        zh_name = translate_text(en_name)
+        zh_desc = translate_text(en_desc)
+        if zh_name or zh_desc:
+            if s not in user_translations:
+                user_translations[s] = {}
+            user_translations[s]["name_zh"] = zh_name or en_name
+            user_translations[s]["desc_zh"] = zh_desc or en_desc
+            changed = True
+    if changed:
+        atomic_save_json(cache_path, user_translations)
 
 def main():
     lang = os.environ.get("ZFL_LANG") or os.environ.get("LANG", "en")

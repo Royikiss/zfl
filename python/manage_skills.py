@@ -185,6 +185,14 @@ def prompt_auto_group_skills(installed_skill_names, target_info):
     if gname in groups and isinstance(groups[gname], dict) and user_input == default_gname:
         disp_name = groups[gname].get("name", gname)
 
+    if IS_ZH:
+        disp_prompt = f"请输入分组展示名/说明 (直接回车保持 '{disp_name}'):"
+    else:
+        disp_prompt = f"Please enter group display title (Press Enter for '{disp_name}'):"
+    disp_input = safe_input(disp_prompt).strip()
+    if disp_input:
+        disp_name = disp_input
+
     groups[gname] = {
         "name": disp_name,
         "ordered": is_ordered,
@@ -386,6 +394,15 @@ def install_skills_workflow(repo_input, specific_skills=None, branch=None, force
     if len(selected_skills) > 1 and installed_count > 0:
         installed_names = [s["name"] for s in selected_skills]
         prompt_auto_group_skills(installed_names, target_info)
+
+    # Automatically pre-fetch Chinese translations for newly installed skills
+    if IS_ZH and installed_count > 0:
+        try:
+            from preview_skill import prefetch_translations
+            installed_names = [s["name"] for s in selected_skills]
+            prefetch_translations(installed_names, is_zh=True)
+        except Exception:
+            pass
 
     return 0
 

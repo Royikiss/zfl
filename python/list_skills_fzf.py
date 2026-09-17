@@ -10,7 +10,7 @@ _current_dir = os.path.dirname(os.path.abspath(__file__))
 if _current_dir not in sys.path:
     sys.path.insert(0, _current_dir)
 
-from skill_engine._display import strip_ansi, clean_item_id, get_display_width, pad_display
+from skill_engine._display import strip_ansi, clean_item_id, get_display_width, pad_display, circled_num
 from skill_engine._store import get_zfl_data_dir, DATA_DIR
 from skill_engine._frontmatter import parse_yaml_frontmatter as parse_md_frontmatter
 from skill_engine._translations import DEFAULT_TRANSLATIONS, load_user_translations
@@ -144,10 +144,18 @@ def main():
     except Exception:
         pass
 
+    query = ""
+    args = sys.argv[1:]
+    if "--query" in args:
+        q_idx = args.index("--query")
+        query_parts = args[q_idx + 1:]
+        query = " ".join(query_parts).strip()
+        args = args[:q_idx]
+
     # Action handling (e.g. --toggle, --toggle-all, --expand, --collapse, --init)
-    if len(sys.argv) > 1 and sys.argv[1].startswith("--"):
-        action = sys.argv[1]
-        arg = sys.argv[2] if len(sys.argv) > 2 else ""
+    if len(args) > 0 and args[0].startswith("--"):
+        action = args[0]
+        arg = args[1] if len(args) > 1 else ""
         handle_action(action, arg, groups)
         sys.exit(0)
 
@@ -208,6 +216,13 @@ def main():
 
         return f"{color}{badge_text}\033[0m "
 
+    def skill_matches(s_id, s_name, s_desc, q):
+        tokens = q.lower().split()
+        if not tokens:
+            return True
+        text = f"{s_id} {s_name} {s_desc}".lower()
+        return all(t in text for t in tokens)
+
     items = []
     skills_in_groups = set()
 
@@ -225,40 +240,35 @@ def main():
         for s in gskills:
             skills_in_groups.add(s)
 
-        is_expanded = expand_all or (gid in expanded_groups)
-        toggle_icon = "\033[1;33m▼\033[0m" if is_expanded else "\033[1;34m▶\033[0m"
-        grp_badge = get_group_mount_stats(gskills)
-        group_id_display = f"{toggle_icon} \033[1;36mgroup:{gid}\033[0m"
-        name_bracket = f"{grp_badge}\033[1;33m[分组: {name}]\033[0m" if is_zh else f"{grp_badge}\033[1;33m[Group: {name}]\033[0m"
+        if query:
+            # Search mode: directly search skills inside group, prioritize group content, display in expanded mode
+            matched_gskills = []
+            for s in gskills:
+                s_name_display, s_desc_display = get_skill_info(s, skills_dir, is_zh, user_translations)
+                if skill_matches(s, s_name_display, s_desc_display, query):
+                    matched_gskills.append((s, s_name_display, s_desc_display))
 
-        hint_pill = f" \033[0;90m[Tab折叠]\033[0m" if is_expanded else f" \033[0;90m[Tab展开]\033[0m"
-        if not is_zh:
-            hint_pill = f" \033[0;90m[Tab:collapse]\033[0m" if is_expanded else f" \033[0;90m[Tab:expand]\033[0m"
+            if not matched_gskills:
+                continue
 
-        if is_ordered:
-            def _cn(n):
-                return chr(0x245F + n) if 1 <= n <= 20 else f"({n})"
-            numbered = " ".join(f"{_cn(i+1)}{s}" for i, s in enumerate(gskills))
-            desc_single = f"\033[0;35m⚑ 有序 · {len(gskills)} 个技能 ({numbered})\033[0m{hint_pill}" if is_zh else f"\033[0;35m⚑ Ordered · {len(gskills)} skills ({numbered})\033[0m{hint_pill}"
-        else:
-            gskills_summary = ", ".join(gskills[:8]) + ("..." if len(gskills) > 8 else "")
-            desc_single = f"\033[0;36m📂 包含 {len(gskills)} 个技能 ({gskills_summary})\033[0m{hint_pill}" if is_zh else f"\033[0;36m📂 Contains {len(gskills)} skills ({gskills_summary})\033[0m{hint_pill}"
+            toggle_icon = "\033[1;33m▼\033[0m"
+            grp_badge = get_group_mount_stats(gskills)
+            group_id_display = f"{toggle_icon} \033[1;36mgroup:{gid}\033[0m"
+            name_bracket = f"{grp_badge}\033[1;33m[分组: {name}]\033[0m" if is_zh else f"{grp_badge}\033[1;33m[Group: {name}]\033[0m"
+            match_stat = f"({len(matched_gskills)} 个匹配)" if is_zh else f"({len(matched_gskills)} matched)"
+            desc_single = f"\033[0;35m⚑ 有序 · {match_stat}\033[0m" if is_ordered else f"\033[0;36m📂 分组 · {match_stat}\033[0m"
 
-        items.append({
-            "col1": group_id_display,
-            "col2": name_bracket,
-            "col3": desc_single
-        })
+            items.append({
+                "col1": group_id_display,
+                "col2": name_bracket,
+                "col3": desc_single
+            })
 
-        # Output children only when this group is expanded
-        if is_expanded:
-            for idx, skill in enumerate(gskills):
-                is_last = (idx == len(gskills) - 1)
+            for idx, (skill, s_name_display, s_desc_display) in enumerate(matched_gskills):
+                is_last = (idx == len(matched_gskills) - 1)
                 tree_branch = "  └── " if is_last else "  ├── "
-                
-                s_name_display, s_desc_display = get_skill_info(skill, skills_dir, is_zh, user_translations)
                 mount_badge = get_mount_badge(skill)
-                
+
                 child_id_display = f"\033[0;90m{tree_branch}\033[0;32m{skill}\033[0m"
                 child_name_bracket = f"{mount_badge}\033[1;37m[{s_name_display}]\033[0m"
                 child_desc = f"\033[0;90m{s_desc_display}\033[0m" if s_desc_display else ""
@@ -268,11 +278,60 @@ def main():
                     "col2": child_name_bracket,
                     "col3": child_desc
                 })
+        else:
+            # Browse mode (no search query)
+            is_expanded = expand_all or (gid in expanded_groups)
+            toggle_icon = "\033[1;33m▼\033[0m" if is_expanded else "\033[1;34m▶\033[0m"
+            grp_badge = get_group_mount_stats(gskills)
+            group_id_display = f"{toggle_icon} \033[1;36mgroup:{gid}\033[0m"
+            name_bracket = f"{grp_badge}\033[1;33m[分组: {name}]\033[0m" if is_zh else f"{grp_badge}\033[1;33m[Group: {name}]\033[0m"
+
+            hint_pill = f" \033[0;90m[Tab折叠]\033[0m" if is_expanded else f" \033[0;90m[Tab展开]\033[0m"
+            if not is_zh:
+                hint_pill = f" \033[0;90m[Tab:collapse]\033[0m" if is_expanded else f" \033[0;90m[Tab:expand]\033[0m"
+
+            if is_ordered:
+                sub = gskills[:3]
+                numbered = " ".join(f"{circled_num(i+1)} {s}" for i, s in enumerate(sub))
+                if len(gskills) > 3:
+                    numbered += " ..."
+                desc_single = f"\033[0;35m⚑ 有序 · {len(gskills)} 个技能 ({numbered})\033[0m{hint_pill}" if is_zh else f"\033[0;35m⚑ Ordered · {len(gskills)} skills ({numbered})\033[0m{hint_pill}"
+            else:
+                sub = gskills[:3]
+                gskills_summary = ", ".join(sub) + ("..." if len(gskills) > 3 else "")
+                desc_single = f"\033[0;36m📂 包含 {len(gskills)} 个技能 ({gskills_summary})\033[0m{hint_pill}" if is_zh else f"\033[0;36m📂 Contains {len(gskills)} skills ({gskills_summary})\033[0m{hint_pill}"
+
+            items.append({
+                "col1": group_id_display,
+                "col2": name_bracket,
+                "col3": desc_single
+            })
+
+            # Output children only when this group is expanded
+            if is_expanded:
+                for idx, skill in enumerate(gskills):
+                    is_last = (idx == len(gskills) - 1)
+                    tree_branch = "  └── " if is_last else "  ├── "
+
+                    s_name_display, s_desc_display = get_skill_info(skill, skills_dir, is_zh, user_translations)
+                    mount_badge = get_mount_badge(skill)
+
+                    child_id_display = f"\033[0;90m{tree_branch}\033[0;32m{skill}\033[0m"
+                    child_name_bracket = f"{mount_badge}\033[1;37m[{s_name_display}]\033[0m"
+                    child_desc = f"\033[0;90m{s_desc_display}\033[0m" if s_desc_display else ""
+
+                    items.append({
+                        "col1": child_id_display,
+                        "col2": child_name_bracket,
+                        "col3": child_desc
+                    })
 
     # Ungrouped / standalone skills
     ungrouped_skills = [s for s in all_skills if s not in skills_in_groups]
     for skill in ungrouped_skills:
         s_name_display, s_desc_display = get_skill_info(skill, skills_dir, is_zh, user_translations)
+        if query and not skill_matches(skill, s_name_display, s_desc_display, query):
+            continue
         mount_badge = get_mount_badge(skill)
         
         standalone_id_display = f"\033[0;90m  \033[0;32m{skill}\033[0m"
@@ -290,10 +349,10 @@ def main():
 
     # Calculate padding widths based on visible character widths (excluding ANSI)
     max_col1_w = max([get_display_width(x["col1"]) for x in items] + [32])
-    col1_width = max_col1_w + 3
+    col1_width = max_col1_w + 2
 
     max_col2_w = max([get_display_width(x["col2"]) for x in items] + [22])
-    col2_width = max_col2_w + 3
+    col2_width = max_col2_w + 2
 
     for item in items:
         c1 = pad_display(item["col1"], col1_width)

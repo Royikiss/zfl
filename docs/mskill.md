@@ -28,14 +28,17 @@
 6. **Standard Skill Scaffold Generator (`mskill new <name>`)**:
    - Generates compliant skill templates with standard frontmatter, bilingual templates, `scripts/`, and `references/`.
 7. **Interactive FZF Console with Mount Status Awareness**:
-   - **Mount Badges**: Visually shows `[🔗linked]`, `[📄copied]`, or `[all mounted]`.
+   - **Hierarchical Drill-Down Search**: Searches directly through all skills within groups, prioritizing parent group display and rendering matched items in expanded mode with match statistics (e.g. `(2 matched)`).
+   - **Mount Badges**: Visually shows `[🔗linked]`, `[📄copied]`, or `[🔗:xx%, 📦:xx%]` percentage badges.
+   - **Decoupled Group Identifiers & Display Titles**: Supports distinct CLI keys (e.g. `group:dev`) and human-readable aliases (e.g. `[Group: Daily Development Collaboration]`), keeping rigorous column alignment.
+   - **Smart Tokenized Translation & Instant Pre-fetch**: Automatically tokenizes hyphenated identifiers (kebab-case) for clean machine translation, and pre-fetches Chinese translations immediately upon skill installation.
    - **Rich Hotkeys**:
      - `Tab` / `→` / `←`: Toggle group
      - `Ctrl-O`: Toggle all
      - `Space`: Multi-select
      - `Ctrl-E`: Open `$EDITOR` to modify highlighted `SKILL.md`
      - `Ctrl-X`: Unlink highlighted skill from current project
-     - `Ctrl-G` / `Ctrl-D`: Set / Delete groups
+     - `Ctrl-G` / `Ctrl-D`: Set group (with custom title support) / Delete group
      - `Ctrl-N` / `Ctrl-U`: Install / Update
      - `Ctrl-B`: Unbind Git tracking
      - `Enter`: Symlink to project

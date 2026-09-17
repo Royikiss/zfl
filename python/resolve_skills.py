@@ -198,8 +198,16 @@ def interactive_set(selected_args):
         disp_name = gname
         if gname in groups and isinstance(groups[gname], dict):
             disp_name = groups[gname].get("name", gname)
-        elif default_gkey and default_gkey in groups and isinstance(groups[default_gkey], dict):
+        elif default_gkey and default_gkey == gname and default_gkey in groups and isinstance(groups[default_gkey], dict):
             disp_name = groups[default_gkey].get("name", gname)
+
+        if IS_ZH:
+            prompt_disp = f"请输入分组展示名/说明 (直接回车保持 '{disp_name}'):"
+        else:
+            prompt_disp = f"Please enter group display title (Press Enter to keep '{disp_name}'):"
+        disp_input = safe_input(prompt_disp).strip()
+        if disp_input:
+            disp_name = disp_input
 
         # If renamed from an existing group, remove the old key to avoid stale duplicates
         if default_gkey and default_gkey != gname and default_gkey in groups:
