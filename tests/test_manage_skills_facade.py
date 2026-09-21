@@ -347,4 +347,13 @@ def test_interactive_set_add_and_move_to_existing_group(tmp_path, monkeypatch):
         assert "skill-c" in groups["ops"]["skills"]
 
 
+def test_facade_reconcile_routing():
+    with patch("sys.argv", ["manage_skills.py", "--reconcile"]), \
+         patch("manage_skills.reconcile_manifest_workflow", return_value=0) as mock_fn:
+        ret = manage_skills.main()
+        assert ret == 0
+        mock_fn.assert_called_once()
+
+
+
 

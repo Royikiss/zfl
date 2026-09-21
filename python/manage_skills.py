@@ -30,7 +30,8 @@ from skill_engine._store import (
 from skill_engine._frontmatter import parse_yaml_frontmatter
 from skill_engine._repo import (
     parse_repo_target, clone_or_fetch_repo,
-    get_repo_head_commit, get_repo_remote_commit
+    get_repo_head_commit, get_repo_remote_commit,
+    scan_skills_in_dir, reconcile_skills_manifest
 )
 from skill_engine._groups import (
     get_all_groups, get_group, save_group_definition, delete_group,
@@ -42,78 +43,6 @@ from skill_engine._mount import (
     mount_skills_to_project, unlink_skills_from_project,
     eject_skills_in_project, export_project_manifest, read_project_manifest
 )
-
-def scan_skills_in_dir(root_dir, limit_subpath=""):
-    """
-    Recursively scan root_dir (optionally restricted to limit_subpath) for all SKILL.md files.
-    Returns a list of dicts with skill metadata and directory boundaries.
-    """
-    search_root = os.path.join(root_dir, limit_subpath) if limit_subpath else root_dir
-    if not os.path.exists(search_root):
-        return []
-
-    discovered = []
-    # If the search_root itself directly contains SKILL.md
-    for dirpath, dirnames, filenames in os.walk(search_root):
-        # Ignore hidden directories like .git
-        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-        
-        skill_file = None
-        for f in filenames:
-            if f.lower() == "skill.md":
-                skill_file = os.path.join(dirpath, f)
-                break
-
-        if skill_file:
-            rel_dir = os.path.relpath(dirpath, root_dir)
-            if rel_dir == ".":
-                rel_dir = ""
-            
-            frontmatter = parse_yaml_frontmatter(skill_file)
-            fallback_name = os.path.basename(dirpath)
-            if not fallback_name or fallback_name == os.path.basename(root_dir):
-                fallback_name = frontmatter.get("name") or os.path.basename(root_dir)
-
-            skill_name = frontmatter.get("name") or fallback_name
-            skill_name = re.sub(r"[^a-zA-Z0-9_\-]", "-", skill_name.strip()).strip("-").lower()
-            if not skill_name:
-                skill_name = fallback_name.lower()
-
-            desc = frontmatter.get("description") or ""
-
-            # Count packaged files and subdirectories
-            total_files = sum([len(files) for _, _, files in os.walk(dirpath)])
-            has_scripts = os.path.isdir(os.path.join(dirpath, "scripts"))
-            has_refs = os.path.isdir(os.path.join(dirpath, "references"))
-
-            discovered.append({
-                "name": skill_name,
-                "dir_path": dirpath,
-                "rel_subpath": rel_dir,
-                "description": desc,
-                "file_count": total_files,
-                "has_scripts": has_scripts,
-                "has_refs": has_refs
-            })
-
-    # Disambiguate duplicate skill names within the same repository
-    name_counts = Counter(d["name"] for d in discovered)
-    generic_dirs = {"skills", "skill", "plugins", "plugin", "src", "packages", "extensions", "tools", "agents", "agent", ".agents"}
-
-    for d in discovered:
-        if name_counts[d["name"]] > 1:
-            # Find distinctive directory segments from rel_subpath
-            parts = [p.lower() for p in re.split(r"[/\\_]", d["rel_subpath"]) if p]
-            distinctive = [p for p in parts if p not in generic_dirs and p != d["name"]]
-            if distinctive:
-                suffix = "-".join(distinctive)
-                suffix = re.sub(r"[^a-zA-Z0-9_\-]", "-", suffix).strip("-")
-                if suffix:
-                    d["name"] = f"{d['name']}-{suffix}"
-
-    # Sort by subpath depth and name
-    discovered.sort(key=lambda x: (x["rel_subpath"].count(os.sep), x["name"]))
-    return discovered
 
 def copy_skill_bundle(src_dir, dest_dir):
     """
@@ -639,6 +568,32 @@ def update_skills_workflow(target_skills=None, update_all=False):
 
         # Detect new skills added upstream in this source repo that the user has not installed
         all_local_dirs = set(os.listdir(SKILLS_DIR)) if os.path.exists(SKILLS_DIR) else set()
+
+        # Check if any local skills exist in this repository but were untracked in manifest
+        local_untracked = [
+            d for d in discovered
+            if d["name"] in all_local_dirs and d["name"] not in manifest
+        ]
+        if local_untracked:
+            for d in local_untracked:
+                manifest[d["name"]] = {
+                    "repo_url": meta["repo_url"],
+                    "owner": meta.get("owner", ""),
+                    "repo": meta.get("repo", ""),
+                    "branch": meta.get("branch") or "HEAD",
+                    "subpath": d["rel_subpath"],
+                    "commit_hash": latest_commit,
+                    "installed_at": datetime.now().isoformat(),
+                    "cache_name": c_name
+                }
+                if d["name"] not in item["skills"]:
+                    item["skills"].append(d["name"])
+            save_manifest(manifest)
+            if IS_ZH:
+                c_print("1;32", f"[*] 检测到本地存在同源技能并已自动对齐追踪: {', '.join(d['name'] for d in local_untracked)}")
+            else:
+                c_print("1;32", f"[*] Detected and reconciled untracked local skill(s): {', '.join(d['name'] for d in local_untracked)}")
+
         new_in_repo = [d for d in discovered if d["name"] not in all_local_dirs and d["name"] not in manifest]
         if new_in_repo:
             all_repo_skills = [
@@ -1271,6 +1226,17 @@ def doctor_workflow():
                             missing_deps[dep] = []
                         missing_deps[dep].append(s_name)
 
+        # Reconcile any untracked skills matching git repositories or cached sources
+        reconciled = reconcile_skills_manifest(auto_save=True)
+        if reconciled:
+            issues_found += len(reconciled)
+            fixed_count += len(reconciled)
+            names_str = ", ".join(sorted(reconciled.keys()))
+            if IS_ZH:
+                c_print("1;32", f"    ✓ 自动对齐并补全 {len(reconciled)} 个技能的 Git 追踪元数据: {names_str}")
+            else:
+                c_print("1;32", f"    ✓ Automatically reconciled Git metadata for {len(reconciled)} skill(s): {names_str}")
+
     # 3. Environment CLI Dependencies
     if IS_ZH:
         c_print("1;34", "\n  [3/3] 检查环境与系统依赖可用性:")
@@ -1546,6 +1512,43 @@ def sync_project_skills():
         c_print("1;32", f"\n[✓] Sync complete! {synced_count}/{len(skills_spec)} skills aligned.")
     return 0
 
+
+def reconcile_manifest_workflow():
+    """Scan and reconcile untracked local skills with upstream Git repositories."""
+    if IS_ZH:
+        c_print("1;36", "\n🔍 正在扫描未登记的本地技能并尝试与远程 Git 仓库对齐同步...")
+    else:
+        c_print("1;36", "\n🔍 Scanning untracked skills and reconciling with Git repositories...")
+
+    reconciled = reconcile_skills_manifest(auto_save=True)
+    if not reconciled:
+        if IS_ZH:
+            c_print("0;32", "  ✓ 所有具有远程 Git 来源的技能均已正确登记追踪，无需同步。\n")
+        else:
+            c_print("0;32", "  ✓ All skills with remote Git sources are already tracked.\n")
+        return 0
+
+    if IS_ZH:
+        c_print("1;32", f"  [✓] 成功对齐并登记 {len(reconciled)} 个技能的远程 Git 追踪元数据：")
+        for s_name, meta in sorted(reconciled.items()):
+            repo_disp = meta.get("repo_url", "")
+            if "github.com/" in repo_disp:
+                repo_disp = repo_disp.split("github.com/")[-1].removesuffix(".git")
+            subpath_disp = f" ({meta['subpath']})" if meta.get("subpath") else ""
+            c_print("0;37", f"    • \033[1;33m{s_name}\033[0m -> \033[0;34m{repo_disp}\033[0m{subpath_disp}")
+        c_print("0;90", f"\n  元数据已持久化至 {MANIFEST_FILE}\n")
+    else:
+        c_print("1;32", f"  [✓] Successfully reconciled {len(reconciled)} skill(s) with Git tracking:")
+        for s_name, meta in sorted(reconciled.items()):
+            repo_disp = meta.get("repo_url", "")
+            if "github.com/" in repo_disp:
+                repo_disp = repo_disp.split("github.com/")[-1].removesuffix(".git")
+            subpath_disp = f" ({meta['subpath']})" if meta.get("subpath") else ""
+            c_print("0;37", f"    • \033[1;33m{s_name}\033[0m -> \033[0;34m{repo_disp}\033[0m{subpath_disp}")
+        c_print("0;90", f"\n  Persisted to {MANIFEST_FILE}\n")
+    return 0
+
+
 def is_in_home_dir():
     """Check if current working directory is user's home directory."""
     try:
@@ -1661,10 +1664,12 @@ def main():
             return 1
         return export_project_skills()
 
+    elif cmd in ("--reconcile", "reconcile", "--sync-manifest"):
+        return reconcile_manifest_workflow()
+
     elif cmd in ("--sync", "sync"):
-        if is_in_home_dir():
-            show_home_protection_warning()
-            return 1
+        if is_in_home_dir() or not os.path.exists(os.path.join(os.getcwd(), ".skillsrc")):
+            return reconcile_manifest_workflow()
         return sync_project_skills()
 
     elif cmd in ("--link", "link"):

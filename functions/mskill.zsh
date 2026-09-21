@@ -27,7 +27,8 @@ mskill (Manage Skill) - AI Agent 技能全生命周期管理与工程化协作�
   mskill --unlink / -X [技能名/组名...]
   mskill --unlink-all
   mskill dump / export
-  mskill sync
+  mskill sync                       # 自动同步对齐 (全局模式下对齐 Git 元数据；项目下对齐 .skillsrc)
+  mskill --reconcile / reconcile    # 扫描未登记的本地技能并与远程 Git 仓库对齐同步元数据
   mskill --translate-all
   mskill -s / --group-set <分组名称> [--ordered] <技能列表...>
   mskill -r / --group-rm <分组名称>
@@ -190,8 +191,10 @@ _mskill() {
             'unlink:从当前项目中移除指定技能 (不影响全局)'
             '--unlink-all:从当前项目中移除所有技能'
             'dump:导出当前项目技能依赖清单至 .skillsrc'
-            'export:导出当前项目技能依赖清单至 .skillsrc'
-            'sync:根据 .skillsrc 一键拉取并对齐项目技能'
+            'sync:自动同步对齐 (项目内按 .skillsrc 对齐；全局对齐 Git 来源元数据)'
+            '--reconcile:扫描未登记本地技能并与远程 Git 仓库对齐同步元数据'
+            'reconcile:扫描未登记本地技能并与远程 Git 仓库对齐同步元数据'
+            '--sync-manifest:扫描未登记本地技能并与远程 Git 仓库对齐同步元数据'
             '--translate-all:批量拉取所有未翻译技能的中文译名'
             '-s:创建或修改技能分组'
             '--group-set:创建或修改技能分组'
@@ -237,7 +240,10 @@ _mskill() {
             '--unlink-all:Unlink all skills from current project'
             'dump:Export project skills specification to .skillsrc'
             'export:Export project skills specification to .skillsrc'
-            'sync:Sync and install skills from .skillsrc'
+            'sync:Sync project skills via .skillsrc or reconcile global Git metadata'
+            '--reconcile:Scan and reconcile untracked skills with remote Git repos'
+            'reconcile:Scan and reconcile untracked skills with remote Git repos'
+            '--sync-manifest:Scan and reconcile untracked skills with remote Git repos'
             '--translate-all:Batch pre-fetch Chinese translations'
             '-s:Create or modify a skill group'
             '--group-set:Create or modify a skill group'

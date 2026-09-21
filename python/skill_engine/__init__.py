@@ -13,7 +13,8 @@ from ._frontmatter import parse_yaml_frontmatter
 from ._translations import DEFAULT_TRANSLATIONS, DEFAULT_GROUPS, load_user_translations
 from ._repo import (
     parse_repo_target, clone_or_fetch_repo,
-    get_repo_head_commit, get_repo_remote_commit
+    get_repo_head_commit, get_repo_remote_commit,
+    scan_skills_in_dir, reconcile_skills_manifest
 )
 from ._groups import (
     get_all_groups, get_group, save_group_definition, delete_group,
@@ -37,6 +38,7 @@ __all__ = [
     "DEFAULT_TRANSLATIONS", "DEFAULT_GROUPS", "load_user_translations",
     "parse_repo_target", "clone_or_fetch_repo",
     "get_repo_head_commit", "get_repo_remote_commit",
+    "scan_skills_in_dir", "reconcile_skills_manifest",
     "get_all_groups", "get_group", "save_group_definition", "delete_group",
     "resolve_group_targets", "get_groups_completion_data",
     "find_groups_for_skill", "find_groups_for_skills",

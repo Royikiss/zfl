@@ -4,9 +4,12 @@ import os
 import re
 import subprocess
 import sys
+from collections import Counter
+from datetime import datetime
 
-from ._store import SOURCES_DIR
+from ._store import SOURCES_DIR, SKILLS_DIR, load_manifest, save_manifest
 from ._display import IS_ZH, c_print
+from ._frontmatter import parse_yaml_frontmatter
 
 
 def parse_repo_target(raw_input):
@@ -254,3 +257,200 @@ def get_repo_remote_commit(repo_dir, branch="HEAD"):
         return get_repo_head_commit(repo_dir)
     except Exception:
         return "unknown"
+
+
+def scan_skills_in_dir(root_dir, limit_subpath=""):
+    """
+    Recursively scan root_dir (optionally restricted to limit_subpath) for all SKILL.md files.
+    Returns a list of dicts with skill metadata and directory boundaries.
+    """
+    search_root = os.path.join(root_dir, limit_subpath) if limit_subpath else root_dir
+    if not os.path.exists(search_root):
+        return []
+
+    discovered = []
+    for dirpath, dirnames, filenames in os.walk(search_root):
+        # Ignore hidden directories like .git
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+
+        skill_file = None
+        for f in filenames:
+            if f.lower() == "skill.md":
+                skill_file = os.path.join(dirpath, f)
+                break
+
+        if skill_file:
+            rel_dir = os.path.relpath(dirpath, root_dir)
+            if rel_dir == ".":
+                rel_dir = ""
+
+            frontmatter = parse_yaml_frontmatter(skill_file)
+            fallback_name = os.path.basename(dirpath)
+            if not fallback_name or fallback_name == os.path.basename(root_dir):
+                fallback_name = frontmatter.get("name") or os.path.basename(root_dir)
+
+            skill_name = frontmatter.get("name") or fallback_name
+            skill_name = re.sub(r"[^a-zA-Z0-9_\-]", "-", skill_name.strip()).strip("-").lower()
+            if not skill_name:
+                skill_name = fallback_name.lower()
+
+            desc = frontmatter.get("description") or ""
+
+            # Count packaged files and subdirectories
+            total_files = sum(len(files) for _, _, files in os.walk(dirpath))
+            has_scripts = os.path.isdir(os.path.join(dirpath, "scripts"))
+            has_refs = os.path.isdir(os.path.join(dirpath, "references"))
+
+            discovered.append({
+                "name": skill_name,
+                "dir_path": dirpath,
+                "rel_subpath": rel_dir,
+                "description": desc,
+                "file_count": total_files,
+                "has_scripts": has_scripts,
+                "has_refs": has_refs
+            })
+
+    # Disambiguate duplicate skill names within the same repository
+    name_counts = Counter(d["name"] for d in discovered)
+    generic_dirs = {"skills", "skill", "plugins", "plugin", "src", "packages", "extensions", "tools", "agents", "agent", ".agents"}
+
+    for d in discovered:
+        if name_counts[d["name"]] > 1:
+            # Find distinctive directory segments from rel_subpath
+            parts = [p.lower() for p in re.split(r"[/\\_]", d["rel_subpath"]) if p]
+            distinctive = [p for p in parts if p not in generic_dirs and p != d["name"]]
+            if distinctive:
+                suffix = "-".join(distinctive)
+                suffix = re.sub(r"[^a-zA-Z0-9_\-]", "-", suffix).strip("-")
+                if suffix:
+                    d["name"] = f"{d['name']}-{suffix}"
+
+    # Sort by subpath depth and name
+    discovered.sort(key=lambda x: (x["rel_subpath"].count(os.sep), x["name"]))
+    return discovered
+
+
+def reconcile_skills_manifest(skills_dir=None, sources_dir=None, manifest=None, auto_save=False):
+    """
+    Reconcile untracked local skills with upstream Git repositories.
+
+    1. Checks if the skill folder has its own .git repository.
+    2. Checks if the skill matches any cached repository in sources_dir.
+
+    Returns a dict of newly reconciled skills:
+    {
+        "skill_name": {
+            "repo_url": ...,
+            "owner": ...,
+            "repo": ...,
+            "branch": ...,
+            "subpath": ...,
+            "commit_hash": ...,
+            "installed_at": ...,
+            "cache_name": ...
+        }
+    }
+    """
+    if skills_dir is None:
+        skills_dir = SKILLS_DIR
+    if sources_dir is None:
+        sources_dir = SOURCES_DIR
+    if manifest is None:
+        manifest = load_manifest()
+
+    if not os.path.exists(skills_dir):
+        return {}
+
+    untracked = [
+        s for s in sorted(os.listdir(skills_dir))
+        if os.path.isdir(os.path.join(skills_dir, s)) and s not in manifest
+    ]
+    if not untracked:
+        return {}
+
+    reconciled = {}
+
+    # 1. Index all skills available across cached sources
+    source_skills = {}
+    if os.path.exists(sources_dir):
+        for src in sorted(os.listdir(sources_dir)):
+            src_dir = os.path.join(sources_dir, src)
+            if not os.path.isdir(src_dir):
+                continue
+            try:
+                url = subprocess.check_output(
+                    ["git", "-C", src_dir, "remote", "get-url", "origin"],
+                    stderr=subprocess.DEVNULL,
+                    text=True
+                ).strip()
+            except Exception:
+                url = ""
+            commit = get_repo_head_commit(src_dir)
+            discovered = scan_skills_in_dir(src_dir)
+            for d in discovered:
+                if d["name"] not in source_skills:
+                    source_skills[d["name"]] = {
+                        "repo_url": url,
+                        "cache_name": src,
+                        "commit_hash": commit,
+                        "subpath": d["rel_subpath"]
+                    }
+
+    for s_name in untracked:
+        s_path = os.path.join(skills_dir, s_name)
+        git_dir = os.path.join(s_path, ".git")
+
+        if os.path.exists(git_dir):
+            url = ""
+            try:
+                url = subprocess.check_output(
+                    ["git", "-C", s_path, "remote", "get-url", "origin"],
+                    stderr=subprocess.DEVNULL,
+                    text=True
+                ).strip()
+            except Exception:
+                pass
+
+            if url:
+                commit = get_repo_head_commit(s_path)
+                try:
+                    branch = subprocess.check_output(
+                        ["git", "-C", s_path, "rev-parse", "--abbrev-ref", "HEAD"],
+                        stderr=subprocess.DEVNULL,
+                        text=True
+                    ).strip()
+                except Exception:
+                    branch = "HEAD"
+                target = parse_repo_target(url) or {}
+                mtime_str = datetime.fromtimestamp(os.path.getmtime(s_path)).isoformat()
+                reconciled[s_name] = {
+                    "repo_url": url,
+                    "owner": target.get("owner", ""),
+                    "repo": target.get("repo", s_name),
+                    "branch": branch or "HEAD",
+                    "subpath": "",
+                    "commit_hash": commit or "unknown",
+                    "installed_at": mtime_str,
+                    "cache_name": target.get("cache_name", s_name)
+                }
+        elif s_name in source_skills:
+            info = source_skills[s_name]
+            target = parse_repo_target(info["repo_url"]) or {}
+            mtime_str = datetime.fromtimestamp(os.path.getmtime(s_path)).isoformat()
+            reconciled[s_name] = {
+                "repo_url": info["repo_url"],
+                "owner": target.get("owner", ""),
+                "repo": target.get("repo", ""),
+                "branch": "HEAD",
+                "subpath": info["subpath"],
+                "commit_hash": info["commit_hash"],
+                "installed_at": mtime_str,
+                "cache_name": info["cache_name"]
+            }
+
+    if auto_save and reconciled:
+        manifest.update(reconciled)
+        save_manifest(manifest)
+
+    return reconciled
