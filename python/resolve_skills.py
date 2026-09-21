@@ -17,55 +17,20 @@ from skill_engine._display import (
     IS_ZH, LANG, strip_ansi, clean_item_id, circled_num,
     get_display_width, pad_display, truncate_display
 )
-from skill_engine._store import (
-    get_zfl_data_dir, DATA_DIR, GROUPS_FILE, safe_input, atomic_save_json
-)
-from skill_engine._translations import DEFAULT_GROUPS
+from skill_engine._store import safe_input, atomic_save_json, GROUPS_FILE
 from skill_engine._frontmatter import parse_yaml_frontmatter as parse_frontmatter
+from skill_engine import (
+    get_all_groups, get_group, save_group_definition, delete_group,
+    resolve_group_targets, get_groups_completion_data,
+    get_project_skills_dir, get_connected_skills
+)
 
 def load_groups():
-    """
-    Load group configurations from ~/.cache/zsh/skills_groups.json.
-    If it doesn't exist, create it with default groups.
-    """
-    if not os.path.exists(GROUPS_FILE):
-        try:
-            os.makedirs(os.path.dirname(GROUPS_FILE), exist_ok=True)
-            with open(GROUPS_FILE, "w", encoding="utf-8") as f:
-                json.dump(DEFAULT_GROUPS, f, indent=2, ensure_ascii=False)
-            return DEFAULT_GROUPS
-        except Exception:
-            return DEFAULT_GROUPS
-    try:
-        with open(GROUPS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                migrated = False
-                # Migrate default names based on current language preference
-                for k in ("startup", "dev"):
-                    if k in data and isinstance(data[k], dict):
-                        curr_name = data[k].get("name")
-                        if not IS_ZH and curr_name in ("极简创业者", "极简创业者 (Startup)"):
-                            data[k]["name"] = "Minimalist Entrepreneur"
-                            migrated = True
-                        elif not IS_ZH and curr_name in ("日常开发协作", "日常开发协作 (Development)"):
-                            data[k]["name"] = "Daily Development Collaboration"
-                            migrated = True
-                        elif IS_ZH and curr_name in ("Minimalist Entrepreneur", "极简创业者 (Startup)"):
-                            data[k]["name"] = "极简创业者"
-                            migrated = True
-                        elif IS_ZH and curr_name in ("Daily Development Collaboration", "日常开发协作 (Development)"):
-                            data[k]["name"] = "日常开发协作"
-                            migrated = True
-                if migrated:
-                    save_groups(data)
-                return data
-    except Exception:
-        pass
-    return {}
+    """Compatibility wrapper: return all groups from skill_engine."""
+    return get_all_groups()
 
 def save_groups(groups):
-    """Save group configurations back to skills_groups.json atomically."""
+    """Compatibility wrapper: save groups via atomic store."""
     return atomic_save_json(GROUPS_FILE, groups)
 
 def interactive_set(selected_args):
@@ -210,15 +175,10 @@ def interactive_set(selected_args):
             disp_name = disp_input
 
         # If renamed from an existing group, remove the old key to avoid stale duplicates
-        if default_gkey and default_gkey != gname and default_gkey in groups:
-            del groups[default_gkey]
+        if default_gkey and default_gkey != gname:
+            delete_group(default_gkey)
             
-        groups[gname] = {
-            "name": disp_name,
-            "ordered": is_ordered,
-            "skills": unique_skills
-        }
-        if save_groups(groups):
+        if save_group_definition(gname, unique_skills, is_ordered=is_ordered, display_name=disp_name):
             ordered_label = ("有序" if IS_ZH else "ordered") if is_ordered else ("无序" if IS_ZH else "unordered")
             if IS_ZH:
                 print(f"\n\033[1;32m[✓] 成功保存{ordered_label}分组 '{gname}' (包含 {len(unique_skills)} 个技能)！\033[0m")
@@ -283,8 +243,7 @@ def interactive_rm(focused_item):
         else:
             confirm = safe_input("Please enter y to confirm deletion (or press Enter to cancel):").lower()
         if confirm in ('y', 'yes'):
-            del groups[gkey]
-            if save_groups(groups):
+            if delete_group(gkey):
                 if IS_ZH:
                     print(f"\n\033[1;32m[✓] 分组 '{gkey}' 已成功删除！\033[0m")
                 else:
@@ -315,22 +274,12 @@ def view_connected():
 
 def find_connected_dir():
     """Find .agents/skills in current directory or parent directories up to git root."""
-    curr = os.path.abspath(os.getcwd())
-    while True:
-        candidate = os.path.join(curr, ".agents", "skills")
-        if os.path.exists(candidate) and os.path.isdir(candidate):
-            return candidate
-        parent = os.path.dirname(curr)
-        if parent == curr:
-            break
-        if os.path.exists(os.path.join(curr, ".git")):
-            break
-        curr = parent
-    return os.path.join(os.getcwd(), ".agents", "skills")
+    return get_project_skills_dir()
 
 def list_connected_skills():
     """Display skills currently connected in project with sleek modern streamlined layout."""
-    connected_dir = find_connected_dir()
+    connected_dir = get_project_skills_dir()
+    connected_list = get_connected_skills()
     if not os.path.exists(connected_dir) or not os.path.isdir(connected_dir):
         if IS_ZH:
             print("[mskill] 当前项目下未检测到已连接的技能目录 (.agents/skills)。")
@@ -340,11 +289,7 @@ def list_connected_skills():
             print("\033[0;90m💡 Tip: Run 'mskill' in project root to select and connect skills.\033[0m\n")
         return
 
-    skills = [
-        s for s in sorted(os.listdir(connected_dir))
-        if not s.startswith(".") and (os.path.isdir(os.path.join(connected_dir, s)) or os.path.islink(os.path.join(connected_dir, s)))
-    ]
-    if not skills:
+    if not connected_list:
         if IS_ZH:
             print("[mskill] 当前项目已连接技能目录为空。")
         else:
@@ -361,8 +306,8 @@ def list_connected_skills():
         pass
 
     # Count symlinks vs copies
-    symlink_count = sum(1 for s in skills if os.path.islink(os.path.join(connected_dir, s)))
-    copy_count = len(skills) - symlink_count
+    symlink_count = sum(1 for item in connected_list if item.get("is_link"))
+    copy_count = len(connected_list) - symlink_count
 
     # ANSI Palette
     CYAN = "\033[1;36m"
@@ -380,12 +325,12 @@ def list_connected_skills():
     # Header badge bar
     if IS_ZH:
         print(f"\n  {BOLD}{WHITE}🔗 项目已挂载技能清单 (Connected Skills){RESET}  "
-              f"{CYAN}[总计: {WHITE}{len(skills)}{CYAN}]{RESET}  "
+              f"{CYAN}[总计: {WHITE}{len(connected_list)}{CYAN}]{RESET}  "
               f"{BLUE}[🔗 软链接: {WHITE}{symlink_count}{BLUE}]{RESET}  "
               f"{MAGENTA}[📁 实体副本: {WHITE}{copy_count}{MAGENTA}]{RESET}\n")
     else:
         print(f"\n  {BOLD}{WHITE}🔗 Connected Project Skills{RESET}  "
-              f"{CYAN}[Total: {WHITE}{len(skills)}{CYAN}]{RESET}  "
+              f"{CYAN}[Total: {WHITE}{len(connected_list)}{CYAN}]{RESET}  "
               f"{BLUE}[🔗 Symlinks: {WHITE}{symlink_count}{BLUE}]{RESET}  "
               f"{MAGENTA}[📁 Copies: {WHITE}{copy_count}{MAGENTA}]{RESET}\n")
 
@@ -393,7 +338,7 @@ def list_connected_skills():
     header_mode = "挂载方式" if IS_ZH else "Mount Mode"
     header_desc = "说明 / 中文描述" if IS_ZH else "Description"
 
-    max_name_len = max((len(s) for s in skills), default=20)
+    max_name_len = max((len(item["name"]) for item in connected_list), default=20)
     col_name_w = max(get_display_width(header_name), min(max_name_len, 32))
     col_mode_w = 14
 
@@ -405,9 +350,10 @@ def list_connected_skills():
     print(f"  {h_name}  {h_mode}  {h_desc}")
     print(f"  {GREY}{'─' * divider_w}{RESET}")
 
-    for skill in skills:
-        full_path = os.path.join(connected_dir, skill)
-        is_link = os.path.islink(full_path)
+    for item in connected_list:
+        skill = item["name"]
+        full_path = item["path"]
+        is_link = item.get("is_link", False)
         badge = f"{BLUE}🔗 软链接{RESET}" if is_link else f"{MAGENTA}📁 实体副本{RESET}" if IS_ZH else (f"{BLUE}🔗 Symlink{RESET}" if is_link else f"{MAGENTA}📁 Physical Copy{RESET}")
 
         name_zh = translations.get(skill, {}).get("name_zh", "")
@@ -511,6 +457,75 @@ def list_groups_detailed():
             print(f"    {GREY}↳ Quick link: mskill {gid} (symlink) │ mskill -c {gid} (copy entity){RESET}")
         print()
 
+def cmd_list_groups_completion():
+    for line in get_groups_completion_data():
+        print(line)
+    return 0
+
+def cmd_list_groups_detailed():
+    list_groups_detailed()
+    return 0
+
+def cmd_set_group(args):
+    if not args:
+        print("Error: --set-group requires a group name", file=sys.stderr)
+        return 1
+    rest_args = list(args)
+    is_ordered = False
+    if "--ordered" in rest_args:
+        is_ordered = True
+        rest_args = [a for a in rest_args if a != "--ordered"]
+    gname = rest_args[0] if rest_args else ""
+    skills = [clean_item_id(a) for a in rest_args[1:] if clean_item_id(a)]
+    if not gname:
+        print("Error: --set-group requires a group name", file=sys.stderr)
+        return 1
+    if not skills:
+        print("Error: Please provide at least one skill name", file=sys.stderr)
+        return 1
+
+    if save_group_definition(gname, skills, is_ordered=is_ordered):
+        ordered_label = ("有序" if IS_ZH else "ordered ") if is_ordered else ""
+        if IS_ZH:
+            print(f"[✓] 成功保存{ordered_label}分组 '{gname}'，包含 {len(skills)} 个技能。")
+        else:
+            print(f"[✓] Successfully saved {ordered_label}group '{gname}' containing {len(skills)} skills.")
+        return 0
+    return 1
+
+def cmd_rm_group(raw_gname):
+    if not raw_gname:
+        print("Error: --rm-group requires a group name", file=sys.stderr)
+        return 1
+    gname = clean_item_id(raw_gname).removeprefix("group:")
+    if delete_group(gname):
+        if IS_ZH:
+            print(f"[✓] 已成功删除分组 '{gname}'。")
+        else:
+            print(f"[✓] Successfully deleted group '{gname}'.")
+        return 0
+    else:
+        if IS_ZH:
+            print(f"[✗] 错误: 分组 '{gname}' 不存在或删除失败。", file=sys.stderr)
+        else:
+            print(f"[✗] Error: Group '{gname}' does not exist or deletion failed.", file=sys.stderr)
+        return 1
+
+def cmd_interactive_set(args):
+    interactive_set(args)
+    return 0
+
+def cmd_interactive_rm(focused_item):
+    if not focused_item:
+        print("Error: --interactive-rm requires focused item name", file=sys.stderr)
+        return 1
+    interactive_rm(focused_item)
+    return 0
+
+def cmd_view_connected():
+    view_connected()
+    return 0
+
 def print_help():
     print("Usage: resolve_skills.py [options] [inputs...]")
     print("Options:")
@@ -524,8 +539,6 @@ def print_help():
     print("  --help                     Show this help message")
 
 def main():
-    groups = load_groups()
-
     if len(sys.argv) < 2:
         print_help()
         sys.exit(0)
@@ -537,134 +550,36 @@ def main():
         sys.exit(0)
 
     elif arg1 == "--list-groups":
-        for gid in sorted(groups.keys()):
+        for gid in sorted(get_all_groups().keys()):
             print(gid)
         sys.exit(0)
 
     elif arg1 == "--list-groups-completion":
-        for gid in sorted(groups.keys()):
-            info = groups[gid]
-            if isinstance(info, dict):
-                name = info.get("name") or gid
-                count = len(info.get("skills", []))
-            else:
-                name = gid
-                count = len(info) if isinstance(info, list) else 0
-            count_str = f"{count} 个技能" if IS_ZH else f"{count} skills"
-            clean_name = name.replace(":", "\\:").strip()
-            if clean_name and clean_name != gid:
-                print(f"{gid}:{clean_name} ({count_str})")
-            else:
-                print(f"{gid}:({count_str})")
-        sys.exit(0)
+        sys.exit(cmd_list_groups_completion())
 
     elif arg1 == "--list-groups-detailed":
-        list_groups_detailed()
-        sys.exit(0)
+        sys.exit(cmd_list_groups_detailed())
 
     elif arg1 == "--set-group":
-        if len(sys.argv) < 3:
-            print("Error: --set-group requires a group name", file=sys.stderr)
-            sys.exit(1)
-        rest_args = sys.argv[2:]
-        is_ordered = False
-        if "--ordered" in rest_args:
-            is_ordered = True
-            rest_args = [a for a in rest_args if a != "--ordered"]
-        gname = rest_args[0] if rest_args else ""
-        skills = [clean_item_id(a) for a in rest_args[1:] if clean_item_id(a)]
-        if not gname:
-            print("Error: --set-group requires a group name", file=sys.stderr)
-            sys.exit(1)
-        if not skills:
-            print("Error: Please provide at least one skill name", file=sys.stderr)
-            sys.exit(1)
-        
-        disp_name = gname
-        if gname in groups and isinstance(groups[gname], dict):
-            disp_name = groups[gname].get("name", gname)
-
-        groups[gname] = {
-            "name": disp_name,
-            "ordered": is_ordered,
-            "skills": skills
-        }
-        if save_groups(groups):
-            ordered_label = ("有序" if IS_ZH else "ordered ") if is_ordered else ""
-            if IS_ZH:
-                print(f"[✓] 成功保存{ordered_label}分组 '{gname}'，包含 {len(skills)} 个技能。")
-            else:
-                print(f"[✓] Successfully saved {ordered_label}group '{gname}' containing {len(skills)} skills.")
-            sys.exit(0)
-        else:
-            sys.exit(1)
+        sys.exit(cmd_set_group(sys.argv[2:]))
 
     elif arg1 == "--rm-group":
-        if len(sys.argv) < 3:
-            print("Error: --rm-group requires a group name", file=sys.stderr)
-            sys.exit(1)
-        gname = clean_item_id(sys.argv[2]).removeprefix("group:")
-        if gname in groups:
-            del groups[gname]
-            if save_groups(groups):
-                if IS_ZH:
-                    print(f"[✓] 已成功删除分组 '{gname}'。")
-                else:
-                    print(f"[✓] Successfully deleted group '{gname}'.")
-                sys.exit(0)
-            else:
-                sys.exit(1)
-        else:
-            if IS_ZH:
-                print(f"[✗] 错误: 分组 '{gname}' 不存在。", file=sys.stderr)
-            else:
-                print(f"[✗] Error: Group '{gname}' does not exist.", file=sys.stderr)
-            sys.exit(1)
+        gname = sys.argv[2] if len(sys.argv) >= 3 else ""
+        sys.exit(cmd_rm_group(gname))
 
     elif arg1 == "--interactive-set":
-        interactive_set(sys.argv[2:])
-        sys.exit(0)
+        sys.exit(cmd_interactive_set(sys.argv[2:]))
 
     elif arg1 == "--interactive-rm":
-        if len(sys.argv) < 3:
-            print("Error: --interactive-rm requires focused item name", file=sys.stderr)
-            sys.exit(1)
-        interactive_rm(sys.argv[2])
-        sys.exit(0)
+        focused = sys.argv[2] if len(sys.argv) >= 3 else ""
+        sys.exit(cmd_interactive_rm(focused))
 
     elif arg1 == "--view-connected":
-        view_connected()
-        sys.exit(0)
+        sys.exit(cmd_view_connected())
 
     # Otherwise, resolve the list of inputs
-    raw_inputs = sys.argv[1:]
-    resolved = []
-    for raw in raw_inputs:
-        item = clean_item_id(raw)
-        if not item:
-            continue
-        if item.startswith("group:"):
-            gkey = item[len("group:"):]
-            if gkey in groups:
-                ginfo = groups[gkey]
-                skills = ginfo.get("skills", []) if isinstance(ginfo, dict) else ginfo
-                resolved.extend(skills)
-            else:
-                resolved.append(gkey)
-        elif item in groups:
-            ginfo = groups[item]
-            skills = ginfo.get("skills", []) if isinstance(ginfo, dict) else ginfo
-            resolved.extend(skills)
-        else:
-            resolved.append(item)
-
-    # Deduplicate while preserving order
-    seen = set()
-    for skill in resolved:
-        clean_s = clean_item_id(skill)
-        if clean_s and clean_s not in seen:
-            seen.add(clean_s)
-            print(clean_s)
+    for skill in resolve_group_targets(sys.argv[1:]):
+        print(skill)
 
 if __name__ == "__main__":
     main()

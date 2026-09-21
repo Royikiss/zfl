@@ -266,6 +266,35 @@ def translate_all_workflow(is_zh):
     print(f"\033[1;32m\n批量翻译完成！已成功入库 {success}/{len(untranslated)} 个技能。\033[0m" if is_zh else f"\033[1;32m\nTranslation complete! {success}/{len(untranslated)} translated.\033[0m")
     return 0
 
+def cmd_translate_all(is_zh=True):
+    return translate_all_workflow(is_zh)
+
+def cmd_force_translate(raw_item):
+    skill = clean_item_id(raw_item)
+    if not skill or skill.startswith("group:"):
+        return 0
+    skills_dir = os.path.expanduser("~/.agents/skills")
+    skill_dir = os.path.join(skills_dir, skill)
+    en_path = os.path.join(skill_dir, "SKILL.md")
+    if not os.path.exists(en_path):
+        return 0
+    en_meta, _ = parse_md_content(en_path)
+    if not en_meta:
+        return 0
+    en_name = en_meta.get("name") or skill
+    en_desc = en_meta.get("description") or ""
+    zh_name = translate_text(en_name)
+    zh_desc = translate_text(en_desc)
+    if zh_name or zh_desc:
+        cache_path = os.path.join(DATA_DIR, "skills_zh.json")
+        user_translations = load_user_translations()
+        user_translations[skill] = {
+            "name_zh": zh_name or en_name,
+            "desc_zh": zh_desc or en_desc
+        }
+        atomic_save_json(cache_path, user_translations)
+    return 0
+
 def prefetch_translations(skill_names, is_zh=True):
     """Prefetch translations for specified skills."""
     if not skill_names or not is_zh:

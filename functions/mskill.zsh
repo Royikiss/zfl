@@ -156,7 +156,7 @@ _mskill() {
     local lang=${ZFL_LANG:-${LANG%%.*}}
 
     if (( $+commands[python3] )); then
-        available_groups=( ${(f)"$(python3 "$ZFL_HOME/python/resolve_skills.py" --list-groups-completion 2>/dev/null)"} )
+        available_groups=( ${(f)"$(python3 "$ZFL_HOME/python/manage_skills.py" --list-groups-completion 2>/dev/null)"} )
     fi
 
     if [[ "$lang" == zh* ]]; then
@@ -311,348 +311,18 @@ mskill() {
     load_color GREEN YELLOW RED BLUE CYAN RESET BRIGHT_BLACK
     local lang=${ZFL_LANG:-${LANG%%.*}}
 
-    local -a available_skills skills_to_link group_skills
-    local opt_set=0 opt_rm=0 opt_list=0 opt_view=0 opt_install=0 opt_update=0 opt_update_all=0 opt_status=0 opt_uninstall=0 opt_copy=0 opt_unbind=0
-    local opt_new=0 opt_doctor=0 opt_eject=0 opt_unlink=0 opt_unlink_all=0 opt_dump=0 opt_sync=0 opt_translate_all=0
-    local group_name target_repo uninstall_target line dest_dir skill src dest new_skill_name
-    local -a update_targets=() install_args=() unbind_targets=() unlink_targets=() eject_targets=()
-    local in_home_dir=0
-
-    available_skills=( $HOME/.agents/skills/*(/N:t) )
-    [[ "$PWD" == "$HOME" ]] && in_home_dir=1
-
-    while (( $# > 0 )); do
-        case "$1" in
-            -h|--help)
-                _mskill_help
-                return 0
-                ;;
-            -c|--copy|copy)
-                opt_copy=1
-                shift
-                ;;
-            -i|--install|install)
-                opt_install=1
-                shift
-                if (( $# == 0 )); then
-                    # Interactive install
-                    python3 "$ZFL_HOME/python/manage_skills.py" --interactive-install
-                    return $?
-                fi
-                target_repo="$1"
-                shift
-                while (( $# > 0 )) && [[ "$1" != -* ]]; do
-                    install_args+=("$1")
-                    shift
-                done
-                break
-                ;;
-            -u|--update|update)
-                opt_update=1
-                shift
-                while (( $# > 0 )) && [[ "$1" != -* ]]; do
-                    update_targets+=("$1")
-                    shift
-                done
-                break
-                ;;
-            --update-all|update-all)
-                opt_update_all=1
-                shift
-                break
-                ;;
-            --status|status)
-                opt_status=1
-                shift
-                break
-                ;;
-            -b|--unbind|--unbind-git|unbind|detach)
-                opt_unbind=1
-                shift
-                while (( $# > 0 )) && [[ "$1" != -* ]]; do
-                    unbind_targets+=("$1")
-                    shift
-                done
-                break
-                ;;
-            -d|--uninstall|--remove|uninstall|remove)
-                opt_uninstall=1
-                shift
-                if (( $# == 0 )); then
-                    if [[ "$lang" == zh* ]]; then
-                        echo -e "${RED}[mskill] 错误: 需要指定要卸载的技能名称。${RESET}" >&2
-                    else
-                        echo -e "${RED}[mskill] Error: Skill name required for uninstallation.${RESET}" >&2
-                    fi
-                    return 1
-                fi
-                uninstall_target="$1"
-                shift
-                break
-                ;;
-            --new|new|create|--create)
-                opt_new=1
-                shift
-                if (( $# > 0 )) && [[ "$1" != -* ]]; then
-                    new_skill_name="$1"
-                    shift
-                fi
-                break
-                ;;
-            --doctor|doctor|check|--check)
-                opt_doctor=1
-                shift
-                break
-                ;;
-            --eject|eject)
-                opt_eject=1
-                shift
-                while (( $# > 0 )) && [[ "$1" != -* ]]; do
-                    eject_targets+=("$1")
-                    shift
-                done
-                break
-                ;;
-            --unlink|-X|unlink)
-                opt_unlink=1
-                shift
-                while (( $# > 0 )) && [[ "$1" != -* ]]; do
-                    unlink_targets+=("$1")
-                    shift
-                done
-                break
-                ;;
-            --unlink-all|unlink-all)
-                opt_unlink_all=1
-                shift
-                break
-                ;;
-            dump|export|--dump|--export)
-                opt_dump=1
-                shift
-                break
-                ;;
-            sync|--sync)
-                opt_sync=1
-                shift
-                break
-                ;;
-            --translate-all|translate-all)
-                opt_translate_all=1
-                shift
-                break
-                ;;
-            -v|--view|view)
-                opt_view=1
-                shift
-                break
-                ;;
-            -s|--group-set)
-                opt_set=1
-                shift
-                if (( $# < 2 )); then
-                    if [[ "$lang" == zh* ]]; then
-                        echo -e "${RED}[mskill] 错误: --group-set 需要指定分组名称和至少一个技能名。${RESET}" >&2
-                    else
-                        echo -e "${RED}[mskill] Error: --group-set requires a group name and at least one skill name.${RESET}" >&2
-                    fi
-                    return 1
-                fi
-                group_name="$1"
-                shift
-                local opt_ordered_flag=()
-                local group_skills_raw=()
-                while (( $# > 0 )); do
-                    if [[ "$1" == "--ordered" ]]; then
-                        opt_ordered_flag=("--ordered")
-                    else
-                        group_skills_raw+=("$1")
-                    fi
-                    shift
-                done
-                group_skills=( "${opt_ordered_flag[@]}" "${group_skills_raw[@]}" )
-                break
-                ;;
-            -r|--group-rm)
-                opt_rm=1
-                shift
-                if (( $# == 0 )); then
-                    if [[ "$lang" == zh* ]]; then
-                        echo -e "${RED}[mskill] 错误: --group-rm 需要指定分组名称。${RESET}" >&2
-                    else
-                        echo -e "${RED}[mskill] Error: --group-rm requires a group name.${RESET}" >&2
-                    fi
-                    return 1
-                fi
-                group_name="$1"
-                shift
-                break
-                ;;
-            -l|--group-list)
-                opt_list=1
-                shift
-                break
-                ;;
-            -*)
-                if [[ "$lang" == zh* ]]; then
-                    echo -e "${RED}[mskill] 未知参数: $1${RESET}" >&2
-                    echo "请使用 --help 查看用法。" >&2
-                else
-                    echo -e "${RED}[mskill] Unknown option: $1${RESET}" >&2
-                    echo "Please use --help to view usage." >&2
-                fi
-                return 2
-                ;;
-            *)
-                skills_to_link+=("$1")
-                shift
-                ;;
-        esac
-    done
-
-    # Smart auto-detection: If no action flag was given and the first argument looks like a repo URL/path/shorthand
-    if (( ! opt_install && ! opt_update && ! opt_update_all && ! opt_status && ! opt_unbind && ! opt_uninstall && ! opt_new && ! opt_doctor && ! opt_eject && ! opt_unlink && ! opt_unlink_all && ! opt_dump && ! opt_sync && ! opt_translate_all && ! opt_list && ! opt_rm && ! opt_set && ! opt_view && ! opt_copy )); then
-        if (( ${#skills_to_link[@]} > 0 )); then
-            local first_candidate="${skills_to_link[1]}"
-            if [[ "$first_candidate" == *"://"* || "$first_candidate" == git@* || "$first_candidate" == github.com/* || "$first_candidate" == *.git || ( "$first_candidate" == */* && ! -d "$HOME/.agents/skills/$first_candidate" ) ]]; then
-                opt_install=1
-                target_repo="$first_candidate"
-                install_args=( "${(@)skills_to_link[2,-1]}" )
-                skills_to_link=()
-            fi
-        fi
+    # 1. Fast path: Help
+    if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+        _mskill_help
+        return 0
     fi
 
-    # Home directory protection: block project-level mount operations when in $HOME
-    # (link, copy, unlink, eject, dump, sync are project-level operations that have
-    #  no meaningful semantics in the home directory and risk corrupting global state)
-    if (( in_home_dir )); then
-        local _blocked=0
-        if (( opt_copy || opt_unlink || opt_unlink_all || opt_eject || opt_dump || opt_sync )); then
-            _blocked=1
-        elif (( ! opt_install && ! opt_update && ! opt_update_all && ! opt_status \
-            && ! opt_unbind && ! opt_uninstall && ! opt_new && ! opt_doctor \
-            && ! opt_translate_all && ! opt_list && ! opt_rm && ! opt_set && ! opt_view \
-            && ${#skills_to_link[@]} > 0 )); then
-            # Positional args that would trigger a link in a project dir
-            _blocked=1
-        fi
-        if (( _blocked )); then
-            if [[ "$lang" == zh* ]]; then
-                echo -e "${YELLOW}[mskill] 家目录保护：链接/拷贝/解挂等操作仅在项目目录下有效。${RESET}" >&2
-                echo -e "  在家目录下，请使用全局管理操作（如 ${CYAN}mskill -i/-u/-d/--status/--doctor${RESET} 等）。" >&2
-                echo -e "  如需管理技能分组或查看已安装技能，请使用 ${CYAN}mskill -l / --status${RESET}。" >&2
-            else
-                echo -e "${YELLOW}[mskill] Home dir protection: link/copy/unlink/eject/dump/sync are project-level operations.${RESET}" >&2
-                echo -e "  In the home directory, use global management commands (e.g. ${CYAN}mskill -i/-u/-d/--status/--doctor${RESET})." >&2
-                echo -e "  To manage skill groups or view installed skills, use ${CYAN}mskill -l / --status${RESET}." >&2
-            fi
-            return 1
-        fi
-    fi
+    # 2. Interactive Selection (using fzf) if no arguments provided, or pure -c / --copy without skill arguments
+    if (( $# == 0 )) || [[ ( "$1" == "-c" || "$1" == "--copy" || "$1" == "copy" ) && $# == 1 ]]; then
+        local opt_copy=0 in_home_dir=0
+        [[ "$1" == "-c" || "$1" == "--copy" || "$1" == "copy" ]] && opt_copy=1
+        [[ "$PWD" == "$HOME" ]] && in_home_dir=1
 
-    # 1. Manage Skills Operations
-    if (( opt_install )); then
-        python3 "$ZFL_HOME/python/manage_skills.py" --install "$target_repo" "${install_args[@]}"
-        return $?
-    fi
-
-    if (( opt_update_all )); then
-        python3 "$ZFL_HOME/python/manage_skills.py" --update-all
-        return $?
-    fi
-
-    if (( opt_update )); then
-        python3 "$ZFL_HOME/python/manage_skills.py" --update "${update_targets[@]}"
-        return $?
-    fi
-
-    if (( opt_status )); then
-        python3 "$ZFL_HOME/python/manage_skills.py" --status
-        return $?
-    fi
-
-    if (( opt_unbind )); then
-        if (( ${#unbind_targets[@]} == 0 )); then
-            if [[ "$lang" == zh* ]]; then
-                echo -e "${RED}[mskill] 错误: 需要指定要解绑 Git 关联的技能名称。${RESET}" >&2
-            else
-                echo -e "${RED}[mskill] Error: Skill name(s) required for unbinding.${RESET}" >&2
-            fi
-            return 1
-        fi
-        python3 "$ZFL_HOME/python/manage_skills.py" --unbind "${unbind_targets[@]}"
-        return $?
-    fi
-
-    if (( opt_uninstall )); then
-        python3 "$ZFL_HOME/python/manage_skills.py" --uninstall "$uninstall_target"
-        return $?
-    fi
-
-    if (( opt_new )); then
-        python3 "$ZFL_HOME/python/manage_skills.py" --new "$new_skill_name"
-        return $?
-    fi
-
-    if (( opt_doctor )); then
-        python3 "$ZFL_HOME/python/manage_skills.py" --doctor
-        return $?
-    fi
-
-    if (( opt_eject )); then
-        python3 "$ZFL_HOME/python/manage_skills.py" --eject "${eject_targets[@]}"
-        return $?
-    fi
-
-    if (( opt_unlink_all )); then
-        python3 "$ZFL_HOME/python/manage_skills.py" --unlink-all
-        return $?
-    fi
-
-    if (( opt_unlink )); then
-        python3 "$ZFL_HOME/python/manage_skills.py" --unlink "${unlink_targets[@]}"
-        return $?
-    fi
-
-    if (( opt_dump )); then
-        python3 "$ZFL_HOME/python/manage_skills.py" --dump
-        return $?
-    fi
-
-    if (( opt_sync )); then
-        python3 "$ZFL_HOME/python/manage_skills.py" --sync
-        return $?
-    fi
-
-    if (( opt_translate_all )); then
-        python3 "$ZFL_HOME/python/preview_skill.py" --translate-all
-        return $?
-    fi
-
-    # 2. Group Management Operations
-    if (( opt_list )); then
-        python3 "$ZFL_HOME/python/resolve_skills.py" --list-groups-detailed
-        return $?
-    fi
-
-    if (( opt_rm )); then
-        python3 "$ZFL_HOME/python/resolve_skills.py" --rm-group "$group_name"
-        return $?
-    fi
-
-    if (( opt_set )); then
-        python3 "$ZFL_HOME/python/resolve_skills.py" --set-group "$group_name" "${group_skills[@]}"
-        return $?
-    fi
-
-    if (( opt_view )); then
-        python3 "$ZFL_HOME/python/resolve_skills.py" --view-connected
-        return $?
-    fi
-
-    # 3. Interactive Selection (using fzf) if no arguments provided
-    if (( ${#skills_to_link[@]} == 0 )); then
         if (( $+commands[fzf] )); then
             local prompt_msg header_msg
             if [[ "$lang" == zh* ]]; then
@@ -696,9 +366,9 @@ mskill() {
                 --bind "right:execute(python3 $ZFL_HOME/python/list_skills_fzf.py --expand {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
                 --bind "left:execute(python3 $ZFL_HOME/python/list_skills_fzf.py --collapse {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
                 --bind "space:toggle+down"
-                --bind "ctrl-t:reload(python3 $ZFL_HOME/python/preview_skill.py --force-translate {} >/dev/null 2>&1; python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
-                --bind "ctrl-g:execute(python3 $ZFL_HOME/python/resolve_skills.py --interactive-set {+})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
-                --bind "ctrl-d:execute(python3 $ZFL_HOME/python/resolve_skills.py --interactive-rm {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
+                --bind "ctrl-t:reload(python3 $ZFL_HOME/python/manage_skills.py --interactive-translate {} >/dev/null 2>&1; python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
+                --bind "ctrl-g:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-group-set {+})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
+                --bind "ctrl-d:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-group-rm {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
                 --bind "ctrl-u:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-update {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
                 --bind "ctrl-b:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-unbind {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
                 --bind "ctrl-x:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-unlink {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
@@ -711,7 +381,8 @@ mskill() {
                 --prompt "$prompt_msg"
             )
 
-            local selected_raw
+            local selected_raw line
+            local -a skills_to_link=()
             selected_raw=$(python3 "$ZFL_HOME/python/list_skills_fzf.py" | fzf "${fzf_opts[@]}")
 
             if [[ -z "$selected_raw" ]]; then
@@ -734,6 +405,17 @@ mskill() {
                 fi
                 [[ -n "$line" ]] && skills_to_link+=("$line")
             done <<< "$selected_raw"
+
+            if (( ${#skills_to_link[@]} > 0 )); then
+                if (( opt_copy )); then
+                    python3 "$ZFL_HOME/python/manage_skills.py" --copy "${skills_to_link[@]}"
+                    return $?
+                else
+                    python3 "$ZFL_HOME/python/manage_skills.py" --link "${skills_to_link[@]}"
+                    return $?
+                fi
+            fi
+            return 0
         else
             if [[ "$lang" == zh* ]]; then
                 echo -e "${YELLOW}[mskill] 提示: 未安装 fzf，无法使用交互式选择。${RESET}"
@@ -746,13 +428,8 @@ mskill() {
         fi
     fi
 
-    # 4. Mount Skills (Symlink or Copy Entity)
-    if (( opt_copy )); then
-        python3 "$ZFL_HOME/python/manage_skills.py" --copy "${skills_to_link[@]}"
-        return $?
-    else
-        python3 "$ZFL_HOME/python/manage_skills.py" --link "${skills_to_link[@]}"
-        return $?
-    fi
+    # 3. Transparent Forwarding: Delegate all CLI arguments to unified Python Facade
+    python3 "$ZFL_HOME/python/manage_skills.py" "$@"
+    return $?
 }
 

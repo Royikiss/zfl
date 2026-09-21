@@ -33,8 +33,8 @@ ZFL is a high-performance, modular configuration and function library for Zsh. W
 
 ```bash
 zsh/
-├── base.zsh                       # Framework entry point (exports ZFL_HOME and loads core modules)
-├── core/                          # Core dispatch and public modules
+├── base.zsh                          # Framework entry point (exports ZFL_HOME and loads core modules)
+├── core/                             # Core dispatch and public modules
 │   ├── colors.zsh
 │   ├── func.zsh
 │   ├── metadata.zsh
@@ -42,45 +42,48 @@ zsh/
 │   ├── startup_tasks.zsh
 │   ├── usr.zsh
 │   └── usr.zsh.example
-├── functions/                     # Modular function directory (1:1 mapping between file name and function name)
-│   ├── add_task.zsh               # Manage startup tasks list (whitelist management)
-│   ├── aicp.zsh                   # Generate project context suitable for AI consumption (directory tree + file index + code snippet budget trimming)
-│   ├── check_update.zsh           # Check last system update date and prompt update reminder
-│   ├── countText.zsh              # Count words or Chinese characters in a text file based on the specified mode
-│   ├── extract.zsh                # Universal auto-decompressor and compressor with format options, password encryption, compression stats, content listing, and Tab completion
-│   ├── mskill.zsh                 # Manage, install, discover, package, update, and selectively link or copy AI Agent skills
-│   ├── update.zsh                 # Update system packages (yay/pacman and flatpak)
-│   ├── weather.zsh                # Query real-time weather and weather forecast in terminal
-│   └── zfl.zsh                    # ZFL framework built-in command line management and self-discovery tool
-├── custom_functions/              # User private local functions directory (ignored by git)
-├── python/                        # Cross-language helper scripts
+├── functions/                        # Modular function directory (1:1 mapping between file name and function name)
+│   ├── add_task.zsh                  # Manage startup tasks list (whitelist management)
+│   ├── aicp.zsh                      # Generate project context suitable for AI consumption (directory tree + file index + code snippet budget trimming)
+│   ├── check_update.zsh              # Check last system update date and prompt update reminder
+│   ├── countText.zsh                 # Count words or Chinese characters in a text file based on the specified mode
+│   ├── extract.zsh                   # Universal auto-decompressor and compressor with format options, password encryption, compression stats, content listing, and Tab completion
+│   ├── mskill.zsh                    # Manage, install, discover, package, update, and selectively link or copy AI Agent skills
+│   ├── update.zsh                    # Update system packages (yay/pacman and flatpak)
+│   ├── weather.zsh                   # Query real-time weather and weather forecast in terminal
+│   └── zfl.zsh                       # ZFL framework built-in command line management and self-discovery tool
+├── custom_functions/                 # User private local functions directory (ignored by git)
+├── python/                           # Cross-language helper scripts
 │   ├── aicp_context.py
 │   ├── list_skills_fzf.py
-│   ├── manage_skills.py           # Core management engine for AI Agent skills (Install, Discover, Package, Update, Status)
-│   ├── metadata_engine.py         # ZFL Metadata Engine Module — Single Source of Truth for #? function metadata.
+│   ├── manage_skills.py              # Core management engine for AI Agent skills (Install, Discover, Package, Update, Status)
+│   ├── metadata_engine.py            # ZFL Metadata Engine Module — Single Source of Truth for #? function metadata.
 │   ├── preview_skill.py
-│   ├── resolve_skills.py          # Parse and expand skill groups and skill names, and provide interfaces to manage groups
-│   ├── skill_engine/              # Unified skill lifecycle management internal package
+│   ├── resolve_skills.py             # Parse and expand skill groups and skill names, and provide interfaces to manage groups
+│   ├── skill_engine/                 # Unified skill lifecycle management internal package
 │   └── zfl_lint.py
-├── tests/                         # Automated unit test suite
-│   ├── test_display.py            # Unit tests for skill_engine._display utilities.
-│   ├── test_frontmatter.py        # Unit tests for skill_engine._frontmatter.
-│   ├── test_metadata_engine.py    # Unit tests for the ZFL Metadata Engine Module.
-│   ├── test_repo.py               # Unit tests for skill_engine._repo.
-│   └── test_store.py              # Unit tests for skill_engine._store.
-├── docs/                          # Technical design, core mechanics, and troubleshooting documentation
-│   ├── add_task.md                # Non-blocking startup command and schedule scheduler.
-│   ├── aicp.md                    # AI context packaging, token estimation, and interactive `--exec` loop helper.
-│   ├── check_update.md            # Lightweight startup update reminder.
-│   ├── countText.md               # Characters and words counting tool for mixed English-Chinese texts.
-│   ├── extract.md                 # Universal auto-decompressor with archive-bomb protection.
+├── tests/                            # Automated unit test suite
+│   ├── test_display.py               # Unit tests for skill_engine._display utilities.
+│   ├── test_frontmatter.py           # Unit tests for skill_engine._frontmatter.
+│   ├── test_groups.py                # Unit tests for skill_engine._groups.
+│   ├── test_manage_skills_facade.py  # Unit tests for manage_skills unified dispatch facade.
+│   ├── test_metadata_engine.py       # Unit tests for the ZFL Metadata Engine Module.
+│   ├── test_mount.py                 # Unit tests for skill_engine._mount.
+│   ├── test_repo.py                  # Unit tests for skill_engine._repo.
+│   └── test_store.py                 # Unit tests for skill_engine._store.
+├── docs/                             # Technical design, core mechanics, and troubleshooting documentation
+│   ├── add_task.md                   # Non-blocking startup command and schedule scheduler.
+│   ├── aicp.md                       # AI context packaging, token estimation, and interactive `--exec` loop helper.
+│   ├── check_update.md               # Lightweight startup update reminder.
+│   ├── countText.md                  # Characters and words counting tool for mixed English-Chinese texts.
+│   ├── extract.md                    # Universal auto-decompressor with archive-bomb protection.
 │   ├── fmt_novel.md
-│   ├── mskill.md                  # Full-lifecycle AI Agent skills manager (install, package, update, unbind git, group, link, and copy).
-│   ├── update.md                  # One-click system and Flatpak package updater.
-│   ├── weather.md                 # Quick weather forecast query.
-│   └── zfl.md                     # Built-in ZFL CLI manager and auto-discovery engine.
-└── automation/                    # AI programming automation verification and sync scripts
-    └── sync_readme.py             # Automatically synchronize and verify the README.md project structure tree
+│   ├── mskill.md                     # Full-lifecycle AI Agent skills manager (install, package, update, unbind git, group, link, and copy).
+│   ├── update.md                     # One-click system and Flatpak package updater.
+│   ├── weather.md                    # Quick weather forecast query.
+│   └── zfl.md                        # Built-in ZFL CLI manager and auto-discovery engine.
+└── automation/                       # AI programming automation verification and sync scripts
+    └── sync_readme.py                # Automatically synchronize and verify the README.md project structure tree
 ```
 
 ---

@@ -141,3 +141,72 @@ mskill -v
 mskill --translate-all
 ```
 
+---
+
+## 🏗️ System Architecture Design & Guidelines (Architecture Foundation)
+
+`mskill` adheres to a decoupled **Three-Tier Architecture**, designed around Domain-Driven Design and high-leverage Deep Modules:
+
+```mermaid
+flowchart TD
+    subgraph "1. Shell Lightweight Layer (functions/mskill.zsh)"
+        User[Command Invocation] --> ShellGuard{Fast-path Check}
+        ShellGuard -->|"-h / --help"| ShellHelp[Native Fast Help]
+        ShellGuard -->|"No args / pure -c"| FZFUI[Full-featured FZF Console]
+        ShellGuard -->|"All CLI arguments"| Forward[Transparent Forwarding: python3 manage_skills.py "$@"]
+        FZFUI -->|User Selection| Forward
+    end
+
+    subgraph "2. Unified Dispatch Facade (python/manage_skills.py)"
+        Forward --> Facade[Unified Dispatch Facade]
+        Facade --> HomeGuard[Home Directory Security Guard]
+        Facade --> SmartDetect[Git / URL / Shorthand Auto-detect]
+        Facade --> Lifecycle[Lifecycle Management: install / update / doctor / new]
+    end
+
+    subgraph "3. Core Domain Engines (python/skill_engine/)"
+        Facade --> GroupsEngine[_groups.py: Group CRUD / Target Resolution / Completion]
+        Facade --> MountEngine[_mount.py: Project Mount / Eject / Unlink / .skillsrc Sync]
+        Facade --> DisplayEngine[_display.py: Modern Streamlined Layout / CJK Alignment]
+        GroupsEngine --> StoreEngine[_store.py: Atomic JSON I/O & Cache]
+        MountEngine --> StoreEngine
+    end
+```
+
+### 1. Architectural Tiers & Responsibilities
+
+1. **Shell Lightweight Layer (`functions/mskill.zsh`)**:
+   - **Narrow Scope**: Hosts Zsh native completion proxies, zero-latency `-h/--help` fast path, and the zero-argument interactive FZF menu.
+   - **Transparent Forwarding**: All CLI arguments with parameters are transparently forwarded to the Python unified facade.
+2. **Unified Dispatch Facade (`python/manage_skills.py`)**:
+   - **Single Source of Truth**: Serves as the sole external execution Seam, managing all CLI definitions, parameter validations, error exit codes, and workflows.
+   - **Security & Smart Detection**: Enforces Home Directory Protection to prevent corrupting global skills, and smart auto-detects repository URLs/shorthands for instant installation.
+3. **Core Domain Engines (`python/skill_engine/`)**:
+   - **`_groups.py`**: Manages group CRUD, ordered sequence tracking, bidirectional target resolution (`resolve_group_targets`), and Zsh tab completion generation.
+   - **`_mount.py`**: Handles root discovery, symlinks, physical copies, in-place ejection (`eject`), safe unlinking (`unlink`), and declarative `.skillsrc` alignment.
+   - **`_store.py`**: Handles atomic JSON persistence.
+   - **`_display.py`**: Encapsulates modern streamlined layout rendering and CJK visual width alignment.
+
+---
+
+## ⚠️ Architectural Invariants for Future Development (Strictly Preserved)
+
+To prevent architectural erosion during future maintenance or feature additions, developers and AI agents **MUST** follow these rules:
+
+> [!IMPORTANT]
+> **Rule 1: Never Re-introduce Manual Shell Argument Parsing**  
+> `functions/mskill.zsh` must remain lean. **Do not** add `while case` argument parsing loops or manage `opt_*` state flags in shell scripts. All CLI arguments must be handled in the unified facade (`manage_skills.py`) and underlying engines.
+
+> [!IMPORTANT]
+> **Rule 2: Single External Seam Principle**  
+> `manage_skills.py` is the **only legitimate entry point** for shell invocations. Shell scripts (including FZF `bind` hotkeys) must never bypass this facade to call backend scripts or internal `skill_engine` modules directly.
+
+> [!IMPORTANT]
+> **Rule 3: Pure Data Domain Engines & Unit Test Coverage**  
+> Functions in `skill_engine/` must remain decoupled from terminal UI formatting (`print`, ANSI codes), returning structured data dictionaries or booleans. Every engine module must have comprehensive, deterministic unit test coverage in `tests/` (`pytest` must 100% pass).
+
+> [!IMPORTANT]
+> **Rule 4: Strict Storage & Cache Isolation**  
+> Persistent state must reside in `~/.local/share/zfl/`, while transient locks reside in `~/.cache/zsh/`. Never write uncommitted or temporary files directly into skill repositories or code workspaces.
+
+

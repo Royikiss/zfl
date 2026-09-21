@@ -76,4 +76,9 @@ AI 助手在新增、修复或重构函数时，**必须满足以下开发准则
         - 最右侧列自由铺展（或自适应截断），**严禁闭合右侧垂直边框**，确保用户可用鼠标直接双击选中完整字段（如技能名、仓库链接）进行复制。
     *   **像素级真实视觉宽度对齐**：凡涉及表格或多列对齐，必须先使用正则表达式剥离 ANSI 颜色控制字符，再通过 `unicodedata.east_asian_width` 精确测量中英文字符真实视觉宽度（全角 2 列、半角 1 列），严禁直接使用 Python 的 `len()` 处理包含中文或 ANSI 的字符串格式化。
     *   **交互式全屏特例**：由交互工具自身视口托管的预览组件（如 FZF 预览窗 `preview_skill.py`），维持原有视口双线卡片逻辑，不受本直显规则限制。
+12. **mskill 体系三层架构基石与零回退规约**：
+    后续 AI 助手与开发者在维护、扩展或新增 `mskill` 相关功能时，**必须严格遵守以下三层架构基石，严禁随意更改架构或回退设计**：
+    *   **Shell 交互轻量层 ([functions/mskill.zsh](file:///home/royi/.config/zsh/functions/mskill.zsh))**：仅保留原生 Tab 补全代理、`-h/--help` 快速通道与零参 FZF 交互菜单。所有带有参数的调用**必须直接透明转发**（`python3 "$ZFL_HOME/python/manage_skills.py" "$@"`）至 Python 端统一门面。**严禁在 Shell 端重新引入手工 `while case` 参数解析循环或状态标志位**。
+    *   **单一对外调度门面 ([python/manage_skills.py](file:///home/royi/.config/zsh/python/manage_skills.py))**：作为所有技能操作的**单一真实源 (Single Source of Truth)**，统一接管所有 CLI 参数校验、智能仓库简写识别（Smart Auto-detection）、生命周期路由与家目录安全防护（Home Directory Protection）。**严禁在 Shell 端绕过此门面直接调用后端的拆分脚本**。
+    *   **下沉核心领域引擎 ([python/skill_engine/](file:///home/royi/.config/zsh/python/skill_engine/))**：所有核心状态机逻辑（如 `_groups.py` 的分组 CRUD 与双向目标解析展开、`_mount.py` 的项目软链/脱壳/解绑/对齐、`_store.py` 的原子持久化）**必须封装下沉在 `skill_engine` 中**。引擎 API 必须返回纯数据结构并配备 100% 确定性的自动化单元测试（`tests/test_groups.py`, `tests/test_mount.py`），**严禁将文件系统状态机与终端 UI 打印直接耦合**。
 

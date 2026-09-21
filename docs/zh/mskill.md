@@ -140,3 +140,72 @@ mskill -v
 mskill --translate-all
 ```
 
+---
+
+## 🏗️ 系统三层架构设计规范 (Architecture Foundation)
+
+`mskill` 采用严密的**三层解耦架构**设计，遵循领域驱动设计与高内聚深模块（Deep Module）原则：
+
+```mermaid
+flowchart TD
+    subgraph "1. Shell 交互层 (functions/mskill.zsh)"
+        User[用户执行命令] --> ShellGuard{快速路径判定}
+        ShellGuard -->|"-h / --help"| ShellHelp[原生极速直出帮助]
+        ShellGuard -->|"无参数 / 单独 -c"| FZFUI[FZF 全功能交互式控制台]
+        ShellGuard -->|"所有带参命令行"| Forward[透明转发: python3 manage_skills.py "$@"]
+        FZFUI -->|用户选定操作| Forward
+    end
+
+    subgraph "2. 统一调度门面层 (python/manage_skills.py)"
+        Forward --> Facade[Unified Dispatch Facade]
+        Facade --> HomeGuard[家目录安全防护拦截]
+        Facade --> SmartDetect[Git / URL / 简写智能识别]
+        Facade --> Lifecycle[生命周期管理: install / update / doctor / new]
+    end
+
+    subgraph "3. 核心领域引擎层 (python/skill_engine/)"
+        Facade --> GroupsEngine[_groups.py: 分组 CRUD / 双向目标解析 / 补全生成]
+        Facade --> MountEngine[_mount.py: 项目挂载 / 脱壳 / 解绑 / .skillsrc 对齐]
+        Facade --> DisplayEngine[_display.py: 现代流线型无框排版 / 宽字符对齐]
+        GroupsEngine --> StoreEngine[_store.py: 原子 JSON 读写与缓存]
+        MountEngine --> StoreEngine
+    end
+```
+
+### 1. 各层职责边界
+
+1. **Shell 交互轻量层 (`functions/mskill.zsh`)**：
+   - **职责极窄化**：仅承载 Zsh 原生 Tab 补全代理、零延迟 `-h/--help` 快速通道，以及无参数触发的全功能 FZF 交互工作流。
+   - **透明转发机制（Transparent Forwarding）**：所有非帮助的带参命令行调用，直接透明转发给 Python 统一门面处理。
+2. **统一调度中枢门面 (`python/manage_skills.py`)**：
+   - **单一真实源（Single Source of Truth）**：作为整个体系唯一的外部调用接缝（Unified Seam），集中管理所有命令定义、参数校验、异常退出码与交互工作流。
+   - **智能识别与安全防护**：内置家目录防御机制（Home Directory Protection）防止破坏全局技能库，内置仓库模式智能感知（Smart Auto-detection）实现免 `-i` 直接安装。
+3. **下沉核心领域引擎 (`python/skill_engine/`)**：
+   - **`_groups.py`（分组管理引擎）**：负责分组 CRUD、有序/无序属性维护、混合技能/分组目标展开解析（`resolve_group_targets`）及 Tab 补全数据格式化。
+   - **`_mount.py`（项目挂载引擎）**：负责向上回溯定位 Git 根目录、软链接与实体副本挂载、原地脱壳（`eject`）、安全解绑（`unlink`）与 `.skillsrc` 声明式清单导出与对齐。
+   - **`_store.py`（数据存储引擎）**：负责所有全局配置与清单的原子安全持久化（Atomic Write）。
+   - **`_display.py`（终端渲染引擎）**：封装现代流线型无框排版规范与宽字符（CJK）真实视觉宽度精确对齐算法。
+
+---
+
+## ⚠️ 将来开发规范与基石规约（严格禁止随意更改架构）
+
+为防止后续 AI 助手或开发者在维护和迭代过程中发生**架构退化**，必须无条件遵循以下基石规约：
+
+> [!IMPORTANT]
+> **基石规约一：严禁在 Shell 端重新引入手工参数解析**  
+> `functions/mskill.zsh` 必须始终保持纯粹轻量。**严禁**在 Shell 脚本中重新添加 `while case` 循环解析、维护 `opt_*` 状态标志或自行分发指令。凡增改 CLI 参数或命令，必须在 `manage_skills.py` 门面及 `skill_engine` 中处理。
+
+> [!IMPORTANT]
+> **基石规约二：单一对外接缝（Seam）原则**  
+> `manage_skills.py` 是外部面对 Python 侧的**唯一合法入口**。Shell 端（包括 FZF 的 `bind` 按键）**严禁绕过此门面**直接穿透调用 `resolve_skills.py`、`preview_skill.py` 或 `skill_engine` 下属私有模块。
+
+> [!IMPORTANT]
+> **基石规约三：领域引擎无 UI 纯数据化与自动化测试保障**  
+> `skill_engine/` 中的任何函数（如 `_groups.py`、`_mount.py`）**必须严格与终端渲染（`print`、ANSI 颜色）解耦**，全部返回结构化纯数据字典或布尔值。每个引擎模块必须在 `tests/` 下配备确定性的独立单元测试（`pytest` 必须 100% 通过）。
+
+> [!IMPORTANT]
+> **基石规约四：严格遵守持久化与缓存边界**  
+> 运行期间产生的所有持久化配置必须存放在 `~/.local/share/zfl/`，临时状态锁必须存放在 `~/.cache/zsh/`。严禁向代码仓库目录或全局技能包本体目录直接写入临时私有数据。
+
+

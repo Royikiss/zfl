@@ -183,18 +183,52 @@ def clone_or_fetch_repo(target_info, update_if_exists=False):
             c_print("1;34", f"==> 正在拉取源仓库最新变更: {target_info['cache_name']} ...")
         else:
             c_print("1;34", f"==> Fetching latest changes for: {target_info['cache_name']} ...")
-        
-        # Reset any local state in cache
+
+        # Apply GitHub mirror if configured
+        github_mirror = os.environ.get("ZFL_GITHUB_MIRROR", "").strip().rstrip("/")
+        fetch_url = repo_url
+        if github_mirror and repo_url.startswith("https://github.com/"):
+            fetch_url = f"{github_mirror}/{repo_url}"
+
+        # Clean any uncommitted / stale state in local cache
         subprocess.run(["git", "-C", cache_dir, "reset", "--hard", "HEAD"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        cmd = ["git", "-C", cache_dir, "pull", "--ff-only"]
+
+        # Use shallow fetch to retrieve the latest commit of the target branch or HEAD
+        fetch_cmd = ["git", "-C", cache_dir, "fetch", "--depth", "1", fetch_url]
+        if branch and branch != "HEAD":
+            fetch_cmd.append(branch)
+        else:
+            fetch_cmd.append("HEAD")
+
         try:
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=git_timeout)
+            res = subprocess.run(fetch_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=git_timeout)
             if res.returncode != 0:
-                # Fallback to fetch origin
-                subprocess.run(["git", "-C", cache_dir, "fetch", "--depth", "1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=git_timeout)
+                # Fallback to fetch from origin remote
+                fallback_cmd = ["git", "-C", cache_dir, "fetch", "--depth", "1", "origin"]
+                if branch and branch != "HEAD":
+                    fallback_cmd.append(branch)
+                res = subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=git_timeout)
+
+            if res.returncode != 0:
+                c_print("1;31", f"Git fetch failed for {target_info['cache_name']}:\n{res.stderr.strip()}", file=sys.stderr)
+                if IS_ZH:
+                    c_print("0;33", "提示: 若因网络超时或连接失败，可配置代理或设置 ZFL_GITHUB_MIRROR 镜像加速。")
+                return None
+
+            # Reset local working tree and HEAD directly to FETCH_HEAD
+            reset_res = subprocess.run(["git", "-C", cache_dir, "reset", "--hard", "FETCH_HEAD"],
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if reset_res.returncode != 0:
+                c_print("1;31", f"Git reset to FETCH_HEAD failed:\n{reset_res.stderr.strip()}", file=sys.stderr)
+                return None
         except subprocess.TimeoutExpired:
-            c_print("1;33", f"Git pull timed out after {git_timeout}s, using cached revision.", file=sys.stderr)
+            c_print("1;31", f"Git fetch timed out after {git_timeout}s for {target_info['cache_name']}.", file=sys.stderr)
+            if IS_ZH:
+                c_print("0;33", "提示: 连接 GitHub 超时，建议配置代理或设置 ZFL_GITHUB_MIRROR 镜像加速。")
+            return None
+        except Exception as e:
+            c_print("1;31", f"Error updating repository {target_info['cache_name']}: {e}", file=sys.stderr)
+            return None
 
     return cache_dir
 

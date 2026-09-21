@@ -32,6 +32,16 @@ from skill_engine._repo import (
     parse_repo_target, clone_or_fetch_repo,
     get_repo_head_commit, get_repo_remote_commit
 )
+from skill_engine._groups import (
+    get_all_groups, get_group, save_group_definition, delete_group,
+    resolve_group_targets, find_groups_for_skills, find_groups_for_skill,
+    add_skills_to_group, remove_skill_from_group
+)
+from skill_engine._mount import (
+    get_project_skills_dir, get_connected_skills,
+    mount_skills_to_project, unlink_skills_from_project,
+    eject_skills_in_project, export_project_manifest, read_project_manifest
+)
 
 def scan_skills_in_dir(root_dir, limit_subpath=""):
     """
@@ -214,6 +224,156 @@ def prompt_auto_group_skills(installed_skill_names, target_info):
         else:
             c_print("1;31", "Failed to save skill group.", file=sys.stderr)
     print("\033[1;36m" + "=" * 60 + "\033[0m")
+
+def prompt_install_new_skills(newly_available_by_repo):
+    """
+    Interactively prompt the user to install newly discovered skills from upstream repositories.
+    """
+    if not newly_available_by_repo or not sys.stdin.isatty():
+        return
+
+    manifest = load_manifest()
+    total_new = sum(len(item["skills"]) for item in newly_available_by_repo.values())
+    if total_new == 0:
+        return
+
+    print("\033[1;36m" + "=" * 60 + "\033[0m")
+    if IS_ZH:
+        c_print("1;35", f"✨ 检测到已追踪的源仓库中共有 {total_new} 个新上架的可用技能：")
+    else:
+        c_print("1;35", f"✨ Detected {total_new} newly available skill(s) in tracked repositories:")
+
+    flat_list = []
+    for c_name, repo_data in newly_available_by_repo.items():
+        meta = repo_data["meta"]
+        repo_display = meta.get("repo_url", "")
+        if "github.com/" in repo_display:
+            repo_display = repo_display.split("github.com/")[-1].removesuffix(".git")
+        elif not repo_display:
+            repo_display = c_name
+
+        for s in repo_data["skills"]:
+            flat_list.append({
+                "repo_name": repo_display,
+                "cache_name": c_name,
+                "meta": meta,
+                "latest_commit": repo_data["latest_commit"],
+                "skill": s
+            })
+
+    for idx, item in enumerate(flat_list, 1):
+        s = item["skill"]
+        s_name = s["name"]
+        desc = s.get("description", "")
+        if len(desc) > 40:
+            desc = desc[:37] + "..."
+        scripts_tag = " [scripts]" if s.get("has_scripts") else ""
+        refs_tag = " [refs]" if s.get("has_refs") else ""
+        repo_tag = f"\033[0;34m[{item['repo_name']}]\033[0m"
+
+        repo_data = newly_available_by_repo.get(item["cache_name"], {})
+        cur_skills = repo_data.get("current_skills", [])
+        matched = find_groups_for_skills(cur_skills)
+        grp_tag = f" \033[0;35m(现属分组: {', '.join(matched.keys())})\033[0m" if matched and IS_ZH else (
+            f" \033[0;35m(in groups: {', '.join(matched.keys())})\033[0m" if matched else ""
+        )
+        print(f"  {idx}) \033[1;33m{s_name}\033[0m {repo_tag}{grp_tag} ({s.get('file_count', 1)} files{scripts_tag}{refs_tag}) - {desc}")
+
+    print("\033[1;36m" + "=" * 60 + "\033[0m")
+    if IS_ZH:
+        prompt = "是否直接安装这些新技能？(y: 全部安装 / 输入序号如 '1 3' / 直接回车跳过):"
+    else:
+        prompt = "Install these new skills? (y: install all / enter indices like '1 3' / Enter to skip):"
+
+    ans = safe_input(prompt)
+    if not ans:
+        return
+
+    selected_items = []
+    ans_lower = ans.strip().lower()
+    if ans_lower in ("y", "yes", "all"):
+        selected_items = flat_list
+    else:
+        try:
+            indices = [int(x) - 1 for x in ans.split()]
+            for i in indices:
+                if 0 <= i < len(flat_list):
+                    selected_items.append(flat_list[i])
+        except ValueError:
+            if IS_ZH:
+                c_print("1;31", "输入格式有误，已跳过新技能安装。")
+            else:
+                c_print("1;31", "Invalid input, skipped installing new skills.")
+            return
+
+    if not selected_items:
+        return
+
+    os.makedirs(SKILLS_DIR, exist_ok=True)
+    installed_names = []
+    for item in selected_items:
+        s = item["skill"]
+        s_name = s["name"]
+        dest_path = os.path.join(SKILLS_DIR, s_name)
+        meta = item["meta"]
+
+        copy_skill_bundle(s["dir_path"], dest_path)
+        manifest[s_name] = {
+            "repo_url": meta.get("repo_url", ""),
+            "owner": meta.get("owner", ""),
+            "repo": meta.get("repo", ""),
+            "branch": meta.get("branch", "main"),
+            "subpath": s.get("rel_subpath", ""),
+            "commit_hash": item["latest_commit"],
+            "installed_at": datetime.now().isoformat(),
+            "cache_name": item["cache_name"],
+            "updated_at": datetime.now().isoformat()
+        }
+        installed_names.append(s_name)
+        if IS_ZH:
+            c_print("1;32", f"[✓] 成功安装新技能: '{s_name}' ({item['latest_commit'][:7]})")
+        else:
+            c_print("1;32", f"[✓] Successfully installed new skill: '{s_name}' ({item['latest_commit'][:7]})")
+
+    save_manifest(manifest)
+    if IS_ZH:
+        c_print("1;32", f"\n✨ 共完成 {len(installed_names)} 个新上架技能的安装！")
+    else:
+        c_print("1;32", f"\n✨ Successfully installed {len(installed_names)} new skill(s)!")
+
+    # Check if newly installed skills belong to repos whose current skills are already in groups
+    installed_by_repo = {}
+    for item in selected_items:
+        s_name = item["skill"]["name"]
+        c_name = item["cache_name"]
+        installed_by_repo.setdefault(c_name, []).append(s_name)
+
+    remaining_ungrouped = []
+    for c_name, s_names in installed_by_repo.items():
+        repo_data = newly_available_by_repo.get(c_name, {})
+        cur_skills = repo_data.get("current_skills", [])
+        matched = find_groups_for_skills(cur_skills)
+        if matched and sys.stdin.isatty():
+            for gname in matched.keys():
+                s_str = ", ".join(f"'{s}'" for s in s_names)
+                if IS_ZH:
+                    c_print("1;36", f"\n💡 检测到该仓库现有技能在分组 '{gname}' 中。")
+                    add_ans = safe_input(f"是否将新产生的技能 {s_str} 自动加入分组 '{gname}'？(y/N): ")
+                else:
+                    c_print("1;36", f"\n💡 Detected existing skills of this repo are in group '{gname}'.")
+                    add_ans = safe_input(f"Add new skill(s) {s_str} to group '{gname}'? (y/N): ")
+                if add_ans.strip().lower() in ("y", "yes"):
+                    add_skills_to_group(gname, s_names)
+                    if IS_ZH:
+                        c_print("1;32", f"[✓] 成功将技能 {s_str} 加入分组 '{gname}'！")
+                    else:
+                        c_print("1;32", f"[✓] Added skill(s) {s_str} to group '{gname}'!")
+        else:
+            remaining_ungrouped.extend(s_names)
+
+    # Prompt user to group them if multiple installed and not already added to an existing group
+    if len(remaining_ungrouped) > 1 and sys.stdin.isatty():
+        prompt_auto_group_skills(remaining_ungrouped, selected_items[0]["meta"])
 
 def install_skills_workflow(repo_input, specific_skills=None, branch=None, force=False):
 
@@ -451,6 +611,9 @@ def update_skills_workflow(target_skills=None, update_all=False):
 
     updated_count = 0
     up_to_date_count = 0
+    failed_count = 0
+    deprecated_count = 0
+    newly_available_by_repo = {}
 
     for c_name, item in repos_map.items():
         meta = item["meta"]
@@ -464,14 +627,31 @@ def update_skills_workflow(target_skills=None, update_all=False):
             "branch": branch if branch != "HEAD" else None
         }
 
-        cache_dir = clone_or_fetch_repo(target_info)
+        cache_dir = clone_or_fetch_repo(target_info, update_if_exists=True)
         if not cache_dir:
+            failed_count += len(item["skills"])
             continue
 
         latest_commit = get_repo_head_commit(cache_dir)
         discovered = scan_skills_in_dir(cache_dir)
         discovered_by_subpath = {d["rel_subpath"]: d for d in discovered}
         discovered_by_name = {d["name"]: d for d in discovered}
+
+        # Detect new skills added upstream in this source repo that the user has not installed
+        all_local_dirs = set(os.listdir(SKILLS_DIR)) if os.path.exists(SKILLS_DIR) else set()
+        new_in_repo = [d for d in discovered if d["name"] not in all_local_dirs and d["name"] not in manifest]
+        if new_in_repo:
+            all_repo_skills = [
+                name for name, m in manifest.items()
+                if (m.get("cache_name") or f"{m.get('owner')}__{m.get('repo')}") == c_name
+            ]
+            newly_available_by_repo[c_name] = {
+                "meta": meta,
+                "cache_dir": cache_dir,
+                "latest_commit": latest_commit,
+                "skills": new_in_repo,
+                "current_skills": all_repo_skills or item["skills"]
+            }
 
         for s_name in item["skills"]:
             curr_meta = manifest[s_name]
@@ -481,14 +661,34 @@ def update_skills_workflow(target_skills=None, update_all=False):
             # Locate the updated skill bundle in source repo
             skill_info = discovered_by_subpath.get(subpath) or discovered_by_name.get(s_name)
             if not skill_info:
+                deprecated_count += 1
                 if IS_ZH:
-                    c_print("1;31", f"[x] 更新失败: 源仓库中未能找到技能 '{s_name}' (路径: '{subpath}')。")
+                    c_print("1;33", f"[!] 提示: 远程源仓库在新版本中已不包含技能 '{s_name}' (原路径: '{subpath}')。")
+                    c_print("0;90", f"    -> 本地已保留现有副本继续可用。如需长期保留建议运行 'mskill -b {s_name}' 解绑 Git，或运行 'mskill -d {s_name}' 卸载。")
                 else:
-                    c_print("1;31", f"[x] Update failed: Skill '{s_name}' not found in source repo at '{subpath}'.")
+                    c_print("1;33", f"[!] Notice: Skill '{s_name}' is no longer present in source repo (path: '{subpath}').")
+                    c_print("0;90", f"    -> Local copy preserved. Run 'mskill -b {s_name}' to convert to local or 'mskill -d {s_name}' to uninstall.")
+
+                in_groups = find_groups_for_skill(s_name)
+                if in_groups and sys.stdin.isatty():
+                    g_str = ", ".join(f"'{g}'" for g in in_groups)
+                    if IS_ZH:
+                        del_grp = safe_input(f"    检测到技能 '{s_name}' 属于分组 {g_str}，是否将其从对应分组中删除？(y/N): ")
+                    else:
+                        del_grp = safe_input(f"    Skill '{s_name}' belongs to group(s) {g_str}. Remove it from these group(s)? (y/N): ")
+                    if del_grp.strip().lower() in ("y", "yes"):
+                        for g in in_groups:
+                            remove_skill_from_group(g, s_name)
+                        if IS_ZH:
+                            c_print("1;32", f"    [✓] 已从分组 {g_str} 中移除技能 '{s_name}'。")
+                        else:
+                            c_print("1;32", f"    [✓] Removed skill '{s_name}' from group(s) {g_str}.")
                 continue
 
             dest_path = os.path.join(SKILLS_DIR, s_name)
-            if recorded_commit == latest_commit and os.path.exists(dest_path):
+            is_intact = os.path.exists(dest_path) and os.path.exists(os.path.join(dest_path, "SKILL.md"))
+
+            if recorded_commit == latest_commit and is_intact:
                 up_to_date_count += 1
                 if IS_ZH:
                     c_print("0;32", f"[=] 技能 '{s_name}' 已是最新版本 ({latest_commit[:7]})")
@@ -498,22 +698,46 @@ def update_skills_workflow(target_skills=None, update_all=False):
                 # Copy updated bundle
                 copy_skill_bundle(skill_info["dir_path"], dest_path)
                 curr_meta["commit_hash"] = latest_commit
+                curr_meta["subpath"] = skill_info["rel_subpath"]
                 curr_meta["updated_at"] = datetime.now().isoformat()
                 updated_count += 1
+                commit_change = f"{recorded_commit[:7]} -> {latest_commit[:7]}" if recorded_commit else f"-> {latest_commit[:7]}"
                 if IS_ZH:
-                    c_print("1;32", f"[✓] 成功更新技能 '{s_name}' ({recorded_commit[:7]} -> {latest_commit[:7]})")
+                    c_print("1;32", f"[✓] 成功更新技能 '{s_name}' ({commit_change})")
                 else:
-                    c_print("1;32", f"[✓] Successfully updated '{s_name}' ({recorded_commit[:7]} -> {latest_commit[:7]})")
+                    c_print("1;32", f"[✓] Successfully updated '{s_name}' ({commit_change})")
 
     save_manifest(manifest)
     if IS_ZH:
         print("\033[1;36m" + "=" * 50 + "\033[0m")
-        c_print("1;32", f"更新完成: {updated_count} 个已更新，{up_to_date_count} 个已是最新。")
+        summary_parts = [f"{updated_count} 个已更新", f"{up_to_date_count} 个已是最新"]
+        if deprecated_count:
+            summary_parts.append(f"{deprecated_count} 个远程已废弃(已保留)")
+        if failed_count:
+            summary_parts.append(f"{failed_count} 个拉取失败")
+        c_print("1;32", f"更新完成: {('，'.join(summary_parts))}。")
+        if newly_available_by_repo and not sys.stdin.isatty():
+            for c_repo, repo_data in newly_available_by_repo.items():
+                s_names = [s["name"] for s in repo_data["skills"]]
+                c_print("0;36", f"💡 提示: 源仓库 '{c_repo}' 新上架了 {len(s_names)} 个技能: {', '.join(s_names[:5])}{' 等' if len(s_names) > 5 else ''} (可用 'mskill -i <repo>' 安装)")
         c_print("0;33", "提示: 所有技能分组配置已完整保留，项目端软链接即时同步生效。")
     else:
         print("\033[1;36m" + "=" * 50 + "\033[0m")
-        c_print("1;32", f"Update complete: {updated_count} updated, {up_to_date_count} already up-to-date.")
+        summary_parts = [f"{updated_count} updated", f"{up_to_date_count} already up-to-date"]
+        if deprecated_count:
+            summary_parts.append(f"{deprecated_count} missing upstream (preserved)")
+        if failed_count:
+            summary_parts.append(f"{failed_count} fetch failed")
+        c_print("1;32", f"Update complete: {(', '.join(summary_parts))}.")
+        if newly_available_by_repo and not sys.stdin.isatty():
+            for c_repo, repo_data in newly_available_by_repo.items():
+                s_names = [s["name"] for s in repo_data["skills"]]
+                c_print("0;36", f"💡 Tip: Source repo '{c_repo}' has {len(s_names)} new skill(s): {', '.join(s_names[:5])}{'...' if len(s_names) > 5 else ''} (install via 'mskill -i <repo>')")
         c_print("0;33", "Notice: All skill groups preserved intact, symlinks updated automatically.")
+
+    if newly_available_by_repo and sys.stdin.isatty():
+        prompt_install_new_skills(newly_available_by_repo)
+
     return 0
 
 
@@ -608,7 +832,7 @@ def list_skills_status():
         print(f"  {GREY}💡 Tip: Run 'mskill -u <name>' to update, 'mskill -b <name>' to unbind Git.{RESET}\n")
     return 0
 
-def uninstall_skill_workflow(skill_name):
+def uninstall_skill_workflow(skill_name, prompt_group_cleanup=True):
     """Uninstall a skill and clean up its manifest entry."""
     s_name = clean_item_id(skill_name)
     dest_path = os.path.join(SKILLS_DIR, s_name)
@@ -634,6 +858,22 @@ def uninstall_skill_workflow(skill_name):
         c_print("1;32", f"[✓] 成功卸载技能: {s_name}")
     else:
         c_print("1;32", f"[✓] Successfully uninstalled skill: {s_name}")
+
+    if prompt_group_cleanup and sys.stdin.isatty():
+        in_groups = find_groups_for_skill(s_name)
+        if in_groups:
+            g_str = ", ".join(f"'{g}'" for g in in_groups)
+            if IS_ZH:
+                ans = safe_input(f"检测到技能 '{s_name}' 属于分组 {g_str}，是否将其从对应分组中删除？(y/N): ")
+            else:
+                ans = safe_input(f"Skill '{s_name}' belongs to group(s) {g_str}. Remove it from these group(s)? (y/N): ")
+            if ans.strip().lower() in ("y", "yes"):
+                for g in in_groups:
+                    remove_skill_from_group(g, s_name)
+                if IS_ZH:
+                    c_print("1;32", f"[✓] 已从分组 {g_str} 中移除技能 '{s_name}'。")
+                else:
+                    c_print("1;32", f"[✓] Removed skill '{s_name}' from group(s) {g_str}.")
     return 0
 
 def interactive_install_workflow():
@@ -1060,7 +1300,7 @@ def doctor_workflow():
 def mount_project_skills(target_skills, copy_entity=False):
     """
     Mount (symlink or copy) global skills into current project directory (.agents/skills/).
-    Supports skill names and group names (auto-expanded).
+    Delegates resolution and filesystem ops to skill_engine._mount.
     """
     if not target_skills:
         c_print("1;33", "提示: 未指定需要挂载的技能或分组名称。" if IS_ZH else "Notice: No skills or groups specified to mount.")
@@ -1078,70 +1318,21 @@ def mount_project_skills(target_skills, copy_entity=False):
             c_print("0;36", "  Please cd to your project directory first.")
         return 1
 
-    # Resolve groups and skill names
-    groups = load_groups()
-    resolved = []
-    for item_raw in target_skills:
-        item = clean_item_id(item_raw)
-        if not item or item.startswith("-"):
-            continue
-        gkey = item[6:] if item.startswith("group:") else item
-        if gkey in groups:
-            ginfo = groups[gkey]
-            gskills = ginfo.get("skills", []) if isinstance(ginfo, dict) else ginfo
-            for s in gskills:
-                if s not in resolved:
-                    resolved.append(s)
-        else:
-            if item not in resolved:
-                resolved.append(item)
-
-    if not resolved:
+    res = mount_skills_to_project(target_skills, copy_entity=copy_entity)
+    if not res["resolved"]:
         no_action = "没有需要拷贝的有效技能。" if copy_entity else "没有需要链接的有效技能。"
         no_action_en = "No valid skills to copy." if copy_entity else "No valid skills to link."
         c_print("1;33", f"[mskill] {no_action if IS_ZH else no_action_en}")
         return 0
 
-    dest_dir = os.path.join(cwd, ".agents", "skills")
-    os.makedirs(dest_dir, exist_ok=True)
-
-    success_skills = []
-    failed_skills = []
-
-    for skill in resolved:
-        src = os.path.join(SKILLS_DIR, skill)
-        dest = os.path.join(dest_dir, skill)
-
-        if not os.path.isdir(src):
-            if IS_ZH:
-                c_print("1;31", f"[mskill] 错误: 全局技能 '{skill}' 不存在于 ~/.agents/skills/ 中。", file=sys.stderr)
-            else:
-                c_print("1;31", f"[mskill] Error: Global skill '{skill}' does not exist in ~/.agents/skills/.", file=sys.stderr)
-            failed_skills.append(skill)
-            continue
-
-        if os.path.lexists(dest):
-            if os.path.islink(dest) or os.path.isfile(dest):
-                os.unlink(dest)
-            elif os.path.isdir(dest):
-                shutil.rmtree(dest)
-
-        try:
-            if copy_entity:
-                shutil.copytree(src, dest, symlinks=True)
-            else:
-                os.symlink(src, dest)
-            success_skills.append(skill)
-        except Exception as e:
-            c_print("1;31", f"[mskill] 操作失败 '{skill}': {e}", file=sys.stderr)
-            failed_skills.append(skill)
-
-    # Report execution summary
     GREEN = "\033[1;32m"
     CYAN = "\033[1;36m"
     RED = "\033[1;31m"
     GREY = "\033[0;90m"
     RESET = "\033[0m"
+
+    success_skills = res["success"]
+    failed_skills = res["failed"]
 
     if success_skills:
         action_name = "实体拷贝" if copy_entity else "软链接挂载"
@@ -1168,14 +1359,14 @@ def mount_project_skills(target_skills, copy_entity=False):
         if IS_ZH:
             print(f"\n  {RED}✗ 操作部分失败{RESET} (以下技能{action_str}失败):", file=sys.stderr)
             print(f"  {GREY}{'─' * 60}{RESET}", file=sys.stderr)
-            for skill in failed_skills:
-                print(f"    {RED}✗{RESET} {skill}", file=sys.stderr)
+            for f in failed_skills:
+                print(f"    {RED}✗{RESET} {f['name']} ({f['error']})", file=sys.stderr)
             print(f"  {GREY}{'─' * 60}{RESET}\n", file=sys.stderr)
         else:
             print(f"\n  {RED}✗ Operation Failed{RESET} (Failed to {action_str_en} following skills):", file=sys.stderr)
             print(f"  {GREY}{'─' * 60}{RESET}", file=sys.stderr)
-            for skill in failed_skills:
-                print(f"    {RED}✗{RESET} {skill}", file=sys.stderr)
+            for f in failed_skills:
+                print(f"    {RED}✗{RESET} {f['name']} ({f['error']})", file=sys.stderr)
             print(f"  {GREY}{'─' * 60}{RESET}\n", file=sys.stderr)
         return 1
 
@@ -1183,124 +1374,61 @@ def mount_project_skills(target_skills, copy_entity=False):
 
 def eject_project_skills(target_skills=None):
     """Convert symlinked skills in current project into standalone physical copies."""
-    proj_skills_dir = os.path.join(os.getcwd(), ".agents", "skills")
-    if not os.path.exists(proj_skills_dir):
+    connected = get_connected_skills()
+    if not connected:
         c_print("1;31", "错误: 当前项目下没有 .agents/skills/ 目录。" if IS_ZH else "Error: No .agents/skills/ in current project.", file=sys.stderr)
         return 1
 
-    all_in_proj = sorted(os.listdir(proj_skills_dir))
-    symlinked = [item for item in all_in_proj if os.path.islink(os.path.join(proj_skills_dir, item))]
-
+    symlinked = [c for c in connected if c["is_link"]]
     if not symlinked:
         c_print("1;33", "提示: 当前项目下没有处于软链接状态的技能（均为实体副本或无技能）。" if IS_ZH else "Notice: No symlinked skills in current project.")
         return 0
 
-    to_eject = []
-    if target_skills:
-        for req in target_skills:
-            s_name = clean_item_id(req)
-            if s_name in symlinked:
-                to_eject.append(s_name)
-            else:
-                c_print("1;33", f"警告: '{s_name}' 在当前项目中不是软链接，已跳过。" if IS_ZH else f"Warning: '{s_name}' is not a symlink in current project, skipped.")
-    else:
-        to_eject = symlinked
+    res = eject_skills_in_project(target_skills)
+    for skipped in res["skipped"]:
+        c_print("1;33", f"警告: '{skipped}' 在当前项目中不是软链接，已跳过。" if IS_ZH else f"Warning: '{skipped}' is not a symlink in current project, skipped.")
 
-    if not to_eject:
-        return 0
+    for item in res["ejected"]:
+        if IS_ZH:
+            c_print("1;32", f"[✓] 技能 '{item}' 已原地脱壳为独立实体副本 (解除全局依赖)")
+        else:
+            c_print("1;32", f"[✓] Skill '{item}' ejected to standalone physical copy.")
 
-    ejected_count = 0
-    for s_name in to_eject:
-        dest_path = os.path.join(proj_skills_dir, s_name)
-        real_src = os.path.realpath(dest_path)
-        if not os.path.exists(real_src):
-            c_print("1;31", f"[✗] 脱壳失败: 软链接目标源不存在: {real_src}", file=sys.stderr)
-            continue
-        try:
-            os.unlink(dest_path)
-            shutil.copytree(real_src, dest_path, symlinks=True)
-            ejected_count += 1
-            if IS_ZH:
-                c_print("1;32", f"[✓] 技能 '{s_name}' 已原地脱壳为独立实体副本 (解除全局依赖)")
-            else:
-                c_print("1;32", f"[✓] Skill '{s_name}' ejected to standalone physical copy.")
-        except Exception as e:
-            c_print("1;31", f"[✗] 脱壳失败 '{s_name}': {e}", file=sys.stderr)
+    for f in res["failed"]:
+        c_print("1;31", f"[✗] 脱壳失败 '{f['name']}': {f['error']}", file=sys.stderr)
 
     if IS_ZH:
-        c_print("1;32", f"\n脱壳完成！共将 {ejected_count} 个技能转为项目内实体副本，在当前项目内修改不会影响全局。")
+        c_print("1;32", f"\n脱壳完成！共将 {len(res['ejected'])} 个技能转为项目内实体副本，在当前项目内修改不会影响全局。")
     else:
-        c_print("1;32", f"\nEject complete! {ejected_count} skills converted to local copies.")
-    return 0
+        c_print("1;32", f"\nEject complete! {len(res['ejected'])} skills converted to local copies.")
+    return 0 if not res["failed"] else 1
 
 def unlink_project_skills(target_skills=None, unlink_all=False):
     """Safely unlink or remove skills from current project without touching global directory."""
-    proj_skills_dir = os.path.join(os.getcwd(), ".agents", "skills")
-    if not os.path.exists(proj_skills_dir):
-        c_print("1;33", "提示: 当前项目下没有 .agents/skills/ 目录。" if IS_ZH else "Notice: No .agents/skills/ in current project.")
-        return 0
-
-    all_in_proj = sorted(os.listdir(proj_skills_dir))
-    if not all_in_proj:
-        c_print("1;33", "提示: 当前项目没有连接任何技能。" if IS_ZH else "Notice: No skills connected in current project.")
-        return 0
-
-    to_remove = []
-    if unlink_all:
-        to_remove = all_in_proj
-    elif target_skills:
-        for req in target_skills:
-            s_name = clean_item_id(req)
-            if s_name.startswith("group:"):
-                gkey = s_name[6:]
-                gdata = load_groups()
-                gskills = gdata.get(gkey, {}).get("skills", [])
-                for gs in gskills:
-                    if gs in all_in_proj and gs not in to_remove:
-                        to_remove.append(gs)
-            elif s_name in all_in_proj:
-                if s_name not in to_remove:
-                    to_remove.append(s_name)
-            else:
-                c_print("1;33", f"提示: 技能 '{s_name}' 未在当前项目中引入，跳过。" if IS_ZH else f"Notice: Skill '{s_name}' not connected in project, skipped.")
-    else:
+    if not unlink_all and not target_skills:
         c_print("1;31", "错误: 请指定要解挂的技能名称，或使用 --unlink-all 解挂全部。" if IS_ZH else "Error: Specify skill name(s) or use --unlink-all.", file=sys.stderr)
         return 1
 
-    if not to_remove:
+    connected = get_connected_skills()
+    if not connected:
+        c_print("1;33", "提示: 当前项目没有连接任何技能。" if IS_ZH else "Notice: No skills connected in current project.")
         return 0
 
-    removed_count = 0
-    for s_name in to_remove:
-        target_path = os.path.join(proj_skills_dir, s_name)
-        try:
-            if os.path.islink(target_path) or os.path.isfile(target_path):
-                os.unlink(target_path)
-            elif os.path.isdir(target_path):
-                shutil.rmtree(target_path)
-            removed_count += 1
-            if IS_ZH:
-                c_print("1;32", f"[✓] 已从当前项目中移除: {s_name}")
-            else:
-                c_print("1;32", f"[✓] Removed from project: {s_name}")
-        except Exception as e:
-            c_print("1;31", f"[✗] 移除失败 '{s_name}': {e}", file=sys.stderr)
+    res = unlink_skills_from_project(target_skills=target_skills, unlink_all=unlink_all)
+    for name in res["removed"]:
+        if IS_ZH:
+            c_print("1;32", f"[✓] 已从当前项目中移除: {name}")
+        else:
+            c_print("1;32", f"[✓] Removed from project: {name}")
 
-    # Clean up empty .agents/skills if empty
-    try:
-        if os.path.exists(proj_skills_dir) and not os.listdir(proj_skills_dir):
-            os.rmdir(proj_skills_dir)
-            agents_dir = os.path.dirname(proj_skills_dir)
-            if os.path.exists(agents_dir) and not os.listdir(agents_dir):
-                os.rmdir(agents_dir)
-    except Exception:
-        pass
+    for f in res["failed"]:
+        c_print("1;31", f"[✗] 移除失败 '{f['name']}': {f['error']}", file=sys.stderr)
 
     if IS_ZH:
-        c_print("1;32", f"\n成功从当前项目解挂 {removed_count} 个技能（全局技能库不受任何影响）。")
+        c_print("1;32", f"\n成功从当前项目解挂 {len(res['removed'])} 个技能（全局技能库不受任何影响）。")
     else:
-        c_print("1;32", f"\nSuccessfully unlinked {removed_count} skill(s) from project.")
-    return 0
+        c_print("1;32", f"\nSuccessfully unlinked {len(res['removed'])} skill(s) from project.")
+    return 0 if not res["failed"] else 1
 
 def interactive_unlink_workflow(focused_item):
     """Interactive workflow to unlink a focused skill from current project (invoked via FZF Ctrl-X)."""
@@ -1308,12 +1436,13 @@ def interactive_unlink_workflow(focused_item):
     if not s_name:
         return 0
 
-    proj_skills_dir = os.path.join(os.getcwd(), ".agents", "skills")
+    connected = get_connected_skills()
+    connected_map = {c["name"]: c for c in connected}
+
     if s_name.startswith("group:"):
         gkey = s_name[6:]
-        groups = load_groups()
-        gskills = groups.get(gkey, {}).get("skills", [])
-        connected_in_group = [s for s in gskills if os.path.exists(os.path.join(proj_skills_dir, s))]
+        gskills = resolve_group_targets([s_name])
+        connected_in_group = [s for s in gskills if s in connected_map]
         if not connected_in_group:
             c_print("1;33", f"[*] 分组 '{gkey}' 中的技能均未在当前项目中引入。")
             safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
@@ -1324,14 +1453,12 @@ def interactive_unlink_workflow(focused_item):
         safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
         return 0
 
-    target_path = os.path.join(proj_skills_dir, s_name)
-    if not os.path.exists(target_path) and not os.path.islink(target_path):
+    if s_name not in connected_map:
         c_print("1;33", f"[*] 技能 '{s_name}' 当前并未挂载在当前项目中。")
         safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
         return 0
 
-    is_link = os.path.islink(target_path)
-    type_str = "软链接" if is_link else "实体副本"
+    type_str = "软链接" if connected_map[s_name]["is_link"] else "实体副本"
     ans = safe_input(f"确定要从当前项目中移除技能 '{s_name}' ({type_str}) 吗？(y/N):")
     if ans.lower() in ("y", "yes"):
         unlink_project_skills([s_name])
@@ -1340,66 +1467,35 @@ def interactive_unlink_workflow(focused_item):
 
 def export_project_skills():
     """Export current project skills configuration into .skillsrc for declarative collaboration."""
-    proj_skills_dir = os.path.join(os.getcwd(), ".agents", "skills")
-    if not os.path.exists(proj_skills_dir):
-        c_print("1;31", "错误: 当前项目下没有 .agents/skills/ 目录，无技能可导出。" if IS_ZH else "Error: No .agents/skills/ found in current project.", file=sys.stderr)
+    rc_data = export_project_manifest()
+    if not rc_data:
+        c_print("1;31", "错误: 当前项目下没有 .agents/skills/ 目录或无有效挂载技能，无法导出。" if IS_ZH else "Error: No skills found in current project to export.", file=sys.stderr)
         return 1
 
-    manifest = load_manifest()
-    skills_map = {}
-
-    for item in sorted(os.listdir(proj_skills_dir)):
-        item_path = os.path.join(proj_skills_dir, item)
-        mode = "symlink" if os.path.islink(item_path) else "copy"
-        meta = manifest.get(item, {})
-        skills_map[item] = {
-            "mode": mode,
-            "source": meta.get("repo_url") or "local",
-            "branch": meta.get("branch") or "HEAD",
-            "commit": meta.get("commit_hash") or "unknown",
-            "subpath": meta.get("subpath") or ""
-        }
-
-    rc_data = {
-        "version": 1,
-        "exported_at": datetime.now().isoformat(),
-        "skills": skills_map
-    }
-
     rc_file = os.path.join(os.getcwd(), ".skillsrc")
-    if atomic_save_json(rc_file, rc_data):
-        if IS_ZH:
-            c_print("1;32", f"\n  ✓ 技能清单导出成功: {rc_file}  [共 {len(skills_map)} 个技能]")
-            c_print("0;90", f"  {'─' * 55}")
-            for s, info in skills_map.items():
-                c_print("0;37", f"    • {s:<24} [{info['mode']}] (source: {info['source']})")
-            c_print("0;90", f"  {'─' * 55}")
-            c_print("0;33", "  💡 提示: 您可以将 .skillsrc 提交至 Git 仓库，团队成员只需运行 'mskill sync' 即可一键拉取并对齐技能！\n")
-        else:
-            c_print("1;32", f"\n  ✓ Skills Manifest Exported: {rc_file}  [Total: {len(skills_map)} skills]")
-            c_print("0;90", f"  {'─' * 55}")
-            for s, info in skills_map.items():
-                c_print("0;37", f"    • {s:<24} [{info['mode']}] (source: {info['source']})")
-            c_print("0;90", f"  {'─' * 55}")
-            c_print("0;33", "  💡 Tip: Commit .skillsrc to Git so team members can align via 'mskill sync'.\n")
-        return 0
-    return 1
+    skills_map = rc_data.get("skills", {})
+    if IS_ZH:
+        c_print("1;32", f"\n  ✓ 技能清单导出成功: {rc_file}  [共 {len(skills_map)} 个技能]")
+        c_print("0;90", f"  {'─' * 55}")
+        for s, info in skills_map.items():
+            c_print("0;37", f"    • {s:<24} [{info['mode']}] (source: {info['source']})")
+        c_print("0;90", f"  {'─' * 55}")
+        c_print("0;33", "  💡 提示: 您可以将 .skillsrc 提交至 Git 仓库，团队成员只需运行 'mskill sync' 即可一键拉取并对齐技能！\n")
+    else:
+        c_print("1;32", f"\n  ✓ Skills Manifest Exported: {rc_file}  [Total: {len(skills_map)} skills]")
+        c_print("0;90", f"  {'─' * 55}")
+        for s, info in skills_map.items():
+            c_print("0;37", f"    • {s:<24} [{info['mode']}] (source: {info['source']})")
+        c_print("0;90", f"  {'─' * 55}")
+        c_print("0;33", "  💡 Tip: Commit .skillsrc to Git so team members can align via 'mskill sync'.\n")
+    return 0
 
 def sync_project_skills():
     """Read .skillsrc and align/install all required skills into current project."""
-    rc_file = os.path.join(os.getcwd(), ".skillsrc")
-    if not os.path.exists(rc_file):
-        rc_file = os.path.join(os.getcwd(), ".skillsrc.json")
-    if not os.path.exists(rc_file):
+    rc_data = read_project_manifest()
+    if not rc_data:
         c_print("1;31", "错误: 未在当前项目根目录下找到 .skillsrc 配置文件。" if IS_ZH else "Error: .skillsrc not found in current project.", file=sys.stderr)
         c_print("0;33", "提示: 您可以先运行 'mskill dump' 为当前项目生成 .skillsrc 配置。" if IS_ZH else "Tip: Run 'mskill dump' first to generate .skillsrc.")
-        return 1
-
-    try:
-        with open(rc_file, "r", encoding="utf-8") as f:
-            rc_data = json.load(f)
-    except Exception as e:
-        c_print("1;31", f"解析 .skillsrc 失败: {e}", file=sys.stderr)
         return 1
 
     skills_spec = rc_data.get("skills", {})
@@ -1412,18 +1508,12 @@ def sync_project_skills():
     else:
         c_print("1;36", f"==> Syncing {len(skills_spec)} project skills...")
 
-    os.makedirs(SKILLS_DIR, exist_ok=True)
-    proj_skills_dir = os.path.join(os.getcwd(), ".agents", "skills")
-    os.makedirs(proj_skills_dir, exist_ok=True)
-
     synced_count = 0
     for s_name, spec in skills_spec.items():
         mode = spec.get("mode", "symlink")
         source = spec.get("source", "")
         global_path = os.path.join(SKILLS_DIR, s_name)
-        proj_dest = os.path.join(proj_skills_dir, s_name)
 
-        # 1. Ensure skill exists globally
         if not os.path.exists(global_path):
             if source and source != "local" and not source.startswith("local:"):
                 if IS_ZH:
@@ -1439,25 +1529,55 @@ def sync_project_skills():
                 c_print("1;31", f"[✗] 全局缺少技能 '{s_name}' 且无可用远程源，无法同步。", file=sys.stderr)
                 continue
 
-        # 2. Mount into project
-        if os.path.islink(proj_dest) or os.path.isfile(proj_dest):
-            os.unlink(proj_dest)
-        elif os.path.isdir(proj_dest):
-            shutil.rmtree(proj_dest)
-
-        if mode == "copy":
-            shutil.copytree(global_path, proj_dest, symlinks=True)
-            c_print("0;32", f"  [✓] {s_name} -> 实体副本" if IS_ZH else f"  [✓] {s_name} -> physical copy")
+        mount_res = mount_skills_to_project([s_name], copy_entity=(mode == "copy"))
+        if mount_res["success"]:
+            type_str = "实体副本" if mode == "copy" else "软链接"
+            if IS_ZH:
+                c_print("0;32", f"  [✓] {s_name} -> {type_str}")
+            else:
+                c_print("0;32", f"  [✓] {s_name} -> {mode}")
+            synced_count += 1
         else:
-            os.symlink(global_path, proj_dest)
-            c_print("0;32", f"  [✓] {s_name} -> 软链接" if IS_ZH else f"  [✓] {s_name} -> symlink")
-        synced_count += 1
+            c_print("1;31", f"  [✗] 挂载技能 '{s_name}' 失败", file=sys.stderr)
 
     if IS_ZH:
         c_print("1;32", f"\n[✓] 同步完成！成功将 {synced_count}/{len(skills_spec)} 个技能对齐引入当前项目。")
     else:
         c_print("1;32", f"\n[✓] Sync complete! {synced_count}/{len(skills_spec)} skills aligned.")
     return 0
+
+def is_in_home_dir():
+    """Check if current working directory is user's home directory."""
+    try:
+        return os.path.abspath(os.getcwd()) == os.path.abspath(os.path.expanduser("~"))
+    except Exception:
+        return False
+
+
+def show_home_protection_warning():
+    """Display bilingual warning when a project-level command is run in $HOME."""
+    if IS_ZH:
+        c_print("1;33", "[mskill] 家目录保护：链接/拷贝/解挂等操作仅在项目目录下有效。", file=sys.stderr)
+        c_print("0;37", "  在家目录下，请使用全局管理操作（如 \033[1;36mmskill -i/-u/-d/--status/--doctor\033[0m 等）。", file=sys.stderr)
+        c_print("0;37", "  如需管理技能分组或查看已安装技能，请使用 \033[1;36mmskill -l / --status\033[0m。", file=sys.stderr)
+    else:
+        c_print("1;33", "[mskill] Home dir protection: link/copy/unlink/eject/dump/sync are project-level operations.", file=sys.stderr)
+        c_print("0;37", "  In the home directory, use global management commands (e.g. \033[1;36mmskill -i/-u/-d/--status/--doctor\033[0m).", file=sys.stderr)
+        c_print("0;37", "  To manage skill groups or view installed skills, use \033[1;36mmskill -l / --status\033[0m.", file=sys.stderr)
+
+
+def is_repo_spec(candidate):
+    """Detect if candidate string resembles a git repo URL, shorthand, or local dir path."""
+    if not candidate or candidate.startswith("-"):
+        return False
+    if "://" in candidate or candidate.startswith("git@") or candidate.startswith("github.com/") or candidate.endswith(".git"):
+        return True
+    if "/" in candidate:
+        global_skill_path = os.path.join(SKILLS_DIR, candidate)
+        if not os.path.exists(global_skill_path):
+            return True
+    return False
+
 
 def main():
     if len(sys.argv) < 2:
@@ -1466,10 +1586,16 @@ def main():
     cmd = sys.argv[1]
     args = sys.argv[2:]
 
-    if cmd in ("-i", "--install", "install"):
+    # Help commands
+    if cmd in ("-h", "--help"):
+        print("Usage: mskill [options] [skill_name/group_name...]")
+        print("Run 'mskill --help' from zsh for full documentation.")
+        return 0
+
+    # 1. Install & Lifecycle
+    elif cmd in ("-i", "--install", "install"):
         if not args:
-            c_print("1;31", "Usage: manage_skills.py --install <repo_url_or_shorthand_or_path> [skill_names...]", file=sys.stderr)
-            return 1
+            return interactive_install_workflow()
         repo_input = args[0]
         specific_skills = args[1:] if len(args) > 1 else None
         return install_skills_workflow(repo_input, specific_skills=specific_skills)
@@ -1481,18 +1607,24 @@ def main():
     elif cmd in ("--update-all", "update-all"):
         return update_skills_workflow(update_all=True)
 
-    elif cmd in ("--status", "status", "-s"):
+    elif cmd in ("--status", "status"):
         return list_skills_status()
 
     elif cmd in ("-b", "--unbind", "--unbind-git", "unbind", "detach"):
         if not args:
-            c_print("1;31", "Usage: manage_skills.py --unbind <skill_names...>", file=sys.stderr)
+            if IS_ZH:
+                c_print("1;31", "[mskill] 错误: 需要指定要解绑 Git 关联的技能名称。", file=sys.stderr)
+            else:
+                c_print("1;31", "[mskill] Error: Skill name(s) required for unbinding.", file=sys.stderr)
             return 1
         return unbind_skills_workflow(args)
 
     elif cmd in ("-d", "--uninstall", "--remove", "uninstall", "remove"):
         if not args:
-            c_print("1;31", "Usage: manage_skills.py --uninstall <skill_name>", file=sys.stderr)
+            if IS_ZH:
+                c_print("1;31", "[mskill] 错误: 需要指定要卸载的技能名称。", file=sys.stderr)
+            else:
+                c_print("1;31", "[mskill] Error: Skill name required for uninstallation.", file=sys.stderr)
             return 1
         return uninstall_skill_workflow(args[0])
 
@@ -1503,22 +1635,54 @@ def main():
     elif cmd in ("--doctor", "doctor", "--check", "check"):
         return doctor_workflow()
 
+    # 2. Project-level mount operations (Enforce Home directory protection)
     elif cmd in ("--eject", "eject"):
+        if is_in_home_dir():
+            show_home_protection_warning()
+            return 1
         target_skills = args if args else None
         return eject_project_skills(target_skills)
 
     elif cmd in ("--unlink", "unlink", "-X"):
+        if is_in_home_dir():
+            show_home_protection_warning()
+            return 1
         return unlink_project_skills(target_skills=args)
 
     elif cmd in ("--unlink-all", "unlink-all"):
+        if is_in_home_dir():
+            show_home_protection_warning()
+            return 1
         return unlink_project_skills(unlink_all=True)
 
     elif cmd in ("--dump", "dump", "--export", "export"):
+        if is_in_home_dir():
+            show_home_protection_warning()
+            return 1
         return export_project_skills()
 
     elif cmd in ("--sync", "sync"):
+        if is_in_home_dir():
+            show_home_protection_warning()
+            return 1
         return sync_project_skills()
 
+    elif cmd in ("--link", "link"):
+        if is_in_home_dir():
+            show_home_protection_warning()
+            return 1
+        return mount_project_skills(target_skills=args, copy_entity=False)
+
+    elif cmd in ("-c", "--copy", "copy"):
+        if is_in_home_dir():
+            show_home_protection_warning()
+            return 1
+        if not args:
+            c_print("1;31", "Usage: manage_skills.py --copy <skills...>", file=sys.stderr)
+            return 1
+        return mount_project_skills(target_skills=args, copy_entity=True)
+
+    # 3. Interactive workflows (Called by FZF bindings)
     elif cmd == "--interactive-install":
         return interactive_install_workflow()
 
@@ -1546,15 +1710,67 @@ def main():
         subprocess.run([editor, target_file])
         return 0
 
-    elif cmd in ("--link", "link"):
-        return mount_project_skills(target_skills=args, copy_entity=False)
+    # 4. Group Management
+    elif cmd == "--list-groups-completion":
+        import resolve_skills
+        return resolve_skills.cmd_list_groups_completion()
 
-    elif cmd in ("-c", "--copy", "copy"):
-        return mount_project_skills(target_skills=args, copy_entity=True)
+    elif cmd in ("-l", "--group-list", "--list-groups", "--list-groups-detailed"):
+        import resolve_skills
+        return resolve_skills.cmd_list_groups_detailed()
+
+    elif cmd in ("-s", "--group-set", "--set-group"):
+        import resolve_skills
+        return resolve_skills.cmd_set_group(args)
+
+    elif cmd in ("-r", "--group-rm", "--rm-group"):
+        import resolve_skills
+        gname = args[0] if args else ""
+        return resolve_skills.cmd_rm_group(gname)
+
+    elif cmd in ("-v", "--view", "--view-connected", "view"):
+        import resolve_skills
+        return resolve_skills.cmd_view_connected()
+
+    elif cmd == "--interactive-group-set":
+        import resolve_skills
+        return resolve_skills.cmd_interactive_set(args)
+
+    elif cmd == "--interactive-group-rm":
+        import resolve_skills
+        focused = args[0] if args else ""
+        return resolve_skills.cmd_interactive_rm(focused)
+
+    # 5. Translation Management
+    elif cmd in ("--translate-all", "translate-all"):
+        import preview_skill
+        return preview_skill.cmd_translate_all(IS_ZH)
+
+    elif cmd == "--interactive-translate":
+        import preview_skill
+        focused = args[0] if args else ""
+        return preview_skill.cmd_force_translate(focused)
+
+    # 6. Smart auto-detect or Positional Skills
+    elif cmd.startswith("-"):
+        if IS_ZH:
+            c_print("1;31", f"[mskill] 未知参数: {cmd}", file=sys.stderr)
+            print("请使用 --help 查看用法。", file=sys.stderr)
+        else:
+            c_print("1;31", f"[mskill] Unknown option: {cmd}", file=sys.stderr)
+            print("Please use --help to view usage.", file=sys.stderr)
+        return 2
+
+    elif is_repo_spec(cmd):
+        return install_skills_workflow(cmd, specific_skills=args if args else None)
 
     else:
-        c_print("1;31", f"Unknown command: {cmd}", file=sys.stderr)
-        return 1
+        # Default positional skills / groups to link into project
+        if is_in_home_dir():
+            show_home_protection_warning()
+            return 1
+        all_targets = [cmd] + args
+        return mount_project_skills(target_skills=all_targets, copy_entity=False)
 
 if __name__ == "__main__":
     sys.exit(main())
