@@ -1728,6 +1728,14 @@ def main():
         gname = args[0] if args else ""
         return resolve_skills.cmd_rm_group(gname)
 
+    elif cmd in ("--group-add", "group-add"):
+        import resolve_skills
+        return resolve_skills.cmd_group_add(args)
+
+    elif cmd in ("--group-remove", "--group-rm-skill", "group-remove"):
+        import resolve_skills
+        return resolve_skills.cmd_group_remove(args)
+
     elif cmd in ("-v", "--view", "--view-connected", "view"):
         import resolve_skills
         return resolve_skills.cmd_view_connected()
@@ -1738,8 +1746,7 @@ def main():
 
     elif cmd == "--interactive-group-rm":
         import resolve_skills
-        focused = args[0] if args else ""
-        return resolve_skills.cmd_interactive_rm(focused)
+        return resolve_skills.cmd_interactive_rm(args)
 
     # 5. Translation Management
     elif cmd in ("--translate-all", "translate-all"):

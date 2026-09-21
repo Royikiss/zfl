@@ -22,6 +22,8 @@ from skill_engine._frontmatter import parse_yaml_frontmatter as parse_frontmatte
 from skill_engine import (
     get_all_groups, get_group, save_group_definition, delete_group,
     resolve_group_targets, get_groups_completion_data,
+    find_groups_for_skill, find_groups_for_skills,
+    add_skills_to_group, remove_skill_from_group, remove_skill_from_all_groups,
     get_project_skills_dir, get_connected_skills
 )
 
@@ -85,7 +87,108 @@ def interactive_set(selected_args):
             print("\033[1;31m╰─────────────────────────────────────────────────────────╯\033[0m")
             safe_input("\nPress Enter to return to FZF...")
         return
-    
+
+    # If user selected skills (not directly focusing on an existing group node) and groups exist:
+    if not default_gkey and groups:
+        print("\033[1;36m╭──────────────── 🛠️  技能分组管理 ────────────────╮\033[0m")
+        if IS_ZH:
+            print(f"\033[1;32m│  已选中 {len(unique_skills)} 个技能：\033[0m")
+            for i, s in enumerate(unique_skills[:8], 1):
+                print(f"│    {i}) \033[1;37m{s}\033[0m")
+            if len(unique_skills) > 8:
+                print(f"│    ... 等共 {len(unique_skills)} 个技能")
+            print("│")
+            print("│  \033[1;33m请选择分组操作:\033[0m")
+            print("│    \033[1;37m1)\033[0m 加入已有分组 (追加至选定分组)")
+            print("│    \033[1;37m2)\033[0m 移动到已有分组 (移入并从原分组移出)")
+            print("│    \033[1;37m3)\033[0m 创建全新技能分组")
+            print("\033[1;36m╰─────────────────────────────────────────────────╯\033[0m")
+            action_prompt = "请选择操作模式 (1:加入 / 2:移动 / 3:新建，直接回车使用 1):"
+        else:
+            print(f"\033[1;32m│  Selected {len(unique_skills)} skill(s):\033[0m")
+            for i, s in enumerate(unique_skills[:8], 1):
+                print(f"│    {i}) \033[1;37m{s}\033[0m")
+            if len(unique_skills) > 8:
+                print(f"│    ... and {len(unique_skills) - 8} more")
+            print("│")
+            print("│  \033[1;33mSelect Action:\033[0m")
+            print("│    \033[1;37m1)\033[0m Add to existing group (append)")
+            print("│    \033[1;37m2)\033[0m Move to existing group (remove from old)")
+            print("│    \033[1;37m3)\033[0m Create a new skill group")
+            print("\033[1;36m╰─────────────────────────────────────────────────╯\033[0m")
+            action_prompt = "Select action (1:Add / 2:Move / 3:New, Enter for 1):"
+
+        action_ans = safe_input(action_prompt).strip()
+        if not action_ans:
+            action_ans = "1"
+
+        if action_ans in ("1", "2"):
+            sorted_gkeys = sorted(groups.keys())
+            print("\033[1;36m╭──────────────── 📁 选择目标已有分组 ────────────────╮\033[0m")
+            for idx, gk in enumerate(sorted_gkeys, 1):
+                gdata = groups[gk]
+                gtitle = gdata.get("name", gk) if isinstance(gdata, dict) else gk
+                gcount = len(gdata.get("skills", [])) if isinstance(gdata, dict) else len(gdata)
+                count_str = f"{gcount} 个技能" if IS_ZH else f"{gcount} skills"
+                disp_title = f" ({gtitle})" if gtitle != gk else ""
+                print(f"│  {idx}) \033[1;33m{gk}\033[0m{disp_title} · \033[0;36m{count_str}\033[0m")
+            print("\033[1;36m╰───────────────────────────────────────────────────╯\033[0m")
+
+            pick_prompt = "请输入目标分组序号或名称 (回车取消):" if IS_ZH else "Enter group number or name (Enter to cancel):"
+            pick_ans = safe_input(pick_prompt).strip()
+            if not pick_ans:
+                if IS_ZH:
+                    print("\033[1;33m[*] 操作已取消。\033[0m")
+                    safe_input("\n按回车键返回 FZF...")
+                else:
+                    print("\033[1;33m[*] Operation cancelled.\033[0m")
+                    safe_input("\nPress Enter to return to FZF...")
+                return
+
+            target_gkey = None
+            try:
+                pick_idx = int(pick_ans) - 1
+                if 0 <= pick_idx < len(sorted_gkeys):
+                    target_gkey = sorted_gkeys[pick_idx]
+            except ValueError:
+                clean_target = clean_item_id(pick_ans).removeprefix("group:")
+                if clean_target in groups:
+                    target_gkey = clean_target
+
+            if not target_gkey:
+                if IS_ZH:
+                    print(f"\033[1;31m[✗] 未找到指定分组: '{pick_ans}'\033[0m")
+                    safe_input("\n按回车键返回 FZF...")
+                else:
+                    print(f"\033[1;31m[✗] Group not found: '{pick_ans}'\033[0m")
+                    safe_input("\nPress Enter to return to FZF...")
+                return
+
+            if action_ans == "2":
+                for s in unique_skills:
+                    remove_skill_from_all_groups(s)
+                action_word = "移动到" if IS_ZH else "moved to"
+            else:
+                action_word = "加入" if IS_ZH else "added to"
+
+            if add_skills_to_group(target_gkey, unique_skills):
+                s_str = ", ".join(f"'{s}'" for s in unique_skills)
+                if IS_ZH:
+                    print(f"\n\033[1;32m[✓] 成功将技能 {s_str} {action_word}分组 '{target_gkey}'！\033[0m")
+                    safe_input("\n按回车键返回 FZF...")
+                else:
+                    print(f"\n\033[1;32m[✓] Successfully {action_word} skill(s) {s_str} group '{target_gkey}'!\033[0m")
+                    safe_input("\nPress Enter to return to FZF...")
+                return
+            else:
+                if IS_ZH:
+                    print(f"\n\033[1;33m[*] 所选技能已全部在分组 '{target_gkey}' 中，无需重复添加。\033[0m")
+                    safe_input("\n按回车键返回 FZF...")
+                else:
+                    print(f"\n\033[1;33m[*] Skill(s) already in group '{target_gkey}', nothing changed.\033[0m")
+                    safe_input("\nPress Enter to return to FZF...")
+                return
+
     # --- Step 1: Show selected skills and allow reordering by index ---
     print("\033[1;36m╭──────────────── 🛠️  技能分组配置向导 ────────────────╮\033[0m")
     if default_gkey:
@@ -202,20 +305,119 @@ def interactive_set(selected_args):
 
 def interactive_rm(focused_item):
     cleaned = clean_item_id(focused_item)
-    if not cleaned.startswith("group:"):
-        if IS_ZH:
-            print("\033[1;31m╭─────────────────────────────────────────────────────────╮\033[0m")
-            print("\033[1;31m│  [✗] 错误: 当前所选项不是一个技能分组，无法删除！       │\033[0m")
-            print(f"\033[1;31m│      所选项: {cleaned:<42}│\033[0m")
-            print("\033[1;31m╰─────────────────────────────────────────────────────────╯\033[0m")
-            safe_input("\n按回车键返回 FZF...")
-        else:
-            print("\033[1;31m╭─────────────────────────────────────────────────────────╮\033[0m")
-            print("\033[1;31m│  [✗] Error: Selected item is not a skill group!        │\033[0m")
-            print(f"\033[1;31m│      Item: {cleaned:<46}│\033[0m")
-            print("\033[1;31m╰─────────────────────────────────────────────────────────╯\033[0m")
-            safe_input("\nPress Enter to return to FZF...")
+    if not cleaned:
         return
+
+    if not cleaned.startswith("group:"):
+        # The user focused on a skill node instead of a group node!
+        in_groups = find_groups_for_skill(cleaned)
+        if not in_groups:
+            if IS_ZH:
+                print("\033[1;33m╭─────────────────────────────────────────────────────────╮\033[0m")
+                print(f"\033[1;33m│  [*] 提示: 技能 '{cleaned}' 当前不属于任何技能分组。     │\033[0m")
+                print("\033[1;33m╰─────────────────────────────────────────────────────────╯\033[0m")
+                safe_input("\n按回车键返回 FZF...")
+            else:
+                print("\033[1;33m╭─────────────────────────────────────────────────────────╮\033[0m")
+                print(f"\033[1;33m│  [*] Notice: Skill '{cleaned}' does not belong to groups.│\033[0m")
+                print("\033[1;33m╰─────────────────────────────────────────────────────────╯\033[0m")
+                safe_input("\nPress Enter to return to FZF...")
+            return
+
+        if len(in_groups) == 1:
+            target_grp = in_groups[0]
+            print("\033[1;33m╭──────────────── ⚠️  从分组中移除技能确认 ────────────────╮\033[0m")
+            if IS_ZH:
+                print(f"\033[1;37m│  确定要将技能 '\033[1;33m{cleaned}\033[1;37m' 从分组 '\033[1;36m{target_grp}\033[1;37m' 中移除吗？\033[0m")
+                print("\033[1;90m│  (仅从分组定义中移除，不会删除技能本地文件)\033[0m")
+            else:
+                print(f"\033[1;37m│  Remove skill '\033[1;33m{cleaned}\033[1;37m' from group '\033[1;36m{target_grp}\033[1;37m'?\033[0m")
+                print("\033[1;90m│  (Only removes from group, does not delete skill files)\033[0m")
+            print("\033[1;33m╰─────────────────────────────────────────────────────────╯\033[0m")
+
+            confirm = safe_input("请输入 y 确认移除 (或按回车键取消):" if IS_ZH else "Enter y to confirm (or Enter to cancel):").lower()
+            if confirm in ('y', 'yes'):
+                if remove_skill_from_group(target_grp, cleaned):
+                    if IS_ZH:
+                        print(f"\n\033[1;32m[✓] 技能 '{cleaned}' 已成功从分组 '{target_grp}' 中移除！\033[0m")
+                    else:
+                        print(f"\n\033[1;32m[✓] Skill '{cleaned}' removed from group '{target_grp}'!\033[0m")
+                else:
+                    if IS_ZH:
+                        print("\n\033[1;31m[✗] 移除失败。\033[0m")
+                    else:
+                        print("\n\033[1;31m[✗] Removal failed.\033[0m")
+            else:
+                if IS_ZH:
+                    print("\n\033[1;33m[*] 操作已取消。\033[0m")
+                else:
+                    print("\n\033[1;33m[*] Operation cancelled.\033[0m")
+            safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
+            return
+        else:
+            print("\033[1;33m╭──────────────── ⚠️  从分组中移除技能 ────────────────╮\033[0m")
+            if IS_ZH:
+                print(f"\033[1;37m│  技能 '\033[1;33m{cleaned}\033[1;37m' 当前属于以下多个分组：\033[0m")
+                for idx, g in enumerate(in_groups, 1):
+                    print(f"│    {idx}) \033[1;36m{g}\033[0m")
+                print("\033[1;90m│  (仅从分组定义中移除，不会删除技能本地文件)\033[0m")
+                print("\033[1;33m╰─────────────────────────────────────────────────────╯\033[0m")
+                pick_prompt = "请选择要移出的分组 (输入序号如 '1' / a: 全部移出 / 回车取消):"
+            else:
+                print(f"\033[1;37m│  Skill '\033[1;33m{cleaned}\033[1;37m' belongs to multiple groups:\033[0m")
+                for idx, g in enumerate(in_groups, 1):
+                    print(f"│    {idx}) \033[1;36m{g}\033[0m")
+                print("\033[1;90m│  (Only removes from group, does not delete skill files)\033[0m")
+                print("\033[1;33m╰─────────────────────────────────────────────────────╯\033[0m")
+                pick_prompt = "Select group to remove from (index '1' / a: all / Enter to cancel):"
+
+            pick_ans = safe_input(pick_prompt).strip().lower()
+            if not pick_ans:
+                if IS_ZH:
+                    print("\n\033[1;33m[*] 操作已取消。\033[0m")
+                    safe_input("\n按回车键返回 FZF...")
+                else:
+                    print("\n\033[1;33m[*] Operation cancelled.\033[0m")
+                    safe_input("\nPress Enter to return to FZF...")
+                return
+
+            if pick_ans in ('a', 'all'):
+                remove_skill_from_all_groups(cleaned)
+                if IS_ZH:
+                    print(f"\n\033[1;32m[✓] 技能 '{cleaned}' 已成功从所有分组中移除！\033[0m")
+                    safe_input("\n按回车键返回 FZF...")
+                else:
+                    print(f"\n\033[1;32m[✓] Skill '{cleaned}' removed from all groups!\033[0m")
+                    safe_input("\nPress Enter to return to FZF...")
+                return
+
+            try:
+                pick_idx = int(pick_ans) - 1
+                if 0 <= pick_idx < len(in_groups):
+                    target_grp = in_groups[pick_idx]
+                    if remove_skill_from_group(target_grp, cleaned):
+                        if IS_ZH:
+                            print(f"\n\033[1;32m[✓] 技能 '{cleaned}' 已成功从分组 '{target_grp}' 中移除！\033[0m")
+                        else:
+                            print(f"\n\033[1;32m[✓] Skill '{cleaned}' removed from group '{target_grp}'!\033[0m")
+                    else:
+                        if IS_ZH:
+                            print("\n\033[1;31m[✗] 移除失败。\033[0m")
+                        else:
+                            print("\n\033[1;31m[✗] Removal failed.\033[0m")
+                else:
+                    if IS_ZH:
+                        print("\n\033[1;31m[✗] 无效的序号。\033[0m")
+                    else:
+                        print("\n\033[1;31m[✗] Invalid index.\033[0m")
+            except ValueError:
+                if IS_ZH:
+                    print("\n\033[1;31m[✗] 输入有误。\033[0m")
+                else:
+                    print("\n\033[1;31m[✗] Invalid input.\033[0m")
+
+            safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
+            return
         
     gkey = cleaned[6:]
     groups = load_groups()
@@ -519,8 +721,64 @@ def cmd_interactive_rm(focused_item):
     if not focused_item:
         print("Error: --interactive-rm requires focused item name", file=sys.stderr)
         return 1
-    interactive_rm(focused_item)
+    if isinstance(focused_item, (list, tuple)):
+        for it in focused_item:
+            interactive_rm(it)
+    else:
+        interactive_rm(focused_item)
     return 0
+
+def cmd_group_add(args):
+    """CLI handler: mskill --group-add <group> <skills...>"""
+    if len(args) < 2:
+        if IS_ZH:
+            print("[mskill] 错误: 需要指定分组名称和至少一个技能名称。用法: mskill --group-add <组名> <技能...>", file=sys.stderr)
+        else:
+            print("[mskill] Error: Group name and at least one skill name required. Usage: mskill --group-add <group> <skills...>", file=sys.stderr)
+        return 1
+    gname = clean_item_id(args[0]).removeprefix("group:")
+    skills = [clean_item_id(s) for s in args[1:] if clean_item_id(s)]
+    if add_skills_to_group(gname, skills):
+        s_str = ", ".join(f"'{s}'" for s in skills)
+        if IS_ZH:
+            print(f"[✓] 成功将技能 {s_str} 加入分组 '{gname}'。")
+        else:
+            print(f"[✓] Successfully added skill(s) {s_str} to group '{gname}'.")
+        return 0
+    else:
+        if IS_ZH:
+            print(f"[!] 分组 '{gname}' 不存在，或指定技能已全部在分组中。", file=sys.stderr)
+        else:
+            print(f"[!] Group '{gname}' does not exist, or skill(s) already in group.", file=sys.stderr)
+        return 1
+
+def cmd_group_remove(args):
+    """CLI handler: mskill --group-remove <group> <skills...>"""
+    if len(args) < 2:
+        if IS_ZH:
+            print("[mskill] 错误: 需要指定分组名称和至少一个技能名称。用法: mskill --group-remove <组名> <技能...>", file=sys.stderr)
+        else:
+            print("[mskill] Error: Group name and at least one skill name required. Usage: mskill --group-remove <group> <skills...>", file=sys.stderr)
+        return 1
+    gname = clean_item_id(args[0]).removeprefix("group:")
+    skills = [clean_item_id(s) for s in args[1:] if clean_item_id(s)]
+    removed_any = False
+    for s in skills:
+        if remove_skill_from_group(gname, s):
+            removed_any = True
+    if removed_any:
+        s_str = ", ".join(f"'{s}'" for s in skills)
+        if IS_ZH:
+            print(f"[✓] 成功从分组 '{gname}' 中移除技能 {s_str}。")
+        else:
+            print(f"[✓] Successfully removed skill(s) {s_str} from group '{gname}'.")
+        return 0
+    else:
+        if IS_ZH:
+            print(f"[!] 分组 '{gname}' 中未找到指定的技能，或分组不存在。", file=sys.stderr)
+        else:
+            print(f"[!] Skill(s) not found in group '{gname}', or group does not exist.", file=sys.stderr)
+        return 1
 
 def cmd_view_connected():
     view_connected()

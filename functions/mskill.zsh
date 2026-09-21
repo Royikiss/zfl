@@ -198,6 +198,8 @@ _mskill() {
             '--ordered:标记技能列表顺序为推荐调用顺序 (与 -s 搭配使用)'
             '-r:删除指定的技能分组'
             '--group-rm:删除指定的技能分组'
+            '--group-add:向已有技能分组追加一个或多个技能'
+            '--group-remove:从指定技能分组中移除一个或多个技能'
             '-l:列出当前定义的所有技能分组'
             '--group-list:列出当前定义的所有技能分组'
             '-v:查看当前项目已连接的技能及其中文翻译'
@@ -242,6 +244,8 @@ _mskill() {
             '--ordered:Mark skills sequence as recommended call order'
             '-r:Delete a specified skill group'
             '--group-rm:Delete a specified skill group'
+            '--group-add:Add one or more skills to an existing group'
+            '--group-remove:Remove one or more skills from a group'
             '-l:List all currently defined skill groups'
             '--group-list:List all currently defined skill groups'
             '-v:View connected skills of current project'
@@ -288,7 +292,7 @@ _mskill() {
             _describe -t available_groups "$desc_groups" available_groups
             return
             ;;
-        -s|--group-set)
+        -s|--group-set|--group-add|--group-remove)
             local desc_groups="existing groups"
             [[ "$lang" == zh* ]] && desc_groups="已有分组(可选)"
             _describe -t available_groups "$desc_groups" available_groups
@@ -327,24 +331,24 @@ mskill() {
             local prompt_msg header_msg
             if [[ "$lang" == zh* ]]; then
                 if (( in_home_dir )); then
-                    header_msg=$'🏠 全局管理模式（家目录保护已激活，链接/拷贝操作不可用）\n🌿 浏览: Tab/方向键 折叠展开  │  Ctrl-O 全展/全折  │  空格 多选\n⚡ 管理: Ctrl-G 分组  │  Ctrl-N 安装  │  Ctrl-U 更新  │  Ctrl-E 编辑  │  Ctrl-B 解绑'
+                    header_msg=$'🏠 全局管理模式（家目录保护已激活，链接/拷贝操作不可用）\n🌿 浏览: Tab/方向键 折叠展开  │  Ctrl-O 全展/全折  │  空格 多选\n⚡ 管理: Ctrl-G 分组/移入  │  Ctrl-D 解散/移出组  │  Ctrl-N 安装  │  Ctrl-U 更新  │  Ctrl-E 编辑  │  Ctrl-B 解绑'
                     prompt_msg="Skill Manage > "
                 elif (( opt_copy )); then
-                    header_msg=$'🌿 浏览: Tab/方向键 折叠展开  │  Ctrl-O 全展/全折  │  空格 多选\n⚡ 管理: Ctrl-G 分组  │  Ctrl-N 安装  │  Ctrl-U 更新  │  Ctrl-E 编辑\n🚀 执行: Enter 拷贝实体  │  Ctrl-X 解挂  │  Ctrl-B 解绑Git'
+                    header_msg=$'🌿 浏览: Tab/方向键 折叠展开  │  Ctrl-O 全展/全折  │  空格 多选\n⚡ 管理: Ctrl-G 分组/移入  │  Ctrl-D 解散/移出组  │  Ctrl-N 安装  │  Ctrl-U 更新  │  Ctrl-E 编辑\n🚀 执行: Enter 拷贝实体  │  Ctrl-X 解挂  │  Ctrl-B 解绑Git'
                     prompt_msg="Skill Copy > "
                 else
-                    header_msg=$'🌿 浏览: Tab/方向键 折叠展开  │  Ctrl-O 全展/全折  │  空格 多选\n⚡ 管理: Ctrl-G 分组  │  Ctrl-N 安装  │  Ctrl-U 更新  │  Ctrl-E 编辑\n🚀 执行: Enter 软链接  │  Alt-C 拷贝  │  Ctrl-X 解挂  │  Ctrl-B 解绑'
+                    header_msg=$'🌿 浏览: Tab/方向键 折叠展开  │  Ctrl-O 全展/全折  │  空格 多选\n⚡ 管理: Ctrl-G 分组/移入  │  Ctrl-D 解散/移出组  │  Ctrl-N 安装  │  Ctrl-U 更新  │  Ctrl-E 编辑\n🚀 执行: Enter 软链接  │  Alt-C 拷贝  │  Ctrl-X 解挂  │  Ctrl-B 解绑'
                     prompt_msg="Skill Search > "
                 fi
             else
                 if (( in_home_dir )); then
-                    header_msg=$'🏠 Global Manage Mode (home dir protection active — link/copy ops disabled)\n🌿 Browse: Tab/Arrows Toggle  │  Ctrl-O Toggle All  │  Space Multi\n⚡ Manage: Ctrl-G Groups  │  Ctrl-N Install  │  Ctrl-U Update  │  Ctrl-E Edit  │  Ctrl-B Unbind'
+                    header_msg=$'🏠 Global Manage Mode (home dir protection active — link/copy ops disabled)\n🌿 Browse: Tab/Arrows Toggle  │  Ctrl-O Toggle All  │  Space Multi\n⚡ Manage: Ctrl-G Groups/Add  │  Ctrl-D Remove/Disband  │  Ctrl-N Install  │  Ctrl-U Update  │  Ctrl-E Edit  │  Ctrl-B Unbind'
                     prompt_msg="Skill Manage > "
                 elif (( opt_copy )); then
-                    header_msg=$'🌿 Browse: Tab/Arrows Toggle  │  Ctrl-O Toggle All  │  Space Multi\n⚡ Manage: Ctrl-G Groups  │  Ctrl-N Install  │  Ctrl-U Update  │  Ctrl-E Edit\n🚀 Action: Enter Copy Entity  │  Ctrl-X Unlink  │  Ctrl-B Unbind Git'
+                    header_msg=$'🌿 Browse: Tab/Arrows Toggle  │  Ctrl-O Toggle All  │  Space Multi\n⚡ Manage: Ctrl-G Groups/Add  │  Ctrl-D Remove/Disband  │  Ctrl-N Install  │  Ctrl-U Update  │  Ctrl-E Edit\n🚀 Action: Enter Copy Entity  │  Ctrl-X Unlink  │  Ctrl-B Unbind Git'
                     prompt_msg="Skill Copy > "
                 else
-                    header_msg=$'🌿 Browse: Tab/Arrows Toggle  │  Ctrl-O Toggle All  │  Space Multi\n⚡ Manage: Ctrl-G Groups  │  Ctrl-N Install  │  Ctrl-U Update  │  Ctrl-E Edit\n🚀 Action: Enter Symlink  │  Alt-C Copy Entity  │  Ctrl-X Unlink  │  Ctrl-B Unbind'
+                    header_msg=$'🌿 Browse: Tab/Arrows Toggle  │  Ctrl-O Toggle All  │  Space Multi\n⚡ Manage: Ctrl-G Groups/Add  │  Ctrl-D Remove/Disband  │  Ctrl-N Install  │  Ctrl-U Update  │  Ctrl-E Edit\n🚀 Action: Enter Symlink  │  Alt-C Copy Entity  │  Ctrl-X Unlink  │  Ctrl-B Unbind'
                     prompt_msg="Skill Search > "
                 fi
             fi
@@ -368,7 +372,7 @@ mskill() {
                 --bind "space:toggle+down"
                 --bind "ctrl-t:reload(python3 $ZFL_HOME/python/manage_skills.py --interactive-translate {} >/dev/null 2>&1; python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
                 --bind "ctrl-g:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-group-set {+})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
-                --bind "ctrl-d:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-group-rm {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
+                --bind "ctrl-d:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-group-rm {+})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
                 --bind "ctrl-u:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-update {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
                 --bind "ctrl-b:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-unbind {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"
                 --bind "ctrl-x:execute(python3 $ZFL_HOME/python/manage_skills.py --interactive-unlink {})+reload(python3 $ZFL_HOME/python/list_skills_fzf.py --query {q})"

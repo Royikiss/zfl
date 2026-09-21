@@ -210,7 +210,7 @@ def print_hotkeys_footer(is_zh):
     if is_zh:
         print(f"\n{CYAN}╭───────────────────────── ⌨️  快捷键操作全览 ─────────────────────────╮{RESET}")
         print(f"{CYAN}│{RESET}  {YELLOW}🌿 浏览:{RESET}  {WHITE}[Tab / → / ←]{RESET} 折叠/展开组  │  {WHITE}[Ctrl-O]{RESET} 全展/全折  │  {WHITE}[空格]{RESET} 多选")
-        print(f"{CYAN}│{RESET}  {YELLOW}⚡ 管理:{RESET}  {WHITE}[Ctrl-G]{RESET} 分组设置    │  {WHITE}[Ctrl-D]{RESET} 解散分组    │  {WHITE}[Ctrl-N]{RESET} 安装新技能")
+        print(f"{CYAN}│{RESET}  {YELLOW}⚡ 管理:{RESET}  {WHITE}[Ctrl-G]{RESET} 分组/移入    │  {WHITE}[Ctrl-D]{RESET} 移出/解散组  │  {WHITE}[Ctrl-N]{RESET} 安装新技能")
         print(f"{CYAN}│{RESET}           {WHITE}[Ctrl-U]{RESET} 检查更新    │  {WHITE}[Ctrl-B]{RESET} 解绑Git     │  {WHITE}[Ctrl-T]{RESET} 重新翻译")
         print(f"{CYAN}│{RESET}           {WHITE}[Ctrl-E]{RESET} 编辑SKILL   │  {WHITE}[Ctrl-X]{RESET} 项目解挂    │  {WHITE}[Ctrl-V]{RESET} 预览折行")
         print(f"{CYAN}│{RESET}  {GREEN}🚀 执行:{RESET}  {WHITE}[Enter]{RESET} 软链接到项目  │  {WHITE}[Alt-C]{RESET} 拷贝实体副本")
@@ -218,7 +218,7 @@ def print_hotkeys_footer(is_zh):
     else:
         print(f"\n{CYAN}╭───────────────────────── ⌨️  Hotkeys Reference ──────────────────────╮{RESET}")
         print(f"{CYAN}│{RESET}  {YELLOW}🌿 Browse:{RESET} {WHITE}[Tab / → / ←]{RESET} Toggle Group │ {WHITE}[Ctrl-O]{RESET} Toggle All │ {WHITE}[Space]{RESET} Multi")
-        print(f"{CYAN}│{RESET}  {YELLOW}⚡ Manage:{RESET} {WHITE}[Ctrl-G]{RESET} Groups        │ {WHITE}[Ctrl-D]{RESET} Delete Group │ {WHITE}[Ctrl-N]{RESET} Install")
+        print(f"{CYAN}│{RESET}  {YELLOW}⚡ Manage:{RESET} {WHITE}[Ctrl-G]{RESET} Groups/Add    │ {WHITE}[Ctrl-D]{RESET} Remove/Disband │ {WHITE}[Ctrl-N]{RESET} Install")
         print(f"{CYAN}│{RESET}           {WHITE}[Ctrl-U]{RESET} Update        │ {WHITE}[Ctrl-B]{RESET} Unbind Git   │ {WHITE}[Ctrl-T]{RESET} Translate")
         print(f"{CYAN}│{RESET}           {WHITE}[Ctrl-E]{RESET} Edit SKILL    │ {WHITE}[Ctrl-X]{RESET} Unlink Proj  │ {WHITE}[Ctrl-V]{RESET} Wrap Preview")
         print(f"{CYAN}│{RESET}  {GREEN}🚀 Action:{RESET} {WHITE}[Enter]{RESET} Symlink        │ {WHITE}[Alt-C]{RESET} Copy Entity")

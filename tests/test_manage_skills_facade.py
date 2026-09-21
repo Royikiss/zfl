@@ -263,3 +263,88 @@ def test_update_skills_workflow_deprecated_skill_group_removal(tmp_path, monkeyp
         assert updated_groups["dev"]["skills"] == ["skill-b"]
 
 
+def test_facade_group_add_and_remove_routing(tmp_path, monkeypatch):
+    test_groups_file = str(tmp_path / "groups.json")
+    import skill_engine._store as store_mod
+    monkeypatch.setattr(store_mod, "GROUPS_FILE", test_groups_file)
+    init_groups = {
+        "dev": {
+            "name": "Dev",
+            "ordered": False,
+            "skills": ["skill-a"]
+        }
+    }
+    store_mod.save_groups(init_groups)
+
+    # CLI --group-add dev skill-b
+    with patch("sys.argv", ["manage_skills.py", "--group-add", "dev", "skill-b"]):
+        ret = manage_skills.main()
+        assert ret == 0
+        groups = store_mod.load_groups()
+        assert groups["dev"]["skills"] == ["skill-a", "skill-b"]
+
+    # CLI --group-remove dev skill-a
+    with patch("sys.argv", ["manage_skills.py", "--group-remove", "dev", "skill-a"]):
+        ret = manage_skills.main()
+        assert ret == 0
+        groups = store_mod.load_groups()
+        assert groups["dev"]["skills"] == ["skill-b"]
+
+
+def test_interactive_rm_on_skill_node(tmp_path, monkeypatch):
+    test_groups_file = str(tmp_path / "groups.json")
+    import skill_engine._store as store_mod
+    monkeypatch.setattr(store_mod, "GROUPS_FILE", test_groups_file)
+    init_groups = {
+        "dev": {
+            "name": "Dev",
+            "ordered": False,
+            "skills": ["skill-a", "skill-b"]
+        }
+    }
+    store_mod.save_groups(init_groups)
+
+    import resolve_skills
+    # Focusing on tree-formatted child node '  ├── skill-a'
+    with patch("resolve_skills.safe_input", side_effect=["y", ""]):
+        ret = resolve_skills.cmd_interactive_rm(["  ├── skill-a"])
+        assert ret == 0
+        groups = store_mod.load_groups()
+        assert groups["dev"]["skills"] == ["skill-b"]
+
+
+def test_interactive_set_add_and_move_to_existing_group(tmp_path, monkeypatch):
+    test_groups_file = str(tmp_path / "groups.json")
+    import skill_engine._store as store_mod
+    monkeypatch.setattr(store_mod, "GROUPS_FILE", test_groups_file)
+    init_groups = {
+        "dev": {
+            "name": "Dev",
+            "ordered": False,
+            "skills": ["skill-a"]
+        },
+        "ops": {
+            "name": "Ops",
+            "ordered": False,
+            "skills": ["skill-b"]
+        }
+    }
+    store_mod.save_groups(init_groups)
+
+    import resolve_skills
+
+    # 1. Test Option 1 (Add to existing group 'dev')
+    with patch("resolve_skills.safe_input", side_effect=["1", "1", ""]):
+        resolve_skills.interactive_set(["skill-c"])
+        groups = store_mod.load_groups()
+        assert groups["dev"]["skills"] == ["skill-a", "skill-c"]
+
+    # 2. Test Option 2 (Move skill-c from dev to ops)
+    with patch("resolve_skills.safe_input", side_effect=["2", "ops", ""]):
+        resolve_skills.interactive_set(["skill-c"])
+        groups = store_mod.load_groups()
+        assert "skill-c" not in groups["dev"]["skills"]
+        assert "skill-c" in groups["ops"]["skills"]
+
+
+
