@@ -62,7 +62,7 @@ def test_facade_interactive_translate_routing():
          patch("preview_skill.cmd_force_translate", return_value=0) as mock_fn:
         ret = manage_skills.main()
         assert ret == 0
-        mock_fn.assert_called_once_with("test-skill")
+        mock_fn.assert_called_once_with(["test-skill"])
 
 
 def test_facade_positional_skills_mount_routing():
@@ -353,6 +353,85 @@ def test_facade_reconcile_routing():
         ret = manage_skills.main()
         assert ret == 0
         mock_fn.assert_called_once()
+
+
+def test_interactive_unlink_multi_selection():
+    # Multi-selection: skill-a, skill-b, skill-c where skill-a and skill-b are connected
+    mock_connected = [
+        {"name": "skill-a", "is_link": True, "mode": "symlink"},
+        {"name": "skill-b", "is_link": False, "mode": "copy"},
+    ]
+    with patch("manage_skills.get_connected_skills", return_value=mock_connected), \
+         patch("manage_skills.safe_input", side_effect=["y", ""]), \
+         patch("manage_skills.unlink_project_skills", return_value=0) as mock_unlink:
+        ret = manage_skills.interactive_unlink_workflow(["skill-a", "skill-b", "skill-c"])
+        assert ret == 0
+        mock_unlink.assert_called_once_with(["skill-a", "skill-b"])
+
+
+def test_interactive_update_multi_selection():
+    with patch("manage_skills.safe_input", return_value=""), \
+         patch("manage_skills.update_skills_workflow", return_value=0) as mock_update:
+        ret = manage_skills.interactive_update_workflow(["skill-1", "skill-2"])
+        assert ret == 0
+        mock_update.assert_called_once_with(target_skills=["skill-1", "skill-2"])
+
+
+def test_interactive_unbind_multi_selection(tmp_path, monkeypatch):
+    test_manifest = {
+        "skill-tracked-1": {"repo_url": "https://github.com/a/b"},
+        "skill-tracked-2": {"repo_url": "https://github.com/c/d"},
+    }
+    with patch("manage_skills.load_manifest", return_value=test_manifest), \
+         patch("manage_skills.safe_input", side_effect=["y", ""]), \
+         patch("manage_skills.unbind_skills_workflow", return_value=0) as mock_unbind:
+        ret = manage_skills.interactive_unbind_workflow(["skill-tracked-1", "skill-tracked-2", "local-skill"])
+        assert ret == 0
+        mock_unbind.assert_called_once_with(["skill-tracked-1", "skill-tracked-2"])
+
+
+def test_interactive_edit_multi_selection(tmp_path, monkeypatch):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    s1 = skills_dir / "s1"
+    s1.mkdir()
+    f1 = s1 / "SKILL.md"
+    f1.write_text("# S1")
+
+    s2 = skills_dir / "s2"
+    s2.mkdir()
+    f2 = s2 / "SKILL.md"
+    f2.write_text("# S2")
+
+    monkeypatch.setattr(manage_skills, "SKILLS_DIR", str(skills_dir))
+    with patch("subprocess.run") as mock_run:
+        ret = manage_skills.interactive_edit_workflow(["s1", "s2"])
+        assert ret == 0
+        mock_run.assert_called_once()
+        args = mock_run.call_args[0][0]
+        assert str(f1) in args
+        assert str(f2) in args
+
+
+def test_interactive_group_rm_multi_selection(tmp_path, monkeypatch):
+    test_groups_file = str(tmp_path / "groups.json")
+    import skill_engine._store as store_mod
+    monkeypatch.setattr(store_mod, "GROUPS_FILE", test_groups_file)
+    init_groups = {
+        "grp1": {"name": "G1", "ordered": False, "skills": ["skill-x"]},
+        "grp2": {"name": "G2", "ordered": False, "skills": ["skill-y"]},
+    }
+    store_mod.save_groups(init_groups)
+
+    import resolve_skills
+    # Multi-selection: delete both grp1 and grp2
+    with patch("resolve_skills.safe_input", side_effect=["y", ""]):
+        ret = resolve_skills.cmd_interactive_rm(["group:grp1", "group:grp2"])
+        assert ret == 0
+        groups = store_mod.load_groups()
+        assert "grp1" not in groups
+        assert "grp2" not in groups
+
 
 
 

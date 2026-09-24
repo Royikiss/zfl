@@ -721,11 +721,105 @@ def cmd_interactive_rm(focused_item):
     if not focused_item:
         print("Error: --interactive-rm requires focused item name", file=sys.stderr)
         return 1
-    if isinstance(focused_item, (list, tuple)):
-        for it in focused_item:
-            interactive_rm(it)
-    else:
-        interactive_rm(focused_item)
+    if isinstance(focused_item, str):
+        focused_item = [focused_item]
+
+    cleaned_items = [clean_item_id(it) for it in focused_item if clean_item_id(it)]
+    if not cleaned_items:
+        return 0
+
+    if len(cleaned_items) == 1:
+        interactive_rm(cleaned_items[0])
+        return 0
+
+    # Multiple items selected: handle groups and skills cleanly
+    groups = load_groups()
+    group_keys_to_delete = []
+    skills_to_remove = []
+
+    for it in cleaned_items:
+        if it.startswith("group:"):
+            gkey = it[6:]
+            if gkey in groups and gkey not in group_keys_to_delete:
+                group_keys_to_delete.append(gkey)
+        elif it in groups:
+            if it not in group_keys_to_delete:
+                group_keys_to_delete.append(it)
+        else:
+            if it not in skills_to_remove:
+                skills_to_remove.append(it)
+
+    # 1. If there are groups to delete
+    if group_keys_to_delete:
+        print("\033[1;31m╭──────────────── ⚠️  批量删除技能分组确认 ────────────────╮\033[0m")
+        if IS_ZH:
+            print(f"\033[1;37m│  确定要删除以下 {len(group_keys_to_delete)} 个技能分组吗？\033[0m")
+            for g in group_keys_to_delete:
+                print(f"│    • \033[1;31m{g}\033[0m")
+            print("\033[1;90m│  (仅删除分组定义，不会删除任何技能本体文件)\033[0m")
+        else:
+            print(f"\033[1;37m│  Are you sure you want to delete {len(group_keys_to_delete)} group(s)?\033[0m")
+            for g in group_keys_to_delete:
+                print(f"│    • \033[1;31m{g}\033[0m")
+            print("\033[1;90m│  (Only removes group definitions, preserves skill files)\033[0m")
+        print("\033[1;31m╰────────────────────────────────────────────────────────╯\033[0m")
+
+        confirm = safe_input("请输入 y 确认批量删除 (或按回车键取消):" if IS_ZH else "Enter y to confirm deletion (or Enter to cancel):").lower()
+        if confirm in ('y', 'yes'):
+            for g in group_keys_to_delete:
+                delete_group(g)
+            if IS_ZH:
+                print(f"\n\033[1;32m[✓] 成功删除 {len(group_keys_to_delete)} 个技能分组！\033[0m")
+            else:
+                print(f"\n\033[1;32m[✓] Successfully deleted {len(group_keys_to_delete)} group(s)!\033[0m")
+        else:
+            if IS_ZH:
+                print("\n\033[1;33m[*] 操作已取消。\033[0m")
+            else:
+                print("\n\033[1;33m[*] Operation cancelled.\033[0m")
+
+    # 2. If there are skills to remove from groups
+    if skills_to_remove:
+        skill_group_map = {}
+        for s in skills_to_remove:
+            grps = find_groups_for_skill(s)
+            if grps:
+                skill_group_map[s] = grps
+
+        if not skill_group_map:
+            if IS_ZH:
+                print("\033[1;33m[*] 所选技能均不属于任何技能分组。\033[0m")
+            else:
+                print("\033[1;33m[*] Selected skills do not belong to any groups.\033[0m")
+        else:
+            print("\033[1;33m╭──────────────── ⚠️  从分组中批量移除技能确认 ────────────────╮\033[0m")
+            if IS_ZH:
+                print(f"\033[1;37m│  检测到以下 {len(skill_group_map)} 个技能属于已有分组：\033[0m")
+                for s, grps in skill_group_map.items():
+                    print(f"│    • \033[1;33m{s}\033[0m \033[0;90m(现属分组: {', '.join(grps)})\033[0m")
+                print("\033[1;90m│  (仅从分组定义中移除，不会删除技能本地文件)\033[0m")
+            else:
+                print(f"\033[1;37m│  Found {len(skill_group_map)} skill(s) belonging to groups:\033[0m")
+                for s, grps in skill_group_map.items():
+                    print(f"│    • \033[1;33m{s}\033[0m \033[0;90m(in groups: {', '.join(grps)})\033[0m")
+                print("\033[1;90m│  (Only removes from groups, preserves local files)\033[0m")
+            print("\033[1;33m╰────────────────────────────────────────────────────────────╯\033[0m")
+
+            confirm = safe_input("请输入 y 确认从其所属的所有分组中移除 (或按回车键取消):" if IS_ZH else "Enter y to remove from all their groups (or Enter to cancel):").lower()
+            if confirm in ('y', 'yes'):
+                for s in skill_group_map:
+                    remove_skill_from_all_groups(s)
+                if IS_ZH:
+                    print(f"\n\033[1;32m[✓] 已成功将所选技能从其所属分组中移除！\033[0m")
+                else:
+                    print(f"\n\033[1;32m[✓] Successfully removed selected skills from groups!\033[0m")
+            else:
+                if IS_ZH:
+                    print("\n\033[1;33m[*] 操作已取消。\033[0m")
+                else:
+                    print("\n\033[1;33m[*] Operation cancelled.\033[0m")
+
+    safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
     return 0
 
 def cmd_group_add(args):

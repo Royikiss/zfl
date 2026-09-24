@@ -867,43 +867,35 @@ def interactive_install_workflow():
         safe_input("\nPress Enter to return to FZF...")
     return ret
 
-def interactive_update_workflow(focused_item):
-    """Interactive workflow to update a focused skill or all skills from FZF."""
-    s_name = clean_item_id(focused_item)
-    if not s_name:
+def interactive_update_workflow(target_items):
+    """Interactive workflow to update focused skill(s) or all skills in group(s) from FZF."""
+    if not target_items:
+        return 0
+    if isinstance(target_items, str):
+        target_items = [target_items]
+
+    skills = resolve_group_targets(target_items)
+    if not skills:
+        if IS_ZH:
+            c_print("1;33", "[*] 未选择任何有效技能。")
+        else:
+            c_print("1;33", "[*] No valid skill selected.")
+        safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
         return 0
 
-    if s_name.startswith("group:"):
-        gkey = s_name[6:]
-        try:
-            with open(GROUPS_FILE, "r", encoding="utf-8") as f:
-                gdata = json.load(f)
-                gskills = gdata.get(gkey, {}).get("skills", [])
-        except Exception:
-            gskills = []
-        if not gskills:
-            if IS_ZH:
-                c_print("1;33", f"[*] 分组 '{gkey}' 中没有技能。")
-            else:
-                c_print("1;33", f"[*] No skills in group '{gkey}'.")
-            safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
-            return 0
+    if len(skills) == 1:
         if IS_ZH:
-            c_print("1;34", f"==> 正在更新分组 '{gkey}' 中的 {len(gskills)} 个技能...")
+            c_print("1;34", f"==> 正在检查并更新技能 '{skills[0]}'...")
         else:
-            c_print("1;34", f"==> Updating {len(gskills)} skills in group '{gkey}'...")
-        ret = update_skills_workflow(target_skills=gskills)
+            c_print("1;34", f"==> Checking and updating skill '{skills[0]}'...")
     else:
         if IS_ZH:
-            c_print("1;34", f"==> 正在检查并更新技能 '{s_name}'...")
+            c_print("1;34", f"==> 正在检查并更新选中的 {len(skills)} 个技能...")
         else:
-            c_print("1;34", f"==> Checking and updating skill '{s_name}'...")
-        ret = update_skills_workflow(target_skills=[s_name])
+            c_print("1;34", f"==> Checking and updating {len(skills)} selected skills...")
 
-    if IS_ZH:
-        safe_input("\n按回车键返回 FZF...")
-    else:
-        safe_input("\nPress Enter to return to FZF...")
+    ret = update_skills_workflow(target_skills=skills)
+    safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
     return ret
 
 def unbind_skills_workflow(target_skills):
@@ -956,69 +948,30 @@ def unbind_skills_workflow(target_skills):
         save_manifest(manifest)
     return 0
 
-def interactive_unbind_workflow(focused_item):
-    """Interactive workflow to unbind Git tracking for a focused skill or group from FZF."""
-    s_name = clean_item_id(focused_item)
-    if not s_name:
+def interactive_unbind_workflow(target_items):
+    """Interactive workflow to unbind Git tracking for focused skill(s) or group(s) from FZF."""
+    if not target_items:
+        return 0
+    if isinstance(target_items, str):
+        target_items = [target_items]
+
+    skills = resolve_group_targets(target_items)
+    if not skills:
+        return 0
+
+    manifest = load_manifest()
+    tracked = [s for s in skills if s in manifest]
+    if not tracked:
+        if IS_ZH:
+            c_print("0;33", "[*] 所选技能均为本地自建技能（未绑定任何远程 Git 仓库）。")
+        else:
+            c_print("0;33", "[*] Selected skill(s) are local skills (no remote Git tracking).")
+        safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
         return 0
 
     print("\033[1;36m╭──────────────── 🔗 解绑远程 Git 关联 ────────────────╮\033[0m")
-    if s_name.startswith("group:"):
-        gkey = s_name[6:]
-        try:
-            with open(GROUPS_FILE, "r", encoding="utf-8") as f:
-                gdata = json.load(f)
-                gskills = gdata.get(gkey, {}).get("skills", [])
-        except Exception:
-            gskills = []
-        if not gskills:
-            if IS_ZH:
-                c_print("1;33", f"[*] 分组 '{gkey}' 中没有技能。")
-            else:
-                c_print("1;33", f"[*] No skills in group '{gkey}'.")
-            safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
-            return 0
-
-        manifest = load_manifest()
-        tracked = [s for s in gskills if s in manifest]
-        if not tracked:
-            if IS_ZH:
-                c_print("1;33", f"[*] 分组 '{gkey}' 中的技能均为本地技能，无需解绑。")
-            else:
-                c_print("1;33", f"[*] All skills in group '{gkey}' are already local skills.")
-            safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
-            return 0
-
-        if IS_ZH:
-            print(f"\033[1;37m│  分组 '\033[1;33m{gkey}\033[1;37m' 下有 {len(tracked)} 个已绑定 Git 的技能:\033[0m")
-            print(f"\033[0;90m│  {', '.join(tracked)}\033[0m")
-            print("\033[1;36m╰─────────────────────────────────────────────────────╯\033[0m")
-            ans = safe_input("确定要解绑该分组下所有技能的远程 Git 关联吗？(y/N):")
-        else:
-            print(f"\033[1;37m│  Group '\033[1;33m{gkey}\033[1;37m' has {len(tracked)} tracked skills:\033[0m")
-            print(f"\033[0;90m│  {', '.join(tracked)}\033[0m")
-            print("\033[1;36m╰─────────────────────────────────────────────────────╯\033[0m")
-            ans = safe_input("Are you sure you want to unbind all skills in this group? (y/N):")
-
-        if ans.lower() not in ("y", "yes"):
-            if IS_ZH:
-                c_print("1;33", "[*] 操作已取消。")
-            else:
-                c_print("1;33", "[*] Operation cancelled.")
-            safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
-            return 0
-
-        ret = unbind_skills_workflow(tracked)
-    else:
-        manifest = load_manifest()
-        if s_name not in manifest:
-            if IS_ZH:
-                c_print("0;33", f"[*] 技能 '{s_name}' 本身即为本地自建技能（未绑定任何远程 Git 仓库）。")
-            else:
-                c_print("0;33", f"[*] Skill '{s_name}' is already a local skill (no remote Git tracking).")
-            safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
-            return 0
-
+    if len(tracked) == 1:
+        s_name = tracked[0]
         repo_url = manifest[s_name].get("repo_url", "remote git")
         if IS_ZH:
             print(f"\033[1;37m│  技能 '\033[1;32m{s_name}\033[1;37m' 当前绑定了远程仓库: \033[0;36m{repo_url}\033[0m")
@@ -1028,16 +981,29 @@ def interactive_unbind_workflow(focused_item):
             print(f"\033[1;37m│  Skill '\033[1;32m{s_name}\033[1;37m' is currently linked to: \033[0;36m{repo_url}\033[0m")
             print("\033[1;36m╰─────────────────────────────────────────────────────╯\033[0m")
             ans = safe_input(f"Are you sure you want to unbind Git tracking for '{s_name}'? (y/N):")
+    else:
+        if IS_ZH:
+            print(f"\033[1;37m│  所选内容中共有 {len(tracked)} 个已绑定 Git 的技能:\033[0m")
+            print(f"\033[0;90m│  {', '.join(tracked)}\033[0m")
+            print("\033[1;36m╰─────────────────────────────────────────────────────╯\033[0m")
+            ans = safe_input(f"确定要解绑这 {len(tracked)} 个技能的远程 Git 关联吗？(y/N):")
+        else:
+            print(f"\033[1;37m│  Found {len(tracked)} tracked skill(s) selected:\033[0m")
+            print(f"\033[0;90m│  {', '.join(tracked)}\033[0m")
+            print("\033[1;36m╰─────────────────────────────────────────────────────╯\033[0m")
+            ans = safe_input(f"Are you sure you want to unbind these {len(tracked)} skills? (y/N):")
 
-        if ans.lower() not in ("y", "yes"):
-            if IS_ZH:
-                c_print("1;33", "[*] 操作已取消。")
-            else:
-                c_print("1;33", "[*] Operation cancelled.")
-            safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
-            return 0
+    if ans.lower() not in ("y", "yes"):
+        if IS_ZH:
+            c_print("1;33", "[*] 操作已取消。")
+        else:
+            c_print("1;33", "[*] Operation cancelled.")
+        safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
+        return 0
 
-        ret = unbind_skills_workflow([s_name])
+    ret = unbind_skills_workflow(tracked)
+    safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
+    return ret
 
     if IS_ZH:
         safe_input("\n按回车键返回 FZF...")
@@ -1396,39 +1362,85 @@ def unlink_project_skills(target_skills=None, unlink_all=False):
         c_print("1;32", f"\nSuccessfully unlinked {len(res['removed'])} skill(s) from project.")
     return 0 if not res["failed"] else 1
 
-def interactive_unlink_workflow(focused_item):
-    """Interactive workflow to unlink a focused skill from current project (invoked via FZF Ctrl-X)."""
-    s_name = clean_item_id(focused_item)
-    if not s_name:
+def interactive_unlink_workflow(target_items):
+    """Interactive workflow to unlink focused skill(s) from current project (invoked via FZF Ctrl-X)."""
+    if not target_items:
+        return 0
+    if isinstance(target_items, str):
+        target_items = [target_items]
+
+    skills = resolve_group_targets(target_items)
+    if not skills:
         return 0
 
     connected = get_connected_skills()
     connected_map = {c["name"]: c for c in connected}
+    to_unlink = [s for s in skills if s in connected_map]
 
-    if s_name.startswith("group:"):
-        gkey = s_name[6:]
-        gskills = resolve_group_targets([s_name])
-        connected_in_group = [s for s in gskills if s in connected_map]
-        if not connected_in_group:
-            c_print("1;33", f"[*] 分组 '{gkey}' 中的技能均未在当前项目中引入。")
-            safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
-            return 0
-        ans = safe_input(f"确定要从当前项目中移除分组 '{gkey}' 下的 {len(connected_in_group)} 个已挂载技能吗？(y/N):")
-        if ans.lower() in ("y", "yes"):
-            unlink_project_skills(connected_in_group)
+    if not to_unlink:
+        if len(skills) == 1:
+            c_print("1;33", f"[*] 技能 '{skills[0]}' 当前并未挂载在当前项目中。" if IS_ZH else f"[*] Skill '{skills[0]}' is not mounted in the current project.")
+        else:
+            c_print("1;33", f"[*] 所选的 {len(skills)} 个技能均未在当前项目中引入。" if IS_ZH else f"[*] None of the {len(skills)} selected skills are mounted in current project.")
         safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
         return 0
 
-    if s_name not in connected_map:
-        c_print("1;33", f"[*] 技能 '{s_name}' 当前并未挂载在当前项目中。")
-        safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
-        return 0
+    if len(to_unlink) == 1:
+        s_name = to_unlink[0]
+        type_str = "软链接" if connected_map[s_name]["is_link"] else "实体副本"
+        type_str_en = "symlink" if connected_map[s_name]["is_link"] else "copied entity"
+        ans = safe_input(f"确定要从当前项目中移除技能 '{s_name}' ({type_str}) 吗？(y/N):" if IS_ZH else f"Remove '{s_name}' ({type_str_en}) from current project? (y/N):")
+    else:
+        print("\033[1;33m╭──────────────── ⚠️  从当前项目移除技能 ────────────────╮\033[0m")
+        if IS_ZH:
+            print(f"\033[1;37m│  检测到所选内容中包含 {len(to_unlink)} 个已挂载技能：\033[0m")
+            for s in to_unlink:
+                mode_tag = "软链接" if connected_map[s]["is_link"] else "实体副本"
+                print(f"│    • \033[1;33m{s}\033[0m \033[0;90m({mode_tag})\033[0m")
+            print("\033[1;90m│  (仅从当前项目移除，全局技能库保持完好)\033[0m")
+            print("\033[1;33m╰─────────────────────────────────────────────────────╯\033[0m")
+            ans = safe_input(f"确定要从当前项目中移除这 {len(to_unlink)} 个技能吗？(y/N):")
+        else:
+            print(f"\033[1;37m│  Detected {len(to_unlink)} mounted skill(s) selected:\033[0m")
+            for s in to_unlink:
+                mode_tag = "symlink" if connected_map[s]["is_link"] else "copy"
+                print(f"│    • \033[1;33m{s}\033[0m \033[0;90m({mode_tag})\033[0m")
+            print("\033[1;90m│  (Only unlinks from project, global library untouched)\033[0m")
+            print("\033[1;33m╰─────────────────────────────────────────────────────╯\033[0m")
+            ans = safe_input(f"Remove these {len(to_unlink)} skills from project? (y/N):")
 
-    type_str = "软链接" if connected_map[s_name]["is_link"] else "实体副本"
-    ans = safe_input(f"确定要从当前项目中移除技能 '{s_name}' ({type_str}) 吗？(y/N):")
     if ans.lower() in ("y", "yes"):
-        unlink_project_skills([s_name])
+        unlink_project_skills(to_unlink)
+    else:
+        if IS_ZH:
+            c_print("1;33", "[*] 操作已取消。")
+        else:
+            c_print("1;33", "[*] Operation cancelled.")
     safe_input("\n按回车键返回 FZF..." if IS_ZH else "\nPress Enter to return to FZF...")
+    return 0
+
+def interactive_edit_workflow(target_items):
+    """Interactive workflow to edit SKILL.md of focused/selected skill(s) via $EDITOR."""
+    if not target_items:
+        return 0
+    if isinstance(target_items, str):
+        target_items = [target_items]
+
+    skills = resolve_group_targets(target_items)
+    if not skills:
+        return 0
+
+    target_files = []
+    for s in skills:
+        p = os.path.join(SKILLS_DIR, s, "SKILL.md")
+        if os.path.exists(p):
+            target_files.append(p)
+
+    if not target_files:
+        return 0
+
+    editor = os.environ.get("EDITOR") or "vim"
+    subprocess.run([editor] + target_files)
     return 0
 
 def export_project_skills():
@@ -1692,28 +1704,16 @@ def main():
         return interactive_install_workflow()
 
     elif cmd == "--interactive-update":
-        focused = args[0] if args else ""
-        return interactive_update_workflow(focused)
+        return interactive_update_workflow(args)
 
     elif cmd == "--interactive-unbind":
-        focused = args[0] if args else ""
-        return interactive_unbind_workflow(focused)
+        return interactive_unbind_workflow(args)
 
     elif cmd == "--interactive-unlink":
-        focused = args[0] if args else ""
-        return interactive_unlink_workflow(focused)
+        return interactive_unlink_workflow(args)
 
     elif cmd == "--interactive-edit":
-        focused = args[0] if args else ""
-        s_name = clean_item_id(focused)
-        if not s_name or s_name.startswith("group:"):
-            return 0
-        target_file = os.path.join(SKILLS_DIR, s_name, "SKILL.md")
-        if not os.path.exists(target_file):
-            return 0
-        editor = os.environ.get("EDITOR") or "vim"
-        subprocess.run([editor, target_file])
-        return 0
+        return interactive_edit_workflow(args)
 
     # 4. Group Management
     elif cmd == "--list-groups-completion":
@@ -1760,8 +1760,7 @@ def main():
 
     elif cmd == "--interactive-translate":
         import preview_skill
-        focused = args[0] if args else ""
-        return preview_skill.cmd_force_translate(focused)
+        return preview_skill.cmd_force_translate(args)
 
     # 6. Smart auto-detect or Positional Skills
     elif cmd.startswith("-"):

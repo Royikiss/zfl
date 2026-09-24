@@ -32,17 +32,18 @@
    - **Mount Badges**: Visually shows `[🔗linked]`, `[📄copied]`, or `[🔗:xx%, 📦:xx%]` percentage badges.
    - **Decoupled Group Identifiers & Display Titles**: Supports distinct CLI keys (e.g. `group:dev`) and human-readable aliases (e.g. `[Group: Daily Development Collaboration]`), keeping rigorous column alignment.
    - **Smart Tokenized Translation & Instant Pre-fetch**: Automatically tokenizes hyphenated identifiers (kebab-case) for clean machine translation, and pre-fetches Chinese translations immediately upon skill installation.
-   - **Rich Hotkeys**:
+   - **Rich Hotkeys (Fully Bound with Multi-Selection Support)**:
      - `Tab` / `→` / `←`: Toggle group
      - `Ctrl-O`: Toggle all
-     - `Space`: Multi-select
-     - `Ctrl-E`: Open `$EDITOR` to modify highlighted `SKILL.md`
-     - `Ctrl-X`: Unlink highlighted skill from current project
-     - `Ctrl-G` / `Ctrl-D`: Set group (with custom title support) / Delete group
-     - `Ctrl-N` / `Ctrl-U`: Install / Update
-     - `Ctrl-B`: Unbind Git tracking
-     - `Enter`: Symlink to project
-     - `Alt-C`: Copy physical entity to project
+     - `Space`: Multi-select toggle (All action hotkeys automatically prioritize multiple selections; fallback to focused item under cursor if unselected)
+     - `Ctrl-E`: Open `$EDITOR` to modify `SKILL.md` of selected skill(s) (supports editing multiple files)
+     - `Ctrl-X`: Safely unlink selected skill(s) from current project (with detailed mount mode inspection)
+     - `Ctrl-G` / `Ctrl-D`: Set group (with custom title support) / Batch remove from groups or delete group
+     - `Ctrl-N` / `Ctrl-U`: Install new skill / Batch check and update selected skills
+     - `Ctrl-B`: Batch unbind Git tracking for selected skills (convert to local)
+     - `Ctrl-T`: Batch force re-fetch Chinese translations for selected skills
+     - `Enter`: Batch symlink selected skills to project
+     - `Alt-C`: Batch copy physical entities to project
 
 ---
 

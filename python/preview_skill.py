@@ -14,6 +14,7 @@ if _current_dir not in sys.path:
 from skill_engine._display import strip_ansi, clean_item_id, circled_num, IS_ZH
 from skill_engine._store import get_zfl_data_dir, atomic_save_json, DATA_DIR
 from skill_engine._translations import DEFAULT_TRANSLATIONS, load_user_translations
+from skill_engine._groups import resolve_group_targets
 
 def translate_via_google(text, to_lang='zh-CN'):
     """
@@ -269,29 +270,41 @@ def translate_all_workflow(is_zh):
 def cmd_translate_all(is_zh=True):
     return translate_all_workflow(is_zh)
 
-def cmd_force_translate(raw_item):
-    skill = clean_item_id(raw_item)
-    if not skill or skill.startswith("group:"):
+def cmd_force_translate(raw_items):
+    if not raw_items:
         return 0
+    if isinstance(raw_items, str):
+        raw_items = [raw_items]
+
+    skills = resolve_group_targets(raw_items)
+    if not skills:
+        return 0
+
     skills_dir = os.path.expanduser("~/.agents/skills")
-    skill_dir = os.path.join(skills_dir, skill)
-    en_path = os.path.join(skill_dir, "SKILL.md")
-    if not os.path.exists(en_path):
-        return 0
-    en_meta, _ = parse_md_content(en_path)
-    if not en_meta:
-        return 0
-    en_name = en_meta.get("name") or skill
-    en_desc = en_meta.get("description") or ""
-    zh_name = translate_text(en_name)
-    zh_desc = translate_text(en_desc)
-    if zh_name or zh_desc:
-        cache_path = os.path.join(DATA_DIR, "skills_zh.json")
-        user_translations = load_user_translations()
-        user_translations[skill] = {
-            "name_zh": zh_name or en_name,
-            "desc_zh": zh_desc or en_desc
-        }
+    cache_path = os.path.join(DATA_DIR, "skills_zh.json")
+    user_translations = load_user_translations()
+    changed = False
+
+    for skill in skills:
+        skill_dir = os.path.join(skills_dir, skill)
+        en_path = os.path.join(skill_dir, "SKILL.md")
+        if not os.path.exists(en_path):
+            continue
+        en_meta, _ = parse_md_content(en_path)
+        if not en_meta:
+            continue
+        en_name = en_meta.get("name") or skill
+        en_desc = en_meta.get("description") or ""
+        zh_name = translate_text(en_name)
+        zh_desc = translate_text(en_desc)
+        if zh_name or zh_desc:
+            user_translations[skill] = {
+                "name_zh": zh_name or en_name,
+                "desc_zh": zh_desc or en_desc
+            }
+            changed = True
+
+    if changed:
         atomic_save_json(cache_path, user_translations)
     return 0
 
